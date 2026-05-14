@@ -1,0 +1,65 @@
+import { Router } from 'express';
+import { supabaseAdmin } from '../lib/supabase.js';
+import { requireRole } from '../middleware/auth.js';
+
+const router = Router();
+
+// GET /api/reports/spending?from=YYYY-MM-DD&to=YYYY-MM-DD — finance
+router.get('/spending', requireRole('finance', 'leadership'), async (req, res, next) => {
+  try {
+    const from = req.query.from || null;
+    const to = req.query.to || null;
+
+    let q = supabaseAdmin.from('v_monthly_spending').select('*');
+    if (from) q = q.gte('month', from);
+    if (to)   q = q.lte('month', to);
+
+    const { data, error } = await q.order('month', { ascending: false });
+    if (error) throw error;
+
+    const totals = {};
+    let grandTotal = 0;
+    for (const row of data) {
+      const cat = row.category;
+      totals[cat] = (totals[cat] || 0) + Number(row.total_spent);
+      grandTotal += Number(row.total_spent);
+    }
+
+    res.json({
+      rows: data,
+      by_category: totals,
+      grand_total: Number(grandTotal.toFixed(2)),
+    });
+  } catch (e) { next(e); }
+});
+
+// GET /api/reports/dashboard — leadership snapshot
+router.get('/dashboard', async (_req, res, next) => {
+  try {
+    const { data: statusRows, error: statusErr } = await supabaseAdmin
+      .from('v_inventory_status')
+      .select('*');
+    if (statusErr) throw statusErr;
+
+    const summary = {
+      total_products: statusRows.length,
+      in_stock: statusRows.filter((r) => r.stock_status === 'ok').length,
+      low: statusRows.filter((r) => r.stock_status === 'low').length,
+      out_of_stock: statusRows.filter((r) => r.stock_status === 'out_of_stock').length,
+      expiring_soon: statusRows.filter((r) => r.expiry_status === 'expiring_soon').length,
+      expired: statusRows.filter((r) => r.expiry_status === 'expired').length,
+    };
+
+    const byCategory = {};
+    for (const r of statusRows) {
+      byCategory[r.category] ??= { in_stock: 0, low: 0, out: 0 };
+      if (r.stock_status === 'ok') byCategory[r.category].in_stock++;
+      else if (r.stock_status === 'low') byCategory[r.category].low++;
+      else byCategory[r.category].out++;
+    }
+
+    res.json({ summary, by_category: byCategory, items: statusRows });
+  } catch (e) { next(e); }
+});
+
+export default router;
