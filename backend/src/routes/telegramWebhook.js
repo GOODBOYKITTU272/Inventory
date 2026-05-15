@@ -4,6 +4,16 @@ import { fileCompletion, visionCompletion } from '../lib/openai.js';
 
 const router = Router();
 
+// Prevent same Telegram update from being processed twice
+const recentUpdates = new Map();
+function isDuplicate(updateId) {
+  if (!updateId) return false;
+  if (recentUpdates.has(updateId)) return true;
+  recentUpdates.set(updateId, Date.now());
+  setTimeout(() => recentUpdates.delete(updateId), 10 * 60 * 1000);
+  return false;
+}
+
 const EXTRACTION_SYSTEM = `You are an Office Bill, Inventory, and Expense Extraction Assistant.
 Extract only visible bill details. Do not guess missing values.
 Return JSON only with vendor_name, bill_date, invoice_number, items, delivery_charges,
@@ -195,60 +205,57 @@ async function extractBill({ buffer, fileName, mimeType, fileUrl }) {
   });
 }
 
-router.post('/', async (req, res, next) => {
+router.post('/', (req, res) => {
+  const expectedKey = process.env.TELEGRAM_WEBHOOK_KEY || 'app_wizz_telegram_secret';
+  if (req.query.key !== expectedKey) {
+    return res.status(401).json({ ok: false, error: 'Invalid telegram webhook key' });
+  }
+
+  // Respond immediately so Telegram stops retrying
+  res.json({ ok: true });
+
   const message = req.body?.message || req.body?.channel_post;
   const chatId = message?.chat?.id;
   const replyTo = message?.message_id;
 
-  try {
-    const expectedKey = process.env.TELEGRAM_WEBHOOK_KEY || 'app_wizz_telegram_secret';
-    if (req.query.key !== expectedKey) {
-      return res.status(401).json({ ok: false, error: 'Invalid telegram webhook key' });
-    }
+  if (!message || !chatId) return;
 
-    if (!message || !chatId) return res.json({ ok: true, ignored: true });
+  const file = getTelegramFile(message);
+  if (!file || !isSupportedFile(file.fileName, file.mimeType)) return;
 
-    const file = getTelegramFile(message);
-    if (!file) return res.json({ ok: true, ignored: true, reason: 'no_file' });
+  // Process bill in background after responding
+  (async () => {
+    try {
+      const buffer = await downloadTelegramFile(file.fileId);
+      const fileUrl = await uploadFile({ buffer, fileName: file.fileName, mimeType: file.mimeType });
+      const { content } = await extractBill({ ...file, buffer, fileUrl });
+      const parsed = JSON.parse(cleanJson(content));
 
-    if (!isSupportedFile(file.fileName, file.mimeType)) {
-      return res.json({ ok: true, ignored: true, reason: 'unsupported_file' });
-    }
+      const duplicate = await findDuplicate(parsed);
+      if (duplicate) {
+        const roast = DUPLICATE_MESSAGES[Math.floor(Math.random() * DUPLICATE_MESSAGES.length)];
+        await sendTelegramMessage(
+          chatId,
+          `Duplicate Bill Detected\n\nVendor: ${duplicate.vendor_name || '-'}\nInvoice: #${duplicate.invoice_number || '-'}\nTotal: ₹${duplicate.grand_total || '-'}\n\n${roast}`,
+          replyTo,
+        );
+        return;
+      }
 
-    const buffer = await downloadTelegramFile(file.fileId);
-    const fileUrl = await uploadFile({ buffer, fileName: file.fileName, mimeType: file.mimeType });
-    const { content, model } = await extractBill({ ...file, buffer, fileUrl });
-    const parsed = JSON.parse(cleanJson(content));
-
-    const duplicate = await findDuplicate(parsed);
-    if (duplicate) {
-      const roast = DUPLICATE_MESSAGES[Math.floor(Math.random() * DUPLICATE_MESSAGES.length)];
+      const bill = await saveBill({ parsed, fileUrl });
       await sendTelegramMessage(
         chatId,
-        `Duplicate Bill Detected\n\nVendor: ${duplicate.vendor_name || '-'}\nInvoice: #${duplicate.invoice_number || '-'}\nTotal: ₹${duplicate.grand_total || '-'}\n\n${roast}`,
+        `Bill processed successfully\n\nVendor: ${bill.vendor_name || '-'}\nInvoice: #${bill.invoice_number || '-'}\nTotal: ₹${bill.grand_total || '-'}\n\nStatus: Sent for Admin Verification\nInventory will update only after Admin verification.`,
         replyTo,
       );
-      return res.json({ ok: true, duplicate: true, duplicate_bill_id: duplicate.id });
-    }
-
-    const bill = await saveBill({ parsed, fileUrl });
-    await sendTelegramMessage(
-      chatId,
-      `Bill processed successfully\n\nVendor: ${bill.vendor_name || '-'}\nInvoice: #${bill.invoice_number || '-'}\nTotal: ₹${bill.grand_total || '-'}\n\nStatus: Sent for Admin Verification\nInventory will update only after Admin verification.`,
-      replyTo,
-    );
-
-    return res.json({ ok: true, bill_id: bill.id, model });
-  } catch (e) {
-    if (chatId) {
+    } catch (e) {
       await sendTelegramMessage(
         chatId,
         `Bill processing failed\n\n${e.message || 'Unknown error'}\n\nPlease upload a clear PDF, JPG, JPEG, or PNG bill.`,
         replyTo,
       ).catch(() => {});
     }
-    next(e);
-  }
+  })();
 });
 
 export default router;
