@@ -4,6 +4,47 @@ import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
+// GET /api/reports/monthly-expenses
+router.get('/monthly-expenses', requireRole('finance', 'leadership'), async (req, res, next) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('monthly_expenses')
+      .select('*')
+      .order('month', { ascending: false });
+    if (error) throw error;
+    res.json(data);
+  } catch (e) { next(e); }
+});
+
+// POST /api/reports/monthly-expenses
+router.post('/monthly-expenses', requireRole('leadership'), async (req, res, next) => {
+  try {
+    const { month, label, amount, category = 'rental', notes } = req.body;
+    if (!month || !label || !amount) {
+      return res.status(400).json({ error: 'month, label, and amount are required' });
+    }
+    const { data, error } = await supabaseAdmin
+      .from('monthly_expenses')
+      .insert({ month, label, amount: Number(amount), category, notes: notes || null, created_by: req.user.id })
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (e) { next(e); }
+});
+
+// DELETE /api/reports/monthly-expenses/:id
+router.delete('/monthly-expenses/:id', requireRole('leadership'), async (req, res, next) => {
+  try {
+    const { error } = await supabaseAdmin
+      .from('monthly_expenses')
+      .delete()
+      .eq('id', req.params.id);
+    if (error) throw error;
+    res.status(204).end();
+  } catch (e) { next(e); }
+});
+
 // GET /api/reports/spending?from=YYYY-MM-DD&to=YYYY-MM-DD — finance
 router.get('/spending', requireRole('finance', 'leadership'), async (req, res, next) => {
   try {
