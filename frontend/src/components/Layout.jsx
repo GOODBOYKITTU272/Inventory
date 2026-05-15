@@ -57,12 +57,21 @@ export default function Layout() {
               </NavLink>
             ))}
           </nav>
-          <div className="flex items-center gap-3">
-            <div className="text-right text-xs text-slate-500 hidden sm:block">
-              <div className="font-medium text-slate-700">{profile?.full_name || '...'}</div>
-              <div>{roleDisplay[profile?.role] || profile?.role}</div>
+          <div className="flex items-center gap-2">
+            {/* Avatar with initials — always visible */}
+            <div className="h-8 w-8 rounded-full bg-brand/10 border border-brand/20 text-brand grid place-items-center font-bold text-sm shrink-0">
+              {(profile?.preferred_name || profile?.full_name || '?').charAt(0).toUpperCase()}
             </div>
-            <button className="btn-secondary" onClick={() => supabase.auth.signOut()}>Sign out</button>
+            {/* Name + role — hidden on mobile */}
+            <div className="text-right text-xs text-slate-500 hidden sm:block leading-tight">
+              <div className="font-semibold text-slate-800">
+                {profile?.preferred_name || profile?.full_name || '…'}
+              </div>
+              <div className="text-slate-400">{roleDisplay[profile?.role] || profile?.role}</div>
+            </div>
+            <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => supabase.auth.signOut()}>
+              Sign out
+            </button>
           </div>
         </div>
         <nav className="sm:hidden flex overflow-x-auto gap-1 px-4 pb-3">

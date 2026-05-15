@@ -30,6 +30,21 @@ function Protected({ children, allow }) {
   return children;
 }
 
+/** Redirect to the right home page based on role */
+function RoleHome() {
+  const { profile, loading } = useAuth();
+  if (loading) return <div className="p-8 text-slate-500">Loading...</div>;
+  if (!profile) return <Navigate to="/login" replace />;
+  const roleHome = {
+    leadership:       '/dashboard',
+    finance:          '/dashboard',
+    facility_manager: '/dashboard',
+    office_boy:       '/queue',
+    staff:            '/request',
+  };
+  return <Navigate to={roleHome[profile.role] || '/request'} replace />;
+}
+
 /**
  * OnboardingGate – wraps the entire authenticated app.
  * Checks whether the current user has completed cafeteria onboarding.
@@ -96,7 +111,7 @@ export default function App() {
           </Protected>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<RoleHome />} />
         <Route
           path="/dashboard"
           element={

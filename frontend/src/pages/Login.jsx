@@ -13,7 +13,7 @@ export default function Login() {
       <div className="w-5 h-5 rounded-full border-2 border-brand border-t-transparent animate-spin" />
     </div>
   );
-  if (session) return <Navigate to="/dashboard" replace />;
+  if (session) return <Navigate to="/" replace />;
 
   async function signInWithMicrosoft() {
     setErr('');
@@ -22,7 +22,7 @@ export default function Login() {
       provider: 'azure',
       options: {
         scopes: 'openid email profile',
-        redirectTo: window.location.origin + '/dashboard',
+        redirectTo: window.location.origin + '/',
       },
     });
     if (error) {
