@@ -62,6 +62,12 @@ export const api = {
   listBills: () => request('/api/bills'),
   updateBillStatus: (id, body) => request(`/api/bills/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
 
+  // Cafeteria
+  cafeteriaItems:  ()     => request('/api/cafeteria/items'),
+  quickOrder:      (body) => request('/api/requests', { method: 'POST', body: JSON.stringify(body) }),
+  addCafeteriaItem:(body) => request('/api/cafeteria/items', { method: 'POST', body: JSON.stringify(body) }),
+  updateCafeteriaItem: (id, body) => request(`/api/cafeteria/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
   listMonthlyExpenses: () => request('/api/reports/monthly-expenses'),
   addMonthlyExpense: (body) => request('/api/reports/monthly-expenses', { method: 'POST', body: JSON.stringify(body) }),
   deleteMonthlyExpense: (id) => request(`/api/reports/monthly-expenses/${id}`, { method: 'DELETE' }),

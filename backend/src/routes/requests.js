@@ -8,6 +8,16 @@ import { postRequestToTeams } from '../lib/teams.js';
 import { learnFromRating } from '../lib/learning.js';
 const router = Router();
 
+// Map well-known cafeteria items to categories
+const ITEM_CATEGORY = {
+  'ccd coffee': 'beverage', 'regular tea': 'beverage', 'lemon tea': 'beverage',
+  'water bottle': 'beverage', 'water': 'beverage', 'tea': 'beverage', 'coffee': 'beverage',
+  'bread + peanut butter': 'food', 'bread + jam': 'food', 'bread': 'food',
+  'biscuits': 'snack', 'fruits': 'snack', 'lunch': 'meal',
+  'stationery': 'stationery', 'cleaning': 'cleaning',
+  'maintenance': 'maintenance', 'meeting room setup': 'other',
+};
+
 const PARSER_SYSTEM = `You are the "Applywizz Office Concierge" AI.
 Your tone is WITTY, ENERGETIC, and PERSONABLE (like Zomato push notifications).
 The office team is aged 23-25, so use emojis and Gen-Z friendly language.
@@ -66,6 +76,36 @@ const createSchema = z.object({
 
 router.post('/', async (req, res, next) => {
   try {
+    // ── Quick order (cafeteria tap — no AI needed) ───────────────
+    const { quick_item, quick_location, quick_quantity = 1, quick_instruction = '' } = req.body;
+    if (quick_item) {
+      const firstName = (req.user.full_name || req.user.email || 'Someone').split(' ')[0];
+      const locPart  = quick_location ? ` to ${quick_location}` : '';
+      const notePart = quick_instruction ? ` Note: ${quick_instruction}.` : '';
+      const instruction = `🚀 ${firstName} needs ${quick_quantity}x ${quick_item}${locPart}. Please deliver promptly!${notePart}`;
+      const category = ITEM_CATEGORY[quick_item.toLowerCase()] || 'other';
+
+      const { data: qData, error: qErr } = await supabaseAdmin
+        .from('requests')
+        .insert({
+          raw_text:              `${quick_quantity}x ${quick_item}${locPart}`,
+          category,
+          parsed_item:           quick_item,
+          parsed_location:       quick_location || null,
+          instruction,
+          submitted_by:          req.user.id,
+          live_status:           'placed',
+          status:                'pending',
+        })
+        .select()
+        .single();
+      if (qErr) throw qErr;
+
+      postRequestToTeams({ ...qData, priority: 'Normal', quantity: String(quick_quantity) }).catch(() => {});
+      return res.status(201).json({ needs_followup: false, request: qData });
+    }
+
+    // ── Standard AI-parsed request ────────────────────────────────
     const { raw_text } = createSchema.parse(req.body);
 
     const { parsed, model } = await parseWithGPT({
