@@ -1,36 +1,27 @@
 import { useMemo, useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, LockKeyhole, Mail } from 'lucide-react';
-import { supabase } from '../lib/supabase.js';
+import { Navigate } from 'react-router-dom';
+import { CheckCircle2, Mail } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 
 const ALLOWED_DOMAIN = 'applywizz.ai';
 
-function friendlyAuthError(message = '') {
+function friendlyEmailError(message = '') {
   const lower = message.toLowerCase();
 
   if (lower.includes('rate limit') || lower.includes('too many')) {
     return 'Too many email attempts. Please wait before trying again.';
   }
 
-  if (lower.includes('invalid login') || lower.includes('invalid credentials')) {
-    return 'Wrong email or password. Please check and try again.';
-  }
-
-  return 'Could not continue. Please check the email and try again.';
+  return 'Could not send the email link. Please check the email and try again.';
 }
 
 export default function Login() {
   const { session, loading } = useAuth();
-  const [params] = useSearchParams();
-  const passwordUpdated = params.get('passwordUpdated') === '1';
-
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [msg, setMsg] = useState(passwordUpdated ? 'Password updated successfully. Please sign in.' : '');
+  const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  const [busyAction, setBusyAction] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const normalizedEmail = useMemo(() => email.trim().toLowerCase(), [email]);
 
@@ -41,43 +32,24 @@ export default function Login() {
   );
   if (session) return <Navigate to="/" replace />;
 
-  function validateEmail() {
-    if (!normalizedEmail.endsWith('@' + ALLOWED_DOMAIN)) {
-      setErr(`Only @${ALLOWED_DOMAIN} accounts are allowed.`);
-      return false;
-    }
-    return true;
-  }
-
-  async function signIn(e) {
+  async function sendEmailLink(e) {
     e.preventDefault();
     setErr('');
     setMsg('');
-    if (!validateEmail()) return;
 
-    setBusyAction('signin');
-    const { error } = await supabase.auth.signInWithPassword({
-      email: normalizedEmail,
-      password,
-    });
-    setBusyAction('');
+    if (!normalizedEmail.endsWith('@' + ALLOWED_DOMAIN)) {
+      setErr(`Only @${ALLOWED_DOMAIN} accounts are allowed.`);
+      return;
+    }
 
-    if (error) setErr(friendlyAuthError(error.message));
-  }
-
-  async function sendSetupLink() {
-    setErr('');
-    setMsg('');
-    if (!validateEmail()) return;
-
-    setBusyAction('setup');
+    setBusy(true);
     try {
-      await api.startPasswordSetup(normalizedEmail);
-      setMsg('Check your email. Click the confirmation link to create or reset your password.');
-    } catch (e) {
-      setErr(friendlyAuthError(e.message));
+      await api.startEmailLogin(normalizedEmail);
+      setMsg('Check your email. Click the link to enter Applywizz Pantry.');
+    } catch (error) {
+      setErr(friendlyEmailError(error.message));
     } finally {
-      setBusyAction('');
+      setBusy(false);
     }
   }
 
@@ -103,10 +75,10 @@ export default function Login() {
           <span className="text-brand">beautifully</span> served.
         </h1>
         <p className="mt-4 text-slate-500 text-base max-w-xs leading-relaxed">
-          Sign in with your company email and password.
+          Enter your company email. We will send a secure sign-in link.
         </p>
 
-        <form onSubmit={signIn} className="mt-8 w-full max-w-xs space-y-3 text-left">
+        <form onSubmit={sendEmailLink} className="mt-8 w-full max-w-xs space-y-3 text-left">
           <div>
             <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
               Work Email
@@ -121,21 +93,7 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition"
             />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
-              Password
-            </label>
-            <input
-              type="password"
-              required
-              autoComplete="current-password"
-              placeholder="Enter password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition"
-            />
+            <p className="text-xs text-slate-400 mt-1.5">@{ALLOWED_DOMAIN} accounts only</p>
           </div>
 
           {msg && <MessageBox msg={msg} ok />}
@@ -143,34 +101,16 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={busyAction !== '' || password.length < 6}
+            disabled={busy}
             className="w-full bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-3 rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            {busyAction === 'signin' ? (
+            {busy ? (
               <div className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-            ) : (
-              <LockKeyhole size={16} />
-            )}
-            {busyAction === 'signin' ? 'Signing in...' : 'Sign in'}
-          </button>
-
-          <button
-            type="button"
-            onClick={sendSetupLink}
-            disabled={busyAction !== ''}
-            className="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-semibold py-3 rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {busyAction === 'setup' ? (
-              <div className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
             ) : (
               <Mail size={16} />
             )}
-            {busyAction === 'setup' ? 'Sending link...' : 'Create or reset password'}
+            {busy ? 'Sending link...' : 'Send sign-in link'}
           </button>
-
-          <p className="text-xs text-slate-400 text-center">
-            New here? Enter your company email and use the setup link.
-          </p>
         </form>
       </main>
 

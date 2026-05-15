@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { randomBytes } from 'crypto';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
 
@@ -61,7 +60,7 @@ router.patch('/users/:id/role', async (req, res, next) => {
   }
 });
 
-// POST /api/admin/users/create  - pre-create user for password setup login
+// POST /api/admin/users/create  - pre-create user for email-link login
 router.post('/users/create', async (req, res, next) => {
   try {
     const schema = z.object({
@@ -71,10 +70,9 @@ router.post('/users/create', async (req, res, next) => {
     });
     const { email, role, full_name } = schema.parse(req.body);
 
-    // 1. Create the auth user with an unshared random password. Users set their own password by email link.
+    // 1. Create the auth user. Users sign in by email link.
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password:      randomBytes(24).toString('base64url'),
       email_confirm: true,
       user_metadata: { full_name },
     });

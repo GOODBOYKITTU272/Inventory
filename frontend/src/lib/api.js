@@ -28,7 +28,7 @@ async function request(path, opts = {}) {
 }
 
 export const api = {
-  startPasswordSetup: (email)     => request('/api/auth/start-password-setup', { method: 'POST', body: JSON.stringify({ email }) }),
+  startEmailLogin: (email)        => request('/api/auth/start-email-login', { method: 'POST', body: JSON.stringify({ email }) }),
 
   listProducts:    ()             => request('/api/products'),
   createProduct:   (body)         => request('/api/products', { method: 'POST', body: JSON.stringify(body) }),

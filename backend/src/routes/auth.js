@@ -42,7 +42,7 @@ async function ensureProfile(userId, email) {
   if (insertErr && insertErr.code !== '23505') throw insertErr;
 }
 
-router.post('/start-password-setup', async (req, res, next) => {
+router.post('/start-email-login', async (req, res, next) => {
   try {
     const schema = z.object({ email: z.string().email() });
     const email = schema.parse(req.body).email.trim().toLowerCase();
@@ -60,7 +60,7 @@ router.post('/start-password-setup', async (req, res, next) => {
       email,
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: origin ? `${origin}/set-password` : undefined,
+        emailRedirectTo: origin || undefined,
       },
     });
 
