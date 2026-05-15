@@ -70,12 +70,15 @@ export async function postRequestToTeams(req) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(card),
     });
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text();
+      console.error('[Teams] POST failed', res.status, text.slice(0, 400));
       return { ok: false, status: res.status, body: text.slice(0, 200) };
     }
+    console.log('[Teams] Sent OK, response:', text.slice(0, 100));
     return { ok: true };
   } catch (e) {
+    console.error('[Teams] fetch error:', e.message);
     return { ok: false, error: e.message };
   }
 }
