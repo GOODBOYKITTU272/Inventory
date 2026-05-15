@@ -214,6 +214,9 @@ router.post('/', (req, res) => {
   // Respond immediately so Telegram stops retrying
   res.json({ ok: true });
 
+  // Skip if this update was already processed
+  if (isDuplicate(req.body?.update_id)) return;
+
   const message = req.body?.message || req.body?.channel_post;
   const chatId = message?.chat?.id;
   const replyTo = message?.message_id;
