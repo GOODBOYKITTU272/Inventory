@@ -1,4 +1,4 @@
-import 'dotenv/config';
+﻿import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -66,6 +66,7 @@ app.use('/api/bills',        billsRouter);
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`[applyways-api] listening on http://localhost:${PORT}`);
+if (process.env.NODE_ENV !== 'production') { app.listen(PORT); }
+export default app;
 });
+
