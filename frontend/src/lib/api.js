@@ -52,6 +52,7 @@ export const api = {
   inviteUser:   (body)            => request('/api/admin/users/invite', { method: 'POST', body: JSON.stringify(body) }),
 
   submitRequest:   (raw_text)        => request('/api/requests', { method: 'POST', body: JSON.stringify({ raw_text }) }),
+  getRequest:      (id)              => request(`/api/requests/${id}`),
   listRequests:    (status='')       => request(`/api/requests${status ? `?status=${status}` : ''}`),
   setRequestStatus:(id, status, live_status, notes) =>
     request(`/api/requests/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, live_status, notes }) }),
