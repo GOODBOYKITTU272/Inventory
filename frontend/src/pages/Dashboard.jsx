@@ -2,6 +2,112 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 
+/* ── IST helpers ─────────────────────────────────────────────────── */
+const IST = { timeZone: 'Asia/Kolkata' };
+
+function getIST() {
+  return new Date(new Date().toLocaleString('en-US', IST));
+}
+
+function formatTime(d) {
+  return d.toLocaleTimeString('en-IN', { ...IST, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+}
+
+function formatDate(d) {
+  return d.toLocaleDateString('en-IN', { ...IST, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/* ── IST Clock strip ─────────────────────────────────────────────── */
+function ISTClock() {
+  const [now, setNow] = useState(getIST());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(getIST()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="card flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-brand/5 to-emerald-50 border-brand/20">
+      <div>
+        <div className="text-2xl sm:text-3xl font-mono font-bold text-brand tabular-nums">
+          {formatTime(now)}
+        </div>
+        <div className="text-xs text-slate-500 mt-0.5">{formatDate(now)} · IST (UTC+5:30)</div>
+      </div>
+      <MiniCalendar today={now} />
+    </div>
+  );
+}
+
+/* ── Mini Calendar ───────────────────────────────────────────────── */
+const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function MiniCalendar({ today }) {
+  const [view, setView] = useState(() => {
+    const t = getIST();
+    return { year: t.getFullYear(), month: t.getMonth() };
+  });
+
+  const { year, month } = view;
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const todayIST = getIST();
+  const isToday = (d) =>
+    todayIST.getFullYear() === year &&
+    todayIST.getMonth() === month &&
+    todayIST.getDate() === d;
+
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  function prev() {
+    setView((v) => {
+      const m = v.month - 1;
+      return m < 0 ? { year: v.year - 1, month: 11 } : { year: v.year, month: m };
+    });
+  }
+  function next() {
+    setView((v) => {
+      const m = v.month + 1;
+      return m > 11 ? { year: v.year + 1, month: 0 } : { year: v.year, month: m };
+    });
+  }
+
+  return (
+    <div className="text-xs select-none shrink-0">
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <button onClick={prev} className="text-slate-400 hover:text-brand px-1">‹</button>
+        <span className="font-semibold text-slate-700 whitespace-nowrap">
+          {MONTHS[month]} {year}
+        </span>
+        <button onClick={next} className="text-slate-400 hover:text-brand px-1">›</button>
+      </div>
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {DAYS.map((d) => (
+          <div key={d} className="text-center text-[10px] text-slate-400 font-semibold py-0.5">{d}</div>
+        ))}
+        {cells.map((d, i) => (
+          <div
+            key={i}
+            className={`text-center py-0.5 rounded font-medium ${
+              d === null ? '' :
+              isToday(d)
+                ? 'bg-brand text-white rounded-full'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            {d || ''}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Status pills ────────────────────────────────────────────────── */
 function StatCard({ label, value, tone = 'slate' }) {
   const tones = {
     slate:  'bg-slate-50 text-slate-700',
@@ -31,10 +137,11 @@ function StatusPill({ status }) {
   return <span className={map[status] || 'pill bg-slate-100 text-slate-700'}>{label}</span>;
 }
 
+/* ── AI Summary ──────────────────────────────────────────────────── */
 function AISummaryCard() {
-  const [data, setData]   = useState(null);
-  const [err, setErr]     = useState('');
-  const [busy, setBusy]   = useState(false);
+  const [data, setData] = useState(null);
+  const [err, setErr]   = useState('');
+  const [busy, setBusy] = useState(false);
 
   async function load(refresh = false) {
     setErr(''); setBusy(true);
@@ -71,7 +178,7 @@ function AISummaryCard() {
       {err && (
         <div className="text-xs text-rose-700 bg-rose-50 p-2 rounded">
           {err.includes('OPENAI_API_KEY')
-            ? 'Add OPENAI_API_KEY to backend/.env to enable the AI summary.'
+            ? 'Add OPENAI_API_KEY to backend env to enable the AI summary.'
             : err}
         </div>
       )}
@@ -85,6 +192,7 @@ function AISummaryCard() {
   );
 }
 
+/* ── Dashboard ───────────────────────────────────────────────────── */
 export default function Dashboard() {
   const { profile } = useAuth();
   const [data, setData] = useState(null);
@@ -101,6 +209,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* IST clock + calendar */}
+      <ISTClock />
+
       <div>
         <h1 className="text-2xl font-semibold">Inventory snapshot</h1>
         <p className="text-sm text-slate-500">Live view of pantry stock and freshness.</p>
