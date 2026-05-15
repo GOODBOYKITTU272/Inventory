@@ -92,3 +92,38 @@ export async function processDailyLearning(employeeId) {
     console.error('Self-Learning Error:', e);
   }
 }
+
+export async function learnFromRating(employeeId, rating, comment) {
+  try {
+    const score = rating * 2; // Convert 1-5 rating to scoring system
+    await supabaseAdmin.from('employee_preference_scores').upsert({
+      employee_id: employeeId,
+      preference_type: 'rating',
+      preference_value: 'overall',
+      score: score,
+      last_updated_at: new Date().toISOString()
+    }, { onConflict: 'employee_id, preference_type, preference_value' });
+
+    if (comment) {
+      const { content } = await chatCompletion({
+        system: LEARNING_SYSTEM,
+        user: JSON.stringify({ comment, rating }),
+        model: 'gpt-4o-mini'
+      });
+      
+      const tasteUpdate = JSON.parse(content.replace(/```json|```/g, '').trim());
+      if (tasteUpdate.updated_preferences) {
+        await supabaseAdmin.from('employee_ai_preferences').upsert({
+          employee_id: employeeId,
+          ...tasteUpdate.updated_preferences,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'employee_id' });
+      }
+    }
+
+    return { success: true };
+  } catch (e) {
+    console.error('Learn From Rating Error:', e);
+    return { success: false, error: e.message };
+  }
+}
