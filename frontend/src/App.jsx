@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase.js';
 import Layout from './components/Layout.jsx';
@@ -19,7 +19,6 @@ import AuditLogPage from './pages/AuditLog.jsx';
 import ConnectionsPage from './pages/Connections.jsx';
 import OnboardingPage from './pages/Onboarding.jsx';
 import { useAuth } from './hooks/useAuth.js';
-import { supabase } from './lib/supabase.js';
 
 function Protected({ children, allow }) {
   const { session, profile, loading } = useAuth();
