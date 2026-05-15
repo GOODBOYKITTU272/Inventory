@@ -80,7 +80,7 @@ router.post('/', async (req, res, next) => {
     // ── Quick order (cafeteria tap — no AI needed) ───────────────
     const { quick_item, quick_location, quick_quantity = 1, quick_instruction = '' } = req.body;
     if (quick_item) {
-      const firstName = (req.user.full_name || req.user.email || 'Someone').split(' ')[0];
+      const firstName = req.user.preferred_name || (req.user.full_name || req.user.email || 'Someone').split(' ')[0];
       const locPart  = quick_location ? ` to ${quick_location}` : '';
       const notePart = quick_instruction ? ` Note: ${quick_instruction}.` : '';
       const instruction = `🚀 ${firstName} needs ${quick_quantity}x ${quick_item}${locPart}. Please deliver promptly!${notePart}`;

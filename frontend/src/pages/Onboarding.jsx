@@ -130,7 +130,39 @@ function StepWelcome({ onNext }) {
   );
 }
 
-// Step 1 — Drinks
+// Step 1 — Preferred name
+function StepName({ prefs, set, onNext, onBack }) {
+  return (
+    <div className="space-y-6 pb-28">
+      <div className="text-center pt-4">
+        <div className="text-5xl mb-3">👋</div>
+        <h2 className="text-2xl font-bold text-slate-900">What should we call you?</h2>
+        <p className="text-slate-500 mt-2 text-sm">
+          The office boy will see this name when your order arrives.
+          <br />Use your first name or a nickname — whatever feels right.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <input
+          className="w-full border-2 border-slate-200 rounded-2xl px-4 py-4 text-lg font-semibold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none text-center"
+          placeholder="e.g. Naga, Rama, RK…"
+          value={prefs.displayName}
+          onChange={(e) => set('displayName', e.target.value)}
+          maxLength={30}
+          autoFocus
+        />
+        <p className="text-center text-xs text-slate-400">
+          Your order will say: <span className="font-bold text-slate-600">"{prefs.displayName || 'Your name'} needs 1x CCD Coffee to Balaji Cabin 🚀"</span>
+        </p>
+      </div>
+
+      <NavBar step={1} onBack={onBack} onNext={onNext} nextDisabled={!prefs.displayName?.trim()} />
+    </div>
+  );
+}
+
+// Step 2 — Drinks
 function StepDrinks({ prefs, toggle, onNext, onBack }) {
   return (
     <div className="space-y-6 pb-28">
@@ -373,13 +405,22 @@ function StepDone({ onFinish, saving }) {
 }
 
 /* ── Main Onboarding ─────────────────────────────────────────────── */
-const TOTAL = 8;
+const TOTAL = 9;
 
 export default function Onboarding({ onComplete }) {
   const { session } = useAuth();
   const [step,   setStep]   = useState(0);
   const [saving, setSaving] = useState(false);
+
+  // Pre-fill displayName from Microsoft profile (full_name or email prefix)
+  const defaultName = (() => {
+    const meta = session?.user?.user_metadata;
+    const name = meta?.full_name || meta?.name || meta?.preferred_username || '';
+    return name.split(' ')[0] || '';
+  })();
+
   const [prefs,  setPrefs]  = useState({
+    displayName: defaultName,
     drinks: [],
     snacks: [],
     tastes: [],
@@ -419,8 +460,17 @@ export default function Onboarding({ onComplete }) {
   async function finish() {
     setSaving(true);
     try {
+      // Save preferred name back to profiles so backend uses it
+      if (prefs.displayName?.trim()) {
+        await supabase
+          .from('profiles')
+          .update({ preferred_name: prefs.displayName.trim() })
+          .eq('id', session.user.id);
+      }
+
       await savePrefs({
         user_id:              session.user.id,
+        preferred_name:       prefs.displayName?.trim() || null,
         drink_prefs:          prefs.drinks.filter(d => d !== 'None'),
         snack_prefs:          prefs.snacks.filter(s => s !== 'none'),
         taste_prefs:          prefs.tastes,
@@ -455,14 +505,15 @@ export default function Onboarding({ onComplete }) {
   }
 
   const steps = [
-    <StepWelcome  key={0} onNext={next} />,
-    <StepDrinks   key={1} prefs={prefs} toggle={v => toggleArr('drinks', v)} onNext={next} onBack={back} />,
-    <StepSnacks   key={2} prefs={prefs} toggle={v => toggleArr('snacks', v)} onNext={next} onBack={back} />,
-    <StepTaste    key={3} prefs={prefs} toggle={v => toggleArr('tastes', v)} onNext={next} onBack={back} />,
-    <StepLocation key={4} prefs={prefs} set={set}  onNext={next} onBack={back} />,
-    <StepReminders key={5} prefs={prefs} set={set} onNext={next} onBack={back} />,
-    <StepTone     key={6} prefs={prefs} set={v => set('tone', v)} onNext={next} onBack={back} />,
-    <StepDone     key={7} onFinish={finish} saving={saving} />,
+    <StepWelcome   key={0} onNext={next} />,
+    <StepName      key={1} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepDrinks    key={2} prefs={prefs} toggle={v => toggleArr('drinks', v)} onNext={next} onBack={back} />,
+    <StepSnacks    key={3} prefs={prefs} toggle={v => toggleArr('snacks', v)} onNext={next} onBack={back} />,
+    <StepTaste     key={4} prefs={prefs} toggle={v => toggleArr('tastes', v)} onNext={next} onBack={back} />,
+    <StepLocation  key={5} prefs={prefs} set={set}  onNext={next} onBack={back} />,
+    <StepReminders key={6} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepTone      key={7} prefs={prefs} set={v => set('tone', v)} onNext={next} onBack={back} />,
+    <StepDone      key={8} onFinish={finish} saving={saving} />,
   ];
 
   return (
