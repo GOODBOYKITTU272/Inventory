@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, MapPin, Send, ChevronRight, X, Clock,
-  RefreshCw, Coffee, Zap, Plus, Minus, CheckCircle,
+  Plus, Minus, CheckCircle, Zap, Check,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../hooks/useAuth.js';
 import WakingUp from '../components/WakingUp.jsx';
 
@@ -23,23 +24,22 @@ function getISTGreeting() {
 }
 
 const CATEGORY_EMOJI = {
-  beverage: '☕',
-  food: '🥪',
-  snack: '🍪',
-  meal: '🍱',
-  stationery: '📎',
-  cleaning: '🧹',
-  other: '📦',
+  beverage: '☕', food: '🥪', snack: '🍪',
+  meal: '🍱', stationery: '📎', cleaning: '🧹', other: '📦',
 };
 
 const STAGE_INFO = {
-  placed:      { icon: '📋', label: 'Order placed' },
-  accepted:    { icon: '✅', label: 'Accepted' },
-  preparing:   { icon: '☕', label: 'Preparing' },
-  on_the_way:  { icon: '🛵', label: 'On the way' },
-  done:        { icon: '🎉', label: 'Delivered!' },
-  cancelled:   { icon: '❌', label: 'Cancelled' },
+  placed:     { icon: '📋', label: 'Order placed' },
+  accepted:   { icon: '✅', label: 'Accepted' },
+  preparing:  { icon: '☕', label: 'Preparing' },
+  on_the_way: { icon: '🛵', label: 'On the way' },
+  done:       { icon: '🎉', label: 'Delivered!' },
+  cancelled:  { icon: '❌', label: 'Cancelled' },
 };
+
+// Items that get a customization prompt
+const BREAD_ITEMS = ['bread + peanut butter', 'bread + jam'];
+const isBreadItem = (name) => BREAD_ITEMS.includes((name || '').toLowerCase());
 
 // ── Active Order Banner ────────────────────────────────────────────────────────
 function ActiveOrderBanner({ order, onPress }) {
@@ -66,9 +66,22 @@ function ActiveOrderBanner({ order, onPress }) {
   );
 }
 
-// ── Quick Order Chip ───────────────────────────────────────────────────────────
-function ItemChip({ item, qty, onAdd, onRemove, onQuickOrder }) {
+// ── Item Chip ──────────────────────────────────────────────────────────────────
+function ItemChip({ item, qty, outOfStock, onAdd, onRemove }) {
   const inCart = qty > 0;
+
+  if (outOfStock) {
+    return (
+      <div className="relative rounded-2xl border-2 border-rose-100 bg-rose-50/60 p-3 flex flex-col gap-2 opacity-70">
+        <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
+        <div className="text-center">
+          <div className="text-xs font-bold text-slate-500 leading-tight">{item.item_name}</div>
+          <div className="text-[10px] text-rose-500 font-bold mt-1">😔 Out today</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <motion.div
       whileHover={{ scale: 1.02 }}
@@ -84,6 +97,7 @@ function ItemChip({ item, qty, onAdd, onRemove, onQuickOrder }) {
           <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{item.description}</div>
         )}
       </div>
+
       {inCart ? (
         <div className="flex items-center justify-center gap-2 mt-1">
           <button
@@ -109,14 +123,124 @@ function ItemChip({ item, qty, onAdd, onRemove, onQuickOrder }) {
   );
 }
 
+// ── Bread Customization Sheet ──────────────────────────────────────────────────
+// Shown when someone taps a bread item. Asks slices + toast level.
+function BreadCustomSheet({ item, savedPref, onConfirm, onClose }) {
+  const [slices,    setSlices]    = useState(savedPref?.slices    ?? 1);
+  const [toast,     setToast]     = useState(savedPref?.toast     ?? 'No Toast');
+  const [remember,  setRemember]  = useState(false);
+
+  const TOAST_OPTS = ['No Toast', 'Light', 'Medium', 'Well Done'];
+
+  function confirm() {
+    const instruction = `${slices} slice${slices > 1 ? 's' : ''}, ${toast.toLowerCase()} toast`;
+    onConfirm({ instruction, pref: remember ? { slices, toast } : null });
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <div className="text-xl">{item.emoji || '🥪'}</div>
+            <h2 className="font-extrabold text-slate-900">{item.item_name}</h2>
+            <p className="text-xs text-slate-400">How do you like it?</p>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Slices */}
+        <div className="mb-5">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+            How many slices?
+          </label>
+          <div className="flex gap-2">
+            {[1, 2].map((n) => (
+              <button
+                key={n}
+                onClick={() => setSlices(n)}
+                className={`flex-1 py-3 rounded-2xl border-2 font-bold text-sm transition-all ${
+                  slices === n ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
+                }`}
+              >
+                {n} slice{n > 1 ? 's' : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Toast level */}
+        <div className="mb-5">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+            Toast level?
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {TOAST_OPTS.map((t) => (
+              <button
+                key={t}
+                onClick={() => setToast(t)}
+                className={`py-2.5 rounded-2xl border-2 font-semibold text-xs transition-all ${
+                  toast === t ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
+                }`}
+              >
+                {t === 'No Toast' ? '🍞 No Toast' : t === 'Light' ? '🌅 Light' : t === 'Medium' ? '🟤 Medium' : '🔥 Well Done'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Remember toggle */}
+        <button
+          onClick={() => setRemember((v) => !v)}
+          className={`w-full flex items-center justify-between p-3 rounded-2xl border-2 mb-5 transition-all ${
+            remember ? 'border-brand bg-brand/5' : 'border-slate-100'
+          }`}
+        >
+          <div className="text-left">
+            <div className="text-sm font-semibold text-slate-800">Remember my preference</div>
+            <div className="text-xs text-slate-400">Pre-fill this every time I order {item.item_name}</div>
+          </div>
+          <div className={`w-10 h-5.5 rounded-full relative flex items-center transition-colors ml-3 shrink-0 ${remember ? 'bg-brand' : 'bg-slate-200'}`}
+               style={{ height: 22, width: 40 }}>
+            <div className={`absolute w-4 h-4 bg-white rounded-full shadow transition-all ${remember ? 'left-5' : 'left-1'}`} />
+          </div>
+        </button>
+
+        <button
+          onClick={confirm}
+          className="w-full h-12 bg-brand text-white rounded-2xl font-bold text-sm shadow-lg shadow-brand/20 hover:scale-[1.01] active:scale-[0.99] transition-all"
+        >
+          Add to order ✓
+        </button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── Order Confirmation Sheet ───────────────────────────────────────────────────
-function OrderSheet({ cart, items, onClose, onConfirm, busy }) {
+function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy }) {
   const [location, setLocation] = useState('');
-  const [note, setNote] = useState('');
+  const [note,     setNote]     = useState('');
 
   const cartItems = Object.entries(cart)
     .filter(([, qty]) => qty > 0)
-    .map(([id, qty]) => ({ item: items.find((i) => i.id === id), qty }))
+    .map(([id, qty]) => ({ item: items.find((i) => i.id === id), qty, customNote: customizations[id] || '' }))
     .filter((x) => x.item);
 
   return (
@@ -144,13 +268,18 @@ function OrderSheet({ cart, items, onClose, onConfirm, busy }) {
 
         {/* Items */}
         <div className="space-y-2 mb-5">
-          {cartItems.map(({ item, qty }) => (
-            <div key={item.id} className="flex items-center justify-between py-2 border-b border-slate-50">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">{item.emoji || '☕'}</span>
-                <span className="font-medium text-slate-800 text-sm">{item.item_name}</span>
+          {cartItems.map(({ item, qty, customNote }) => (
+            <div key={item.id} className="flex items-start justify-between py-2 border-b border-slate-50 gap-2">
+              <div className="flex items-start gap-2 min-w-0">
+                <span className="text-lg shrink-0">{item.emoji || '☕'}</span>
+                <div className="min-w-0">
+                  <div className="font-medium text-slate-800 text-sm">{item.item_name}</div>
+                  {customNote && (
+                    <div className="text-[11px] text-slate-400 mt-0.5 italic">{customNote}</div>
+                  )}
+                </div>
               </div>
-              <span className="font-bold text-brand text-sm">×{qty}</span>
+              <span className="font-bold text-brand text-sm shrink-0">×{qty}</span>
             </div>
           ))}
         </div>
@@ -167,9 +296,7 @@ function OrderSheet({ cart, items, onClose, onConfirm, busy }) {
                 type="button"
                 onClick={() => setLocation(loc === location ? '' : loc)}
                 className={`text-xs px-3 py-2.5 rounded-xl border-2 font-semibold transition-all ${
-                  location === loc
-                    ? 'bg-brand text-white border-brand'
-                    : 'bg-white text-slate-600 border-slate-100 hover:border-brand/30'
+                  location === loc ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-100 hover:border-brand/30'
                 }`}
               >
                 {loc}
@@ -178,14 +305,14 @@ function OrderSheet({ cart, items, onClose, onConfirm, busy }) {
           </div>
         </div>
 
-        {/* Note */}
+        {/* Extra note */}
         <div className="mb-5">
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-            Special instructions (optional)
+            Anything else? (optional)
           </label>
           <input
             className="w-full border-2 border-slate-100 rounded-xl px-3 py-2 text-sm focus:border-brand focus:outline-none"
-            placeholder="No sugar, extra hot, etc."
+            placeholder="Extra sugar, carry bag, etc."
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
@@ -198,8 +325,7 @@ function OrderSheet({ cart, items, onClose, onConfirm, busy }) {
         >
           {busy
             ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Placing...</>
-            : <><Zap size={16} /> Place Order 🚀</>
-          }
+            : <><Zap size={16} /> Place Order 🚀</>}
         </button>
       </motion.div>
     </motion.div>
@@ -208,7 +334,7 @@ function OrderSheet({ cart, items, onClose, onConfirm, busy }) {
 
 // ── Main Cafeteria Page ────────────────────────────────────────────────────────
 export default function Cafeteria() {
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const navigate    = useNavigate();
   const greeting    = getISTGreeting();
   const firstName   = (profile?.full_name || profile?.email || 'there').split(' ')[0];
@@ -216,7 +342,10 @@ export default function Cafeteria() {
   const [items,        setItems]        = useState([]);
   const [activeOrder,  setActiveOrder]  = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
-  const [cart,         setCart]         = useState({});
+  const [cart,         setCart]         = useState({});     // { [id]: qty }
+  const [customizations, setCustomizations] = useState({}); // { [id]: 'instruction text' }
+  const [itemPrefs,    setItemPrefs]    = useState({});     // { [item_name_lower]: { slices, toast } }
+  const [customTarget, setCustomTarget] = useState(null);   // item being customized
   const [showSheet,    setShowSheet]    = useState(false);
   const [loading,      setLoading]      = useState(true);
   const [orderBusy,    setOrderBusy]    = useState(false);
@@ -224,13 +353,13 @@ export default function Cafeteria() {
   const [errorMsg,     setErrorMsg]     = useState('');
 
   // Custom text request
-  const [showCustom,  setShowCustom]  = useState(false);
-  const [customText,  setCustomText]  = useState('');
-  const [customLoc,   setCustomLoc]   = useState('');
-  const [customBusy,  setCustomBusy]  = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
+  const [customText, setCustomText] = useState('');
+  const [customLoc,  setCustomLoc]  = useState('');
+  const [customBusy, setCustomBusy] = useState(false);
 
-  const cartCount  = Object.values(cart).reduce((a, b) => a + b, 0);
-  const hasInCart  = cartCount > 0;
+  const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
+  const hasInCart = cartCount > 0;
 
   const load = useCallback(async () => {
     try {
@@ -240,8 +369,8 @@ export default function Cafeteria() {
       ]);
       setItems(itemsData || []);
 
-      const active = (requestsData || []).find((r) =>
-        ['pending', 'in_progress'].includes(r.status) && r.submitted_by === profile?.id
+      const active = (requestsData || []).find(
+        (r) => ['pending', 'in_progress'].includes(r.status)
       );
       setActiveOrder(active || null);
 
@@ -254,32 +383,85 @@ export default function Cafeteria() {
     } finally {
       setLoading(false);
     }
-  }, [profile?.id]);
+  }, []);
+
+  // Load saved item preferences (bread slices/toast prefs)
+  useEffect(() => {
+    if (!session) return;
+    supabase
+      .from('employee_cafeteria_preferences')
+      .select('item_prefs')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.item_prefs) setItemPrefs(data.item_prefs);
+      })
+      .catch(() => {});
+  }, [session]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Cart handlers
-  const addToCart  = (id) => setCart((c) => ({ ...c, [id]: (c[id] || 0) + 1 }));
-  const removeFromCart = (id) =>
-    setCart((c) => { const n = { ...c }; if (n[id] > 1) n[id]--; else delete n[id]; return n; });
+  // Save a single item preference to DB
+  async function saveItemPref(itemName, pref) {
+    const key = itemName.toLowerCase();
+    const updated = { ...itemPrefs, [key]: pref };
+    setItemPrefs(updated);
+    if (!session) return;
+    await supabase
+      .from('employee_cafeteria_preferences')
+      .upsert({ user_id: session.user.id, item_prefs: updated }, { onConflict: 'user_id' })
+      .catch(() => {});
+  }
 
-  // Place order from cart
+  // ── Cart handlers ───────────────────────────────────────────────────────────
+  function handleAdd(item) {
+    if (isBreadItem(item.item_name)) {
+      // Show customization sheet instead of adding directly
+      setCustomTarget(item);
+    } else {
+      setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 }));
+    }
+  }
+
+  function handleBreadConfirm({ instruction, pref }) {
+    const item = customTarget;
+    if (!item) return;
+    setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 }));
+    setCustomizations((c) => ({ ...c, [item.id]: instruction }));
+    if (pref) saveItemPref(item.item_name, pref);
+    setCustomTarget(null);
+  }
+
+  function removeFromCart(id) {
+    setCart((c) => {
+      const n = { ...c };
+      if (n[id] > 1) n[id]--;
+      else {
+        delete n[id];
+        setCustomizations((cc) => { const nc = { ...cc }; delete nc[id]; return nc; });
+      }
+      return n;
+    });
+  }
+
+  // ── Place order ─────────────────────────────────────────────────────────────
   async function placeOrder({ location, note, cartItems }) {
     setOrderBusy(true);
     setErrorMsg('');
     try {
-      // Fire one quick-order request per line item
       let lastReq = null;
-      for (const { item, qty } of cartItems) {
+      for (const { item, qty, customNote } of cartItems) {
+        const instruction = [customNote, note].filter(Boolean).join('. ');
         const r = await api.quickOrder({
           quick_item:        item.item_name,
           quick_location:    location,
           quick_quantity:    qty,
-          quick_instruction: note || '',
+          quick_instruction: instruction,
         });
         lastReq = r?.request;
       }
       setCart({});
+      setCustomizations({});
       setShowSheet(false);
       setSuccessMsg('Order placed! 🚀');
       setTimeout(() => {
@@ -293,7 +475,7 @@ export default function Cafeteria() {
     }
   }
 
-  // Custom text request
+  // ── Custom AI request ────────────────────────────────────────────────────────
   async function submitCustom(e) {
     e?.preventDefault();
     setCustomBusy(true);
@@ -304,9 +486,7 @@ export default function Cafeteria() {
       if (r.needs_followup) {
         setErrorMsg(`🤔 ${r.followup}`);
       } else {
-        setCustomText('');
-        setCustomLoc('');
-        setShowCustom(false);
+        setCustomText(''); setCustomLoc(''); setShowCustom(false);
         navigate(`/track/${r.request.id}`);
       }
     } catch (e) {
@@ -316,7 +496,7 @@ export default function Cafeteria() {
     }
   }
 
-  // Group items by category
+  // ── Group items by category ──────────────────────────────────────────────────
   const grouped = items.reduce((acc, item) => {
     const cat = item.category || 'other';
     if (!acc[cat]) acc[cat] = [];
@@ -324,7 +504,11 @@ export default function Cafeteria() {
     return acc;
   }, {});
 
-  const catOrder = ['beverage', 'food', 'snack', 'meal', 'stationery', 'cleaning', 'other'];
+  const catOrder  = ['beverage', 'food', 'snack', 'meal', 'stationery', 'cleaning', 'other'];
+  const catLabels = {
+    beverage: 'Drinks', food: 'Food', snack: 'Snacks', meal: 'Meals',
+    stationery: 'Stationery', cleaning: 'Cleaning', other: 'Other',
+  };
   const sortedGroups = catOrder.filter((c) => grouped[c]?.length);
 
   if (loading) return (
@@ -342,9 +526,7 @@ export default function Cafeteria() {
         <h1 className="text-2xl font-extrabold text-slate-900">
           {greeting.emoji} {greeting.text}, {firstName}!
         </h1>
-        <p className="text-slate-500 text-sm mt-1">
-          What can we get you today?
-        </p>
+        <p className="text-slate-500 text-sm mt-1">What can we get you today?</p>
       </div>
 
       {/* ── Active order banner ── */}
@@ -355,7 +537,7 @@ export default function Cafeteria() {
         />
       )}
 
-      {/* ── Success / Error flash ── */}
+      {/* ── Flash messages ── */}
       <AnimatePresence>
         {successMsg && (
           <motion.div
@@ -384,30 +566,23 @@ export default function Cafeteria() {
         <section key={cat}>
           <div className="flex items-center gap-2 mb-3">
             <span className="text-lg">{CATEGORY_EMOJI[cat]}</span>
-            <h2 className="font-extrabold text-slate-800 capitalize text-sm tracking-wide">
-              {cat === 'beverage' ? 'Drinks' :
-               cat === 'food'    ? 'Food' :
-               cat === 'snack'   ? 'Snacks' :
-               cat === 'meal'    ? 'Meals' :
-               cat === 'stationery' ? 'Stationery' :
-               cat === 'cleaning'   ? 'Cleaning' : 'Other'}
-            </h2>
+            <h2 className="font-extrabold text-slate-800 text-sm tracking-wide">{catLabels[cat]}</h2>
             <div className="h-px flex-1 bg-slate-100" />
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-            {grouped[cat].map((item) => (
-              <ItemChip
-                key={item.id}
-                item={item}
-                qty={cart[item.id] || 0}
-                onAdd={() => addToCart(item.id)}
-                onRemove={() => removeFromCart(item.id)}
-                onQuickOrder={() => {
-                  setCart({ [item.id]: 1 });
-                  setShowSheet(true);
-                }}
-              />
-            ))}
+            {grouped[cat].map((item) => {
+              const isOut = item.stock_today !== null && item.stock_today !== undefined && item.stock_today <= 0;
+              return (
+                <ItemChip
+                  key={item.id}
+                  item={item}
+                  qty={cart[item.id] || 0}
+                  outOfStock={isOut}
+                  onAdd={() => handleAdd(item)}
+                  onRemove={() => removeFromCart(item.id)}
+                />
+              );
+            })}
           </div>
         </section>
       ))}
@@ -459,9 +634,7 @@ export default function Cafeteria() {
                       type="button"
                       onClick={() => setCustomLoc(loc === customLoc ? '' : loc)}
                       className={`text-xs px-2 py-2 rounded-xl border-2 font-semibold transition-all ${
-                        customLoc === loc
-                          ? 'bg-brand text-white border-brand'
-                          : 'bg-white text-slate-600 border-slate-100 hover:border-brand/30'
+                        customLoc === loc ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-100 hover:border-brand/30'
                       }`}
                     >
                       {loc}
@@ -499,9 +672,7 @@ export default function Cafeteria() {
                 className="w-full flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 hover:border-brand/30 transition-all group"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-lg">
-                    {r.status === 'done' ? '✅' : '❌'}
-                  </span>
+                  <span className="text-lg">{r.status === 'done' ? '✅' : '❌'}</span>
                   <div className="text-left">
                     <div className="text-sm font-semibold text-slate-800">
                       {r.parsed_item || r.raw_text}
@@ -541,11 +712,24 @@ export default function Cafeteria() {
         )}
       </AnimatePresence>
 
+      {/* ── Bread Customization Sheet ── */}
+      <AnimatePresence>
+        {customTarget && (
+          <BreadCustomSheet
+            item={customTarget}
+            savedPref={itemPrefs[customTarget.item_name?.toLowerCase()]}
+            onConfirm={handleBreadConfirm}
+            onClose={() => setCustomTarget(null)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Order Sheet ── */}
       <AnimatePresence>
         {showSheet && (
           <OrderSheet
             cart={cart}
+            customizations={customizations}
             items={items}
             onClose={() => setShowSheet(false)}
             onConfirm={placeOrder}

@@ -34,10 +34,16 @@ router.post('/items', requireRole('leadership'), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// PATCH /api/cafeteria/items/:id — leadership only
-router.patch('/items/:id', requireRole('leadership'), async (req, res, next) => {
+// PATCH /api/cafeteria/items/:id
+// stock_today + stock_note: office_boy / facility_manager / leadership
+// all other fields: leadership only
+router.patch('/items/:id', requireRole('office_boy', 'facility_manager', 'leadership'), async (req, res, next) => {
   try {
-    const allowed = ['item_name', 'category', 'emoji', 'description', 'available', 'tags', 'sort_order'];
+    const isLeadership = ['leadership'].includes(req.user.role);
+    // Non-leadership can only update stock fields
+    const stockOnly = ['stock_today', 'stock_note'];
+    const fullAllowed = ['item_name', 'category', 'emoji', 'description', 'available', 'tags', 'sort_order', 'stock_today', 'stock_note'];
+    const allowed = isLeadership ? fullAllowed : stockOnly;
     const update = Object.fromEntries(
       Object.entries(req.body).filter(([k]) => allowed.includes(k))
     );
