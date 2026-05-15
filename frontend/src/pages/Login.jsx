@@ -37,34 +37,22 @@ export default function Login() {
     setStep('password');
   }
 
-  // Step 2 → verify password then send OTP to their email
+  // Step 2 → check shared password locally, then send OTP
   async function submitPassword(e) {
     e.preventDefault();
     setErr('');
-    setBusy(true);
 
-    // First verify password is correct
-    const { error: signInErr } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (signInErr) {
-      setBusy(false);
-      if (signInErr.message.toLowerCase().includes('invalid')) {
-        setErr('Wrong password. Default password is Lovefood — ask your admin if stuck.');
-      } else {
-        setErr(signInErr.message);
-      }
+    // Shared access password — gate before sending OTP
+    if (password !== 'Lovefood') {
+      setErr('Wrong password. Default password is Lovefood — ask your admin if stuck.');
       return;
     }
 
-    // Password correct — sign back out and send OTP as second factor
-    await supabase.auth.signOut();
-
+    setBusy(true);
+    // Send OTP — auto-creates account on first login for @applywizz.ai
     const { error: otpErr } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false },
+      options: { shouldCreateUser: true },
     });
 
     setBusy(false);

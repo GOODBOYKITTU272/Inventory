@@ -22,7 +22,7 @@ export function useAuth() {
       for (let i = 0; i < 3; i++) {
         const { data } = await supabase
           .from('profiles')
-          .select('id, full_name, role, email')
+          .select('id, full_name, preferred_name, role, email')
           .eq('id', userId)
           .maybeSingle();
         if (data) {
@@ -31,6 +31,23 @@ export function useAuth() {
         }
         if (i < 2) await new Promise(r => setTimeout(r, 1200));
       }
+      // No profile after retries — auto-create as staff (first-time @applywizz.ai login)
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: created } = await supabase
+            .from('profiles')
+            .insert({
+              id:        userId,
+              full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'New User',
+              role:      'staff',
+              email:     user.email,
+            })
+            .select()
+            .single();
+          if (created && !cancelled) { setProfile(created); return; }
+        }
+      } catch (_) {}
       if (!cancelled) setProfile(null);
     }
 
