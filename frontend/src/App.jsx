@@ -118,6 +118,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/set-password" element={<Navigate to="/login" replace />} />
       <Route
         element={
           <Protected>

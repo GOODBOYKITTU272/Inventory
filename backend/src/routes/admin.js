@@ -5,8 +5,6 @@ import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-const DEFAULT_PASSWORD = 'Lovefood';
-
 const roleEnum = z.enum(['facility_manager', 'finance', 'leadership', 'staff', 'office_boy']);
 
 // Every admin route is leadership-only.
@@ -62,7 +60,7 @@ router.patch('/users/:id/role', async (req, res, next) => {
   }
 });
 
-// POST /api/admin/users/create  - create user with email + default password "Lovefood"
+// POST /api/admin/users/create  - pre-create user for email-link login
 router.post('/users/create', async (req, res, next) => {
   try {
     const schema = z.object({
@@ -72,10 +70,9 @@ router.post('/users/create', async (req, res, next) => {
     });
     const { email, role, full_name } = schema.parse(req.body);
 
-    // 1. Create the auth user with default password — email auto-confirmed
+    // 1. Create the auth user. Users sign in by email link.
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password:      DEFAULT_PASSWORD,
       email_confirm: true,
       user_metadata: { full_name },
     });

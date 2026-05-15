@@ -31,7 +31,7 @@ const roleDisplay = {
   facility_manager: 'Office Boy',
   finance:          'Accounts Team',
   office_boy:       'Office Boy',
-  staff:            'Employee',
+  staff:            'Team Member',
 };
 
 export default function Layout() {
