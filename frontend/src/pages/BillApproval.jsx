@@ -57,13 +57,13 @@ export default function BillApproval() {
 
   return (
     <div className="space-y-8 pb-20">
-      <div className="flex justify-between items-end">
+      <div className="flex flex-wrap justify-between items-start gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Bill Approvals</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Bill Approvals</h1>
           <p className="text-slate-500">Verify extracted data and approve vendor payments.</p>
         </div>
-        <div className="bg-amber-100 text-amber-800 px-4 py-2 rounded-xl text-sm font-bold border border-amber-200">
-          {pendingCount} Pending Verification
+        <div className="bg-amber-100 text-amber-800 px-4 py-2 rounded-xl text-sm font-bold border border-amber-200 shrink-0">
+          {pendingCount} Pending
         </div>
       </div>
 
@@ -111,25 +111,25 @@ export default function BillApproval() {
                 exit={{ opacity: 0, x: -20 }}
                 className="card p-0 overflow-hidden sticky top-6"
               >
-                <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 flex flex-wrap justify-between items-start gap-3">
                   <div>
-                    <h3 className="text-xl font-bold text-slate-900">{selectedBill.vendor_name}</h3>
+                    <h3 className="text-lg sm:text-xl font-bold text-slate-900">{selectedBill.vendor_name}</h3>
                     <p className="text-xs text-slate-500">Uploaded by {selectedBill.uploaded_by_name}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <button 
-                      className="btn-secondary text-rose-600 border-rose-100 hover:bg-rose-50"
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="btn-secondary text-rose-600 border-rose-100 hover:bg-rose-50 text-sm"
                       onClick={() => updateBillStatus(selectedBill.id, 'Rejected', 'Rejected')}
                       disabled={busy}
                     >
-                      <XCircle size={18} /> Reject
+                      <XCircle size={16} /> Reject
                     </button>
-                    <button 
-                      className="btn-primary"
+                    <button
+                      className="btn-primary text-sm"
                       onClick={() => updateBillStatus(selectedBill.id, 'Admin Verified', 'Pending Accounts Approval')}
                       disabled={busy}
                     >
-                      <CheckCircle size={18} /> Approve Data
+                      <CheckCircle size={16} /> Approve
                     </button>
                   </div>
                 </div>
