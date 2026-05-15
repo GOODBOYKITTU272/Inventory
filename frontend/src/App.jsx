@@ -1,5 +1,6 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { supabase } from './lib/supabase.js';
 import Layout from './components/Layout.jsx';
 import LoginPage from './pages/Login.jsx';
 import DashboardPage from './pages/Dashboard.jsx';
@@ -32,9 +33,25 @@ function Protected({ children, allow }) {
 
 /** Redirect to the right home page based on role */
 function RoleHome() {
-  const { profile, loading } = useAuth();
-  if (loading) return <div className="p-8 text-slate-500">Loading...</div>;
-  if (!profile) return <Navigate to="/login" replace />;
+  const { session, profile, loading } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
+
+  // Session exists but no profile after retries = deleted/orphaned account → sign out
+  useEffect(() => {
+    if (!loading && session && !profile && !signingOut) {
+      setSigningOut(true);
+      supabase.auth.signOut();
+    }
+  }, [loading, session, profile, signingOut]);
+
+  if (loading || signingOut) return (
+    <div className="min-h-screen grid place-items-center bg-white">
+      <div className="w-6 h-6 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+    </div>
+  );
+  if (!session) return <Navigate to="/login" replace />;
+  if (!profile)  return <Navigate to="/login" replace />;
+
   const roleHome = {
     leadership:       '/dashboard',
     finance:          '/dashboard',
