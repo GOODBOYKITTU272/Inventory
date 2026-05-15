@@ -18,12 +18,20 @@ export function useAuth() {
     }
 
     async function loadProfile(userId) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, full_name, role')
-        .eq('id', userId)
-        .single();
-      if (!cancelled) setProfile(data);
+      // Retry up to 3 times — the DB trigger may take a moment to create the profile
+      for (let i = 0; i < 3; i++) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, email')
+          .eq('id', userId)
+          .maybeSingle();
+        if (data) {
+          if (!cancelled) setProfile(data);
+          return;
+        }
+        if (i < 2) await new Promise(r => setTimeout(r, 1200));
+      }
+      if (!cancelled) setProfile(null);
     }
 
     bootstrap();

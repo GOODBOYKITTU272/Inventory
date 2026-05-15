@@ -4,8 +4,9 @@ import { useAuth } from '../hooks/useAuth.js';
 
 // DB value : display label
 const ROLE_OPTIONS = [
-  { value: 'leadership',       label: 'Leadership (COO / Admin)' },
-  { value: 'facility_manager', label: 'Facility Manager (inventory + office boy)' },
+  { value: 'leadership',       label: 'Leadership (Admin)' },
+  { value: 'facility_manager', label: 'Facility Manager' },
+  { value: 'office_boy',       label: 'Office Boy' },
   { value: 'finance',          label: 'Finance' },
   { value: 'staff',            label: 'Employee' },
 ];
@@ -15,8 +16,8 @@ function RolePill({ role }) {
   const cls = {
     leadership:       'bg-violet-100 text-violet-800',
     facility_manager: 'bg-emerald-100 text-emerald-800',
-    finance:          'bg-blue-100 text-blue-800',
     office_boy:       'bg-amber-100 text-amber-800',
+    finance:          'bg-blue-100 text-blue-800',
     staff:            'bg-slate-100 text-slate-700',
   }[role] || 'bg-slate-100 text-slate-700';
   return <span className={`pill ${cls}`}>{ROLE_LABEL[role] || role}</span>;
