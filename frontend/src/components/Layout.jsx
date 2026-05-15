@@ -16,7 +16,7 @@ const labels = {
   '/finance':       'Finance',
   '/available':     "What's Available",
   '/admin':         'Admin',
-  '/request':       'Request',
+  '/request':       'Cafeteria',
   '/queue':         'Queue',
   '/bills':         'Bills',
   '/bills/approve': 'Verify Bills',
