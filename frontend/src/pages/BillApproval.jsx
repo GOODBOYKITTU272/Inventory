@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import WakingUp from '../components/WakingUp.jsx';
 import { api } from '../lib/api.js';
 import { supabase } from '../lib/supabase.js';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -51,7 +52,15 @@ export default function BillApproval() {
     }
   }
 
-  if (loading) return <div className="p-8 text-center text-slate-500">Loading bills for approval...</div>;
+  if (loading) return (
+    <>
+      <WakingUp loading={loading} />
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+        <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
+        <span className="text-sm">Loading bills…</span>
+      </div>
+    </>
+  );
 
   const pendingCount = bills.filter(b => b.verification_status === 'Pending Admin Verification').length;
 

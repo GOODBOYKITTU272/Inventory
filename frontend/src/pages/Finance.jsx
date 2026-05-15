@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import WakingUp from '../components/WakingUp.jsx';
 
 const fmt = (n) => new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', maximumFractionDigits: 0,
@@ -66,8 +67,16 @@ export default function Finance() {
     }
   }
 
-  if (err) return <div className="text-rose-600">{err}</div>;
-  if (!data) return <div className="text-slate-500">Loading spending…</div>;
+  if (err) return <div className="text-rose-600 p-4">{err}</div>;
+  if (!data) return (
+    <>
+      <WakingUp loading={!data} />
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+        <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
+        <span className="text-sm">Loading spending…</span>
+      </div>
+    </>
+  );
 
   const months = [...new Set(data.rows.map((r) => r.month))].sort();
   const chartData = months.map((m) => {
