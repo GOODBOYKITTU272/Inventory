@@ -28,6 +28,8 @@ async function request(path, opts = {}) {
 }
 
 export const api = {
+  startOtp:      (email)          => request('/api/auth/start-otp', { method: 'POST', body: JSON.stringify({ email }) }),
+
   listProducts:    ()             => request('/api/products'),
   createProduct:   (body)         => request('/api/products', { method: 'POST', body: JSON.stringify(body) }),
   updateProduct:   (id, body)     => request(`/api/products/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),

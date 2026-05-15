@@ -14,6 +14,7 @@ import transactionsRouter from './routes/transactions.js';
 import reportsRouter from './routes/reports.js';
 import aiSummaryRouter from './routes/aiSummary.js';
 import adminRouter from './routes/admin.js';
+import authRouter from './routes/auth.js';
 import requestsRouter from './routes/requests.js';
 import billsRouter from './routes/bills.js';
 import billWebhookRouter from './routes/billWebhook.js';
@@ -30,7 +31,11 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173')
   .split(',')
-  .map((o) => o.trim());
+  .map((o) => o.trim().replace(/\/$/, ''));
+
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173');
+}
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -55,6 +60,7 @@ app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOStrin
 
 app.use('/api/bills/webhook', billWebhookRouter);
 app.use('/api/telegram/webhook', telegramWebhookRouter);
+app.use('/api/auth', authRouter);
 
 app.use('/api', authMiddleware);
 app.use('/api/products',     productsRouter);

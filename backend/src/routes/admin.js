@@ -1,11 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { randomBytes } from 'crypto';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
-
-const DEFAULT_PASSWORD = 'Lovefood';
 
 const roleEnum = z.enum(['facility_manager', 'finance', 'leadership', 'staff', 'office_boy']);
 
@@ -62,7 +61,7 @@ router.patch('/users/:id/role', async (req, res, next) => {
   }
 });
 
-// POST /api/admin/users/create  - create user with email + default password "Lovefood"
+// POST /api/admin/users/create  - pre-create user for email OTP login
 router.post('/users/create', async (req, res, next) => {
   try {
     const schema = z.object({
@@ -72,10 +71,10 @@ router.post('/users/create', async (req, res, next) => {
     });
     const { email, role, full_name } = schema.parse(req.body);
 
-    // 1. Create the auth user with default password — email auto-confirmed
+    // 1. Create the auth user with an unshared random password. Users sign in with OTP only.
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password:      DEFAULT_PASSWORD,
+      password:      randomBytes(24).toString('base64url'),
       email_confirm: true,
       user_metadata: { full_name },
     });
