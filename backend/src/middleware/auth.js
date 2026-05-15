@@ -17,7 +17,7 @@ export async function authMiddleware(req, res, next) {
 
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from('profiles')
-      .select('id, full_name, role')
+      .select('id, full_name, preferred_name, role')
       .eq('id', userData.user.id)
       .single();
 
