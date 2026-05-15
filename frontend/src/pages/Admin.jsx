@@ -53,14 +53,15 @@ export default function Admin() {
 
   async function onInvite(e) {
     e.preventDefault();
+    if (!inviteName.trim()) { setErr('Full name is required.'); return; }
     setBusy(true); setErr(''); setOkMsg('');
     try {
-      await api.inviteUser({
-        email: inviteEmail.trim(),
-        role: inviteRole,
-        full_name: inviteName.trim() || undefined,
+      await api.createUser({
+        email:     inviteEmail.trim(),
+        role:      inviteRole,
+        full_name: inviteName.trim(),
       });
-      setOkMsg(`Invited ${inviteEmail}.`);
+      setOkMsg(`✅ ${inviteName} added! They can log in with email "${inviteEmail}" and password "Lovefood".`);
       setInviteEmail(''); setInviteName(''); setInviteRole('staff');
       await load();
     } catch (e) { setErr(e.message); }
@@ -81,25 +82,29 @@ export default function Admin() {
       {err   && <div className="text-sm text-rose-700 bg-rose-50 p-3 rounded-md">{err}</div>}
 
       <div className="card">
-        <h2 className="font-semibold mb-3">Invite a user</h2>
+        <h2 className="font-semibold mb-1">Add a team member</h2>
+        <p className="text-xs text-slate-500 mb-4">
+          Creates their account instantly. Default password is{' '}
+          <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-700">Lovefood</code>
+          {' '}— tell them verbally. They can change it from Settings.
+        </p>
         <form onSubmit={onInvite} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-          <input type="email" required placeholder="name@applywizz.ai"
-            className="input sm:col-span-5"
-            value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
-          <input type="text" placeholder="Full name (optional)"
+          <input type="text" required placeholder="Full name"
             className="input sm:col-span-3"
             value={inviteName} onChange={(e) => setInviteName(e.target.value)} />
-          <select className="input sm:col-span-2" value={inviteRole}
+          <input type="email" required placeholder="their@email.com"
+            className="input sm:col-span-4"
+            value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+          <select className="input sm:col-span-3" value={inviteRole}
             onChange={(e) => setInviteRole(e.target.value)}>
             {ROLE_OPTIONS.map((r) => (
               <option key={r.value} value={r.value}>{r.label}</option>
             ))}
           </select>
           <button className="btn-primary sm:col-span-2" disabled={busy}>
-            {busy ? 'Sending...' : 'Invite'}
+            {busy ? 'Adding…' : '+ Add'}
           </button>
         </form>
-        <p className="mt-2 text-xs text-slate-500">Only @applywizz.ai addresses are allowed.</p>
       </div>
 
       <div className="card">

@@ -49,6 +49,7 @@ export const api = {
 
   listUsers:    ()                => request('/api/admin/users'),
   setUserRole:  (userId, role)    => request(`/api/admin/users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+  createUser:   (body)            => request('/api/admin/users/create', { method: 'POST', body: JSON.stringify(body) }),
   inviteUser:   (body)            => request('/api/admin/users/invite', { method: 'POST', body: JSON.stringify(body) }),
 
   submitRequest:   (raw_text)        => request('/api/requests', { method: 'POST', body: JSON.stringify({ raw_text }) }),

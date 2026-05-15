@@ -5,9 +5,9 @@ import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-const ALLOWED_DOMAIN = 'applywizz.ai';
+const DEFAULT_PASSWORD = 'Lovefood';
 
-const roleEnum = z.enum(['facility_manager', 'finance', 'leadership', 'staff']);
+const roleEnum = z.enum(['facility_manager', 'finance', 'leadership', 'staff', 'office_boy']);
 
 // Every admin route is leadership-only.
 router.use(requireRole('leadership'));
@@ -62,6 +62,51 @@ router.patch('/users/:id/role', async (req, res, next) => {
   }
 });
 
+// POST /api/admin/users/create  - create user with email + default password "Lovefood"
+router.post('/users/create', async (req, res, next) => {
+  try {
+    const schema = z.object({
+      email:     z.string().email(),
+      role:      roleEnum.default('staff'),
+      full_name: z.string().min(1),
+    });
+    const { email, role, full_name } = schema.parse(req.body);
+
+    // 1. Create the auth user with default password — email auto-confirmed
+    const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password:      DEFAULT_PASSWORD,
+      email_confirm: true,
+      user_metadata: { full_name },
+    });
+
+    let userId = created?.user?.id;
+
+    if (createErr) {
+      // User already exists — look up their ID
+      if (String(createErr.message).toLowerCase().includes('already')) {
+        const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
+        userId = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id;
+        if (!userId) throw createErr;
+      } else {
+        throw createErr;
+      }
+    }
+
+    // 2. Upsert profile with name + role
+    const { data: profile, error: pErr } = await supabaseAdmin
+      .from('profiles')
+      .upsert({ id: userId, full_name, role }, { onConflict: 'id' })
+      .select()
+      .single();
+    if (pErr) throw pErr;
+
+    res.status(201).json({ ok: true, user_id: userId, email, role, profile });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // POST /api/admin/users/invite  - pre-create an auth user + send Supabase invite email
 // The invite email contains a magic link; user can either use it OR sign in with Microsoft —
 // either way Supabase will match by email.
@@ -73,12 +118,6 @@ router.post('/users/invite', async (req, res, next) => {
       full_name: z.string().optional(),
     });
     const { email, role, full_name } = schema.parse(req.body);
-
-    if (!email.toLowerCase().endsWith('@' + ALLOWED_DOMAIN)) {
-      return res
-        .status(400)
-        .json({ error: `Email must end with @${ALLOWED_DOMAIN}` });
-    }
 
     // 1. Send the invite (creates a pending auth.users row)
     const { data: invited, error: invErr } =
