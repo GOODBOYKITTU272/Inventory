@@ -61,7 +61,7 @@ router.patch('/users/:id/role', async (req, res, next) => {
   }
 });
 
-// POST /api/admin/users/create  - pre-create user for email OTP login
+// POST /api/admin/users/create  - pre-create user for password setup login
 router.post('/users/create', async (req, res, next) => {
   try {
     const schema = z.object({
@@ -71,7 +71,7 @@ router.post('/users/create', async (req, res, next) => {
     });
     const { email, role, full_name } = schema.parse(req.body);
 
-    // 1. Create the auth user with an unshared random password. Users sign in with OTP only.
+    // 1. Create the auth user with an unshared random password. Users set their own password by email link.
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email,
       password:      randomBytes(24).toString('base64url'),

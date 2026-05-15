@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase.js';
 import Layout from './components/Layout.jsx';
 import LoginPage from './pages/Login.jsx';
+import SetPasswordPage from './pages/SetPassword.jsx';
 import DashboardPage from './pages/Dashboard.jsx';
 import DailyUpdatePage from './pages/DailyUpdate.jsx';
 import FinancePage from './pages/Finance.jsx';
@@ -118,6 +119,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/set-password" element={<SetPasswordPage />} />
       <Route
         element={
           <Protected>

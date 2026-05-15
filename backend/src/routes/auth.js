@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { randomBytes } from 'crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase.js';
 
@@ -43,7 +42,7 @@ async function ensureProfile(userId, email) {
   if (insertErr && insertErr.code !== '23505') throw insertErr;
 }
 
-router.post('/start-otp', async (req, res, next) => {
+router.post('/start-password-setup', async (req, res, next) => {
   try {
     const schema = z.object({ email: z.string().email() });
     const email = schema.parse(req.body).email.trim().toLowerCase();
@@ -52,37 +51,20 @@ router.post('/start-otp', async (req, res, next) => {
       return res.status(403).json({ error: `Only @${ALLOWED_DOMAIN} accounts are allowed.` });
     }
 
-    let user = await findUserByEmail(email);
+    const existingUser = await findUserByEmail(email);
+    if (existingUser) await ensureProfile(existingUser.id, email);
 
-    if (!user) {
-      const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password: randomBytes(24).toString('base64url'),
-        email_confirm: true,
-        user_metadata: { full_name: displayNameFromEmail(email) },
-      });
-      if (createErr) throw createErr;
-      user = created.user;
-    } else if (!user.email_confirmed_at) {
-      const { data: updated, error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(
-        user.id,
-        { email_confirm: true },
-      );
-      if (updateErr) throw updateErr;
-      user = updated.user;
-    }
-
-    await ensureProfile(user.id, email);
-
-    const { error: otpErr } = await supabaseAdmin.auth.signInWithOtp({
+    const origin = (req.get('origin') || process.env.ALLOWED_ORIGINS?.split(',')[0] || '')
+      .replace(/\/$/, '');
+    const { error: linkErr } = await supabaseAdmin.auth.signInWithOtp({
       email,
       options: {
-        shouldCreateUser: false,
-        emailRedirectTo: req.get('origin') || process.env.ALLOWED_ORIGINS?.split(',')[0],
+        shouldCreateUser: true,
+        emailRedirectTo: origin ? `${origin}/set-password` : undefined,
       },
     });
 
-    if (otpErr) throw otpErr;
+    if (linkErr) throw linkErr;
 
     res.json({ ok: true, email });
   } catch (e) {

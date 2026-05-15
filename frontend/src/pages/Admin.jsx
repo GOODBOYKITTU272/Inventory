@@ -74,7 +74,7 @@ export default function Admin() {
         role: inviteRole,
         full_name: inviteName.trim(),
       });
-      setOkMsg(`${inviteName} added. They can log in with email "${inviteEmail}" and a 6-digit OTP.`);
+      setOkMsg(`${inviteName} added. They can use the password setup link from login to create their password.`);
       setInviteEmail('');
       setInviteName('');
       setInviteRole('staff');
@@ -102,7 +102,7 @@ export default function Admin() {
       <div className="card">
         <h2 className="font-semibold mb-1">Add a team member</h2>
         <p className="text-xs text-slate-500 mb-4">
-          Creates their account instantly. They sign in with their company email and a 6-digit OTP.
+          Creates their account instantly. They can create a password from the login page setup link.
         </p>
         <form onSubmit={onInvite} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           <input
