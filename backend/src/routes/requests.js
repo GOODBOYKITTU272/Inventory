@@ -13,7 +13,7 @@ const ITEM_CATEGORY = {
   'ccd coffee': 'beverage', 'regular tea': 'beverage', 'lemon tea': 'beverage',
   'water bottle': 'beverage', 'water': 'beverage', 'tea': 'beverage', 'coffee': 'beverage',
   'bread + peanut butter': 'food', 'bread + jam': 'food', 'bread': 'food',
-  'biscuits': 'snack', 'fruits': 'snack', 'lunch': 'meal',
+  'biscuits': 'snack', 'black coffee': 'beverage',
   'stationery': 'stationery', 'cleaning': 'cleaning',
   'maintenance': 'maintenance', 'meeting room setup': 'other',
 };
@@ -101,7 +101,7 @@ router.post('/', async (req, res, next) => {
         .single();
       if (qErr) throw qErr;
 
-      postRequestToTeams({ ...qData, priority: 'Normal', quantity: String(quick_quantity) }).catch(() => {});
+      postRequestToTeams({ ...qData, priority: 'Normal', quantity: String(quick_quantity) }).catch((e) => console.error('[Teams quick-order]', e.message));
       return res.status(201).json({ needs_followup: false, request: qData });
     }
 

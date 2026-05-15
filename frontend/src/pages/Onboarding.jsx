@@ -18,8 +18,6 @@ const SNACK_OPTS = [
   { id: 'Bread + Peanut Butter', emoji: '🥜', label: 'Bread + PB' },
   { id: 'Bread + Jam',           emoji: '🍓', label: 'Bread + Jam' },
   { id: 'Biscuits',              emoji: '🍪', label: 'Biscuits' },
-  { id: 'Fruits',                emoji: '🍎', label: 'Fruits' },
-  { id: 'Lunch',                 emoji: '🍱', label: 'Lunch' },
   { id: 'none',                  emoji: '🚫', label: 'No Snacks' },
 ];
 

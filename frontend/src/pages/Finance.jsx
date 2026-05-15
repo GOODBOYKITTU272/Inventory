@@ -119,23 +119,56 @@ export default function Finance() {
 
       {/* Bar chart */}
       <div className="card">
-        <h2 className="font-semibold mb-3">Spending by month &amp; category</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <h2 className="font-semibold">Spending by month &amp; category</h2>
+          <div className="flex flex-wrap gap-2">
+            {categories.map((c) => (
+              <span key={c} className="flex items-center gap-1.5 text-xs text-slate-500">
+                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: palette[c] || '#64748b' }} />
+                {c.replace(/_/g, ' ')}
+              </span>
+            ))}
+          </div>
+        </div>
         {chartData.length === 0 ? (
-          <div className="text-slate-500 text-sm">
+          <div className="text-slate-400 text-sm text-center py-12">
             No transactions yet — once the facility manager submits daily updates,
             spending will appear here.
           </div>
         ) : (
-          <div className="h-72">
-            <ResponsiveContainer>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => fmt(v)} />
-                <Tooltip formatter={(v) => fmt(v)} />
-                <Legend />
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={chartData}
+                maxBarSize={72}
+                margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => {
+                    const [y, m] = v.split('-');
+                    const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                    return `${mn[parseInt(m,10)-1]} ${y}`;
+                  }}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => v >= 1000 ? `₹${(v/1000).toFixed(0)}k` : `₹${v}`}
+                  width={48}
+                />
+                <Tooltip
+                  formatter={(v, name) => [fmt(v), name.replace(/_/g, ' ')]}
+                  contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 4px 20px #0001', fontSize: 12 }}
+                  cursor={{ fill: '#f8fafc' }}
+                />
                 {categories.map((c) => (
-                  <Bar key={c} dataKey={c} stackId="a" fill={palette[c] || '#64748b'} />
+                  <Bar key={c} dataKey={c} stackId="a" fill={palette[c] || '#64748b'} radius={categories.indexOf(c) === categories.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
