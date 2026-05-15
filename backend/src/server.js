@@ -12,11 +12,16 @@ import productsRouter from './routes/products.js';
 import inventoryRouter from './routes/inventory.js';
 import transactionsRouter from './routes/transactions.js';
 import reportsRouter from './routes/reports.js';
+import aiSummaryRouter from './routes/aiSummary.js';
+import adminRouter from './routes/admin.js';
+import requestsRouter from './routes/requests.js';
+import billsRouter from './routes/bills.js';
+import billWebhookRouter from './routes/billWebhook.js';
+import telegramWebhookRouter from './routes/telegramWebhook.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// ---- security & utility middleware
 app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
@@ -27,7 +32,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173')
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true);            // server-to-server / curl
+      if (!origin) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`CORS: origin ${origin} not allowed`));
     },
@@ -44,20 +49,23 @@ app.use(
   }),
 );
 
-// ---- public
 app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
-// ---- protected
-app.use('/api', authMiddleware);
-app.use('/api/products', productsRouter);
-app.use('/api/inventory', inventoryRouter);
-app.use('/api/transactions', transactionsRouter);
-app.use('/api/reports', reportsRouter);
+app.use('/api/bills/webhook', billWebhookRouter);
+app.use('/api/telegram/webhook', telegramWebhookRouter);
 
-// ---- error handler — must be LAST
+app.use('/api', authMiddleware);
+app.use('/api/products',     productsRouter);
+app.use('/api/inventory',    inventoryRouter);
+app.use('/api/transactions', transactionsRouter);
+app.use('/api/reports',      reportsRouter);
+app.use('/api/reports',      aiSummaryRouter);
+app.use('/api/admin',        adminRouter);
+app.use('/api/requests',     requestsRouter);
+app.use('/api/bills',        billsRouter);
+
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
   console.log(`[applyways-api] listening on http://localhost:${PORT}`);
 });

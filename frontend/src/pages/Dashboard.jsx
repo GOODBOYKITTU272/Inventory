@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { useAuth } from '../hooks/useAuth.js';
 
 function StatCard({ label, value, tone = 'slate' }) {
   const tones = {
-    slate:   'bg-slate-50 text-slate-700',
-    green:   'bg-emerald-50 text-emerald-700',
-    amber:   'bg-amber-50 text-amber-700',
-    rose:    'bg-rose-50 text-rose-700',
-    orange:  'bg-orange-50 text-orange-700',
+    slate:  'bg-slate-50 text-slate-700',
+    green:  'bg-emerald-50 text-emerald-700',
+    amber:  'bg-amber-50 text-amber-700',
+    rose:   'bg-rose-50 text-rose-700',
+    orange: 'bg-orange-50 text-orange-700',
   };
   return (
     <div className={`card ${tones[tone]}`}>
@@ -26,20 +27,77 @@ function StatusPill({ status }) {
     expiring_soon: 'pill-warn',
     fresh: 'pill-ok',
   };
-  const label = status?.replaceAll('_', ' ') || '—';
+  const label = status?.replaceAll('_', ' ') || '-';
   return <span className={map[status] || 'pill bg-slate-100 text-slate-700'}>{label}</span>;
 }
 
+function AISummaryCard() {
+  const [data, setData]   = useState(null);
+  const [err, setErr]     = useState('');
+  const [busy, setBusy]   = useState(false);
+
+  async function load(refresh = false) {
+    setErr(''); setBusy(true);
+    try {
+      const r = await api.aiSummary(refresh);
+      setData(r);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => { load(false); }, []);
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <h2 className="font-semibold">This week, at a glance</h2>
+          <div className="text-xs text-slate-400">
+            {data?.period_start ? `${data.period_start} → ${data.period_end}` : 'AI summary'}
+            {data?.from_cache && ' · cached'}
+          </div>
+        </div>
+        <button
+          onClick={() => load(true)}
+          disabled={busy}
+          className="btn-secondary text-xs px-3 py-1"
+        >
+          {busy ? 'Generating...' : 'Refresh'}
+        </button>
+      </div>
+      {err && (
+        <div className="text-xs text-rose-700 bg-rose-50 p-2 rounded">
+          {err.includes('OPENAI_API_KEY')
+            ? 'Add OPENAI_API_KEY to backend/.env to enable the AI summary.'
+            : err}
+        </div>
+      )}
+      {!err && !data && <div className="text-sm text-slate-500">Loading...</div>}
+      {data && (
+        <div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap">
+          {data.content}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
+  const { profile } = useAuth();
   const [data, setData] = useState(null);
-  const [err, setErr] = useState('');
+  const [err, setErr]   = useState('');
 
   useEffect(() => {
     api.dashboard().then(setData).catch((e) => setErr(e.message));
   }, []);
 
+  const canSeeAI = profile && ['leadership', 'finance'].includes(profile.role);
+
   if (err) return <div className="text-rose-600">{err}</div>;
-  if (!data) return <div className="text-slate-500">Loading dashboard…</div>;
+  if (!data) return <div className="text-slate-500">Loading dashboard...</div>;
 
   return (
     <div className="space-y-6">
@@ -47,6 +105,8 @@ export default function Dashboard() {
         <h1 className="text-2xl font-semibold">Inventory snapshot</h1>
         <p className="text-sm text-slate-500">Live view of pantry stock and freshness.</p>
       </div>
+
+      {canSeeAI && <AISummaryCard />}
 
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <StatCard label="Products"      value={data.summary.total_products} />
@@ -90,7 +150,7 @@ export default function Dashboard() {
                         )}
                       </span>
                     ) : (
-                      '—'
+                      '-'
                     )}
                   </td>
                 </tr>

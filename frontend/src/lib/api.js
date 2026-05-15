@@ -20,7 +20,7 @@ async function request(path, opts = {}) {
     try {
       const body = await res.json();
       if (body?.error) msg = body.error;
-    } catch { /* ignore */ }
+    } catch {}
     throw new Error(msg);
   }
   if (res.status === 204) return null;
@@ -28,24 +28,36 @@ async function request(path, opts = {}) {
 }
 
 export const api = {
-  // products
-  listProducts: ()           => request('/api/products'),
-  createProduct: (body)      => request('/api/products', { method: 'POST', body: JSON.stringify(body) }),
-  updateProduct: (id, body)  => request(`/api/products/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  listProducts:    ()             => request('/api/products'),
+  createProduct:   (body)         => request('/api/products', { method: 'POST', body: JSON.stringify(body) }),
+  updateProduct:   (id, body)     => request(`/api/products/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  // inventory
-  inventoryStatus: ()        => request('/api/inventory'),
-  alerts: ()                 => request('/api/inventory/alerts'),
-  dailyUpdate: (updates)     => request('/api/inventory/daily-update', { method: 'POST', body: JSON.stringify({ updates }) }),
+  inventoryStatus: ()             => request('/api/inventory'),
+  alerts:          ()             => request('/api/inventory/alerts'),
+  dailyUpdate:     (updates)      => request('/api/inventory/daily-update', { method: 'POST', body: JSON.stringify({ updates }) }),
 
-  // transactions
-  listTransactions: (q='')   => request(`/api/transactions${q ? `?${q}` : ''}`),
-  createTransaction: (body)  => request('/api/transactions', { method: 'POST', body: JSON.stringify(body) }),
+  listTransactions:(q='')         => request(`/api/transactions${q ? `?${q}` : ''}`),
+  createTransaction:(body)        => request('/api/transactions', { method: 'POST', body: JSON.stringify(body) }),
 
-  // reports
-  spending: (params={})      => {
+  spending: (params={}) => {
     const qs = new URLSearchParams(params).toString();
     return request(`/api/reports/spending${qs ? `?${qs}` : ''}`);
   },
-  dashboard: ()              => request('/api/reports/dashboard'),
+  dashboard:        ()                  => request('/api/reports/dashboard'),
+  aiSummary:        (refresh = false)   => request(`/api/reports/ai-summary${refresh ? '?refresh=true' : ''}`),
+  aiSummaryHistory: ()                  => request('/api/reports/ai-summary/history'),
+
+  listUsers:    ()                => request('/api/admin/users'),
+  setUserRole:  (userId, role)    => request(`/api/admin/users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+  inviteUser:   (body)            => request('/api/admin/users/invite', { method: 'POST', body: JSON.stringify(body) }),
+
+  submitRequest:   (raw_text)        => request('/api/requests', { method: 'POST', body: JSON.stringify({ raw_text }) }),
+  listRequests:    (status='')       => request(`/api/requests${status ? `?status=${status}` : ''}`),
+  setRequestStatus:(id, status, live_status, notes) =>
+    request(`/api/requests/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, live_status, notes }) }),
+  rateRequest: (id, body) => request(`/api/requests/${id}/rate`, { method: 'POST', body: JSON.stringify(body) }),
+
+  extractBill: (file_url) => request('/api/bills/extract', { method: 'POST', body: JSON.stringify({ file_url }) }),
+  listBills: () => request('/api/bills'),
+  updateBillStatus: (id, body) => request(`/api/bills/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
 };

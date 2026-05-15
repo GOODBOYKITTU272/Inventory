@@ -5,11 +5,20 @@ import DashboardPage from './pages/Dashboard.jsx';
 import DailyUpdatePage from './pages/DailyUpdate.jsx';
 import FinancePage from './pages/Finance.jsx';
 import StaffViewPage from './pages/StaffView.jsx';
+import AdminPage from './pages/Admin.jsx';
+import RequestSubmitPage from './pages/RequestSubmit.jsx';
+import RequestQueuePage from './pages/RequestQueue.jsx';
+import LiveTrackingPage from './pages/LiveTracking.jsx';
+import BillUploadPage from './pages/BillUpload.jsx';
+import BillApprovalPage from './pages/BillApproval.jsx';
+import PreferencesPage from './pages/Preferences.jsx';
+import AuditLogPage from './pages/AuditLog.jsx';
+import ConnectionsPage from './pages/Connections.jsx';
 import { useAuth } from './hooks/useAuth.js';
 
 function Protected({ children, allow }) {
   const { session, profile, loading } = useAuth();
-  if (loading) return <div className="p-8 text-slate-500">Loading…</div>;
+  if (loading) return <div className="p-8 text-slate-500">Loading...</div>;
   if (!session) return <Navigate to="/login" replace />;
   if (allow && profile && !allow.includes(profile.role)) {
     return <div className="p-8 text-rose-600">Access denied for role: {profile.role}</div>;
@@ -29,7 +38,49 @@ export default function App() {
         }
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route
+          path="/dashboard"
+          element={
+            <Protected allow={['facility_manager', 'finance', 'leadership']}>
+              <DashboardPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/available"
+          element={
+            <Protected allow={['facility_manager', 'finance', 'leadership', 'office_boy']}>
+              <StaffViewPage />
+            </Protected>
+          }
+        />
+        <Route path="/request"      element={<RequestSubmitPage />} />
+        <Route path="/track/:id"    element={<LiveTrackingPage />} />
+        <Route path="/settings"     element={<PreferencesPage />} />
+        <Route
+          path="/queue"
+          element={
+            <Protected allow={['office_boy', 'facility_manager', 'leadership']}>
+              <RequestQueuePage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/bills"
+          element={
+            <Protected allow={['office_boy', 'facility_manager', 'leadership', 'finance']}>
+              <BillUploadPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/bills/approve"
+          element={
+            <Protected allow={['leadership', 'finance']}>
+              <BillApprovalPage />
+            </Protected>
+          }
+        />
         <Route
           path="/daily-update"
           element={
@@ -46,7 +97,30 @@ export default function App() {
             </Protected>
           }
         />
-        <Route path="/available" element={<StaffViewPage />} />
+        <Route
+          path="/admin"
+          element={
+            <Protected allow={['leadership']}>
+              <AdminPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <Protected allow={['leadership']}>
+              <AuditLogPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/connections"
+          element={
+            <Protected allow={['leadership']}>
+              <ConnectionsPage />
+            </Protected>
+          }
+        />
       </Route>
     </Routes>
   );

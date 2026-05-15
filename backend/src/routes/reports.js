@@ -33,8 +33,8 @@ router.get('/spending', requireRole('finance', 'leadership'), async (req, res, n
   } catch (e) { next(e); }
 });
 
-// GET /api/reports/dashboard — leadership snapshot
-router.get('/dashboard', async (_req, res, next) => {
+// GET /api/reports/dashboard — inventory snapshot for operational roles
+router.get('/dashboard', requireRole('facility_manager', 'finance', 'leadership'), async (_req, res, next) => {
   try {
     const { data: statusRows, error: statusErr } = await supabaseAdmin
       .from('v_inventory_status')

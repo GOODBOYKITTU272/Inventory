@@ -3,27 +3,30 @@ import { Navigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../hooks/useAuth.js';
 
+const ALLOWED_DOMAIN = 'applywizz.ai';
+
 export default function Login() {
   const { session, loading } = useAuth();
-  const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (loading) return <div className="p-8 text-slate-500">Loading…</div>;
+  if (loading) return <div className="p-8 text-slate-500">Loading...</div>;
   if (session) return <Navigate to="/dashboard" replace />;
 
-  async function onSubmit(e) {
-    e.preventDefault();
+  async function signInWithMicrosoft() {
     setErr('');
     setBusy(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin + '/dashboard' },
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+      options: {
+        scopes: 'openid email profile',
+        redirectTo: window.location.origin + '/dashboard',
+      },
     });
-    setBusy(false);
-    if (error) setErr(error.message);
-    else setSent(true);
+    if (error) {
+      setBusy(false);
+      setErr(error.message);
+    }
   }
 
   return (
@@ -39,31 +42,31 @@ export default function Login() {
           </div>
         </div>
 
-        {sent ? (
-          <div className="text-sm text-emerald-700 bg-emerald-50 p-4 rounded-md">
-            Check your inbox — we sent a magic link to <strong>{email}</strong>.
-          </div>
-        ) : (
-          <form onSubmit={onSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Work email
-              </label>
-              <input
-                type="email"
-                required
-                className="input"
-                placeholder="you@applyways.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            {err && <div className="text-sm text-rose-600">{err}</div>}
-            <button className="btn-primary w-full" disabled={busy}>
-              {busy ? 'Sending…' : 'Send magic link'}
-            </button>
-          </form>
+        <p className="text-sm text-slate-600 mb-5">
+          Access is limited to @{ALLOWED_DOMAIN} accounts. Sign in with your Microsoft work account.
+        </p>
+
+        <button className="btn-primary w-full" onClick={signInWithMicrosoft} disabled={busy}>
+          {busy ? 'Redirecting...' : (
+            <>
+              <svg viewBox="0 0 23 23" className="w-4 h-4" aria-hidden="true">
+                <rect x="1"  y="1"  width="10" height="10" fill="#f25022" />
+                <rect x="12" y="1"  width="10" height="10" fill="#7fba00" />
+                <rect x="1"  y="12" width="10" height="10" fill="#00a4ef" />
+                <rect x="12" y="12" width="10" height="10" fill="#ffb900" />
+              </svg>
+              Sign in with Microsoft
+            </>
+          )}
+        </button>
+
+        {err && (
+          <div className="mt-4 text-sm text-rose-700 bg-rose-50 p-3 rounded-md">{err}</div>
         )}
+
+        <div className="mt-6 text-xs text-slate-400">
+          New here? Ask Ramakrishna to add you in the Admin panel after your first Microsoft sign-in.
+        </div>
       </div>
     </div>
   );

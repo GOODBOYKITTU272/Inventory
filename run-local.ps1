@@ -1,19 +1,4 @@
-# Applyways Pantry — One-shot local runner
-#
-# Run from PowerShell in C:\Users\DELL\Desktop\inventory:
-#   powershell -ExecutionPolicy Bypass -File .\run-local.ps1
-#
-# What it does, in order:
-#   1. Checks Node.js + npm are installed
-#   2. Force-deletes any leftover broken .git / rtk-template folders
-#   3. Prompts you for your Supabase URL + anon key + service role key
-#      (only on first run — re-use saved .env on subsequent runs)
-#   4. Writes backend\.env and frontend\.env.local
-#   5. Runs npm install in backend + frontend (skipped if already installed)
-#   6. Opens TWO new PowerShell windows running:
-#        - backend  on http://localhost:4000
-#        - frontend on http://localhost:5173
-#   7. Opens the frontend in your default browser
+# Applyways Pantry - One-shot local runner
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -35,7 +20,7 @@ function FailIfMissing($cmd, $hint) {
 
 Step "1. Checking prerequisites"
 FailIfMissing "node" "Install Node.js 18+ from https://nodejs.org and re-run."
-FailIfMissing "npm"  "npm comes with Node.js — reinstall Node from https://nodejs.org"
+FailIfMissing "npm"  "npm comes with Node.js - reinstall Node from https://nodejs.org"
 $nodeVer = (node --version)
 Write-Host ("  node version: {0}" -f $nodeVer)
 if ($nodeVer -match 'v(\d+)') {
@@ -46,7 +31,7 @@ if ($nodeVer -match 'v(\d+)') {
 }
 
 Step "2. Cleaning leftover broken folders"
-foreach ($p in @('.git', 'rtk-template')) {
+foreach ($p in @('rtk-template')) {
   $full = Join-Path $root $p
   if (Test-Path $full) {
     Write-Host "  removing $p"
@@ -56,7 +41,7 @@ foreach ($p in @('.git', 'rtk-template')) {
       }
       Remove-Item $full -Recurse -Force
     } catch {
-      Write-Host ("  WARN: couldn't remove {0}: {1}" -f $p, $_.Exception.Message) -ForegroundColor Yellow
+      Write-Host ("  WARN: could not remove {0}: {1}" -f $p, $_.Exception.Message) -ForegroundColor Yellow
     }
   }
 }
@@ -66,7 +51,7 @@ $envBackend  = Join-Path $root 'backend\.env'
 $envFrontend = Join-Path $root 'frontend\.env.local'
 
 if ((Test-Path $envBackend) -and (Test-Path $envFrontend)) {
-  Write-Host "  .env files already exist — using saved values."
+  Write-Host "  .env files already exist - using saved values."
   Write-Host "  Delete them and re-run to change keys."
 } else {
   Write-Host "First-time setup. Get these from your Supabase project at:"
@@ -75,7 +60,7 @@ if ((Test-Path $envBackend) -and (Test-Path $envFrontend)) {
 
   $supaUrl  = Read-Host "  Supabase Project URL (https://xxxxx.supabase.co)"
   $supaAnon = Read-Host "  Supabase anon public key (starts with eyJ...)"
-  $supaSrv  = Read-Host "  Supabase service_role key (starts with eyJ...) [KEEP SECRET]"
+  $supaSrv  = Read-Host "  Supabase service_role key (starts with eyJ...) KEEP SECRET"
 
   if (-not $supaUrl -or -not $supaAnon -or -not $supaSrv) {
     Write-Host "All three values required." -ForegroundColor Red
@@ -124,17 +109,14 @@ Step "6. Launching dev servers"
 $backendDir  = Join-Path $root 'backend'
 $frontendDir = Join-Path $root 'frontend'
 
-# Start backend in a new window
 Start-Process powershell -ArgumentList @(
   '-NoExit',
   '-Command',
   "Set-Location '$backendDir'; Write-Host '[BACKEND] http://localhost:4000' -ForegroundColor Green; npm run dev"
 )
 
-# Give backend a head start
 Start-Sleep -Seconds 2
 
-# Start frontend in a new window
 Start-Process powershell -ArgumentList @(
   '-NoExit',
   '-Command',
@@ -151,9 +133,5 @@ Write-Host "All systems go." -ForegroundColor Green
 Write-Host "  Backend:  http://localhost:4000  (separate window)"
 Write-Host "  Frontend: http://localhost:5173  (separate window)"
 Write-Host ""
-Write-Host "If you haven't run the Supabase schema yet:"
-Write-Host "  1. Open Supabase dashboard -> SQL Editor"
-Write-Host "  2. Paste contents of supabase\migrations\0001_init_schema.sql and Run"
-Write-Host "  3. Paste contents of supabase\seed\seed_products.sql and Run"
-Write-Host "  4. After magic-link signin, promote yourself in SQL editor:"
-Write-Host "       update public.profiles set role='leadership' where id=(select id from auth.users where email='your@email');"
+Write-Host "Next: sign in with magic link, then promote yourself to leadership"
+Write-Host "(see README for the SQL command)."

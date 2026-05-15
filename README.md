@@ -6,7 +6,7 @@ Phase 1 MVP from the PRD. React + Vite + Tailwind frontend, Node/Express API, Su
 
 ```
 inventory/
-  frontend/      React + Vite + Tailwind UI (facility manager, dashboards, staff view)
+  frontend/      React + Vite + Tailwind UI (facility manager, dashboards, request flows)
   backend/       Node.js + Express API (validates auth, talks to Supabase)
   supabase/
     migrations/  SQL schema
@@ -20,7 +20,7 @@ inventory/
 - `facility_manager` — daily stock updates, view alerts
 - `finance` — spending reports (read transactions)
 - `leadership` — everything (super-admin)
-- `staff` — read-only "what's available" view
+- `staff` — employee request access only; no inventory visibility
 
 ## Quick start
 
