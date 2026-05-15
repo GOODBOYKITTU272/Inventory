@@ -262,6 +262,30 @@ router.patch(
         .select()
         .single();
       if (error) throw error;
+
+      // ── Push notification to the employee who placed the order ──────────────
+      if (data?.submitted_by) {
+        const effectiveStatus = update.live_status || live_status || status;
+        const item = data.parsed_item || data.raw_text || 'your order';
+
+        const PUSH_MESSAGES = {
+          accepted:   { title: '✅ Order Accepted!',      body: `${item} has been accepted and is being prepared.` },
+          preparing:  { title: '☕ Being Prepared!',       body: `${item} is being made right now.` },
+          on_the_way: { title: '🛵 On the Way!',           body: `${item} is heading to you now!` },
+          done:       { title: '🎉 Delivered!',            body: `${item} has been delivered. Enjoy! Rate your experience in the app.` },
+          cancelled:  { title: '❌ Order Cancelled',       body: `${item} was cancelled. You can place a new order anytime.` },
+        };
+
+        const msg = PUSH_MESSAGES[effectiveStatus];
+        if (msg) {
+          sendPushToUsers([data.submitted_by], {
+            ...msg,
+            url: `/track/${data.id}`,
+            tag: `status-${data.id}`,
+          }).catch(() => {});
+        }
+      }
+
       res.json(data);
     } catch (e) {
       next(e);
