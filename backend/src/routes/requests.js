@@ -8,34 +8,38 @@ import { postRequestToTeams } from '../lib/teams.js';
 import { learnFromRating } from '../lib/learning.js';
 const router = Router();
 
-const PARSER_SYSTEM = `You are the "Applywizz Office Concierge" AI. 
+const PARSER_SYSTEM = `You are the "Applywizz Office Concierge" AI.
 Your tone is WITTY, ENERGETIC, and PERSONABLE (like Zomato push notifications).
 The office team is aged 23-25, so use emojis and Gen-Z friendly language.
 
 OFFICE CULTURE:
-- Working Hours: 9 AM - 5 PM, Mon-Fri.
-- Lunch: 1 PM - 2 PM (No orders during this time).
+- Working Hours: 9 AM – 5 PM, Mon–Fri.
 - Assets: CCD Coffee Machine, Fresh Bread, Peanut Butter, Mixed Fruit Jam.
+- Locations: Balaji Cabin, RK Cabin, Manisha Cabin, Resume Cabin, Tech Team, Marketing Team, Conference Room.
 
-Extract:
-1. "employee_name": Name of person who wants it.
-2. "request_type": "beverage", "cleaning", "food", "stationery", "other".
-3. "item": e.g., "Coffee", "Lemon Tea", "Bread with PB&J".
-4. "quantity": number or description.
-5. "location": e.g., "Balaji Cabin", "Tech Team".
-6. "priority": "Urgent", "Normal", "Low".
-7. "instruction": A POLITE, WITTY instruction for the Office Boy.
-8. "missing_details": array of missing strings.
-9. "follow_up_question": A witty question to get missing info.
+Extract these fields and return ONLY valid JSON:
+1. "employee_name": Name from the request or the authenticated submitter name.
+2. "request_type": "beverage" | "cleaning" | "food" | "stationery" | "other".
+3. "item": What they want (e.g. "CCD Coffee", "Lemon Tea", "Bread with PB&J").
+4. "quantity": Number or description (default "1" if not stated).
+5. "location": Delivery location. If not stated, leave as null.
+6. "priority": "Urgent" | "Normal" | "Low".
+7. "instruction": A SHORT, WITTY, emoji-filled instruction for the Office Boy (1–2 sentences max).
+8. "missing_details": [] (empty array unless item is completely unknown).
+9. "follow_up_question": null (see rules below).
+
+CRITICAL RULES FOR follow_up_question:
+- Set follow_up_question to null for ALL clear requests. Process them immediately.
+- ONLY set a non-null follow_up_question if the item is completely unidentifiable (e.g. user typed "bring me something" with zero context).
+- NEVER block a request to ask about health, variety, or suggestions. Put those thoughts in the instruction text instead.
+- If location is missing, still process the order — just set location to null.
+- "Usual", "my regular", "the normal thing" = process it as their typical item (Coffee if no history).
 
 Example Witty Instruction:
-"🚀 Jagan's brain is at 1%, needs a CCD Coffee at Balaji Cabin ASAP to save the day!"
+"🚀 Rama's brain needs fuel! Rush a CCD Coffee to Balaji Cabin — productivity depends on it!"
 
-Rules:
-- If someone orders coffee frequently, suggest Lemon Tea or Green Tea occasionally for health.
-- If it's near 4 PM, suggest Bread with Peanut Butter and Jam.
-- No orders between 1-2 PM. If they ask, politely tell them to enjoy their lunch first.
-- Return JSON ONLY.`;
+Return JSON ONLY. No markdown, no explanation.`;
+
 
 async function parseWithGPT({ rawText, submitterName }) {
   const userPrompt =
@@ -69,11 +73,13 @@ router.post('/', async (req, res, next) => {
       submitterName: req.user.full_name || req.user.email,
     });
 
-    // If there are missing details or a follow-up question is generated
-    if (parsed.follow_up_question || (parsed.missing_details && parsed.missing_details.length > 0)) {
+    // Only block if item is genuinely unknown (cannot make the order at all)
+    const itemMissing = !parsed.item || parsed.item.trim() === '';
+    const hasRealFollowup = parsed.follow_up_question && itemMissing;
+    if (hasRealFollowup) {
       return res.status(200).json({
         needs_followup: true,
-        followup: parsed.follow_up_question || `Please provide more details: ${parsed.missing_details.join(', ')}`,
+        followup: parsed.follow_up_question,
         parsed,
         model,
       });
@@ -134,6 +140,25 @@ router.get('/', async (req, res, next) => {
   } catch (e) {
     next(e);
   }
+});
+
+// GET /api/requests/:id — for live tracking
+router.get('/:id', async (req, res, next) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('v_request_queue')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Request not found' });
+    // Only the submitter or staff can view
+    const isStaff = ['office_boy', 'facility_manager', 'leadership'].includes(req.user.role);
+    if (!isStaff && data.submitted_by !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(data);
+  } catch (e) { next(e); }
 });
 
 router.patch(

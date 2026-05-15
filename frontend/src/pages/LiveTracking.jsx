@@ -1,222 +1,379 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  CheckCircle2, 
-  Clock, 
-  Coffee, 
-  Truck, 
-  MapPin, 
-  Star,
-  ChevronLeft
-} from 'lucide-react';
+import { ChevronLeft, Star, MapPin } from 'lucide-react';
 
+/* ── Stages definition ───────────────────────────────────────────── */
 const STAGES = [
-  { id: 'placed', label: 'Request Placed', icon: Clock },
-  { id: 'accepted', label: 'Office Boy Accepted', icon: CheckCircle2 },
-  { id: 'preparing', label: 'Preparing', icon: Coffee },
-  { id: 'on_the_way', label: 'On the Way', icon: Truck },
-  { id: 'done', label: 'Delivered', icon: CheckCircle2 },
+  {
+    id:      'placed',
+    emoji:   '📋',
+    label:   'Order Placed',
+    sub:     'Your request is in the queue',
+    color:   'bg-slate-100 text-slate-600',
+    ring:    'ring-slate-300',
+  },
+  {
+    id:      'accepted',
+    emoji:   '✅',
+    label:   'Accepted',
+    sub:     'Office boy is on it!',
+    color:   'bg-blue-50 text-blue-600',
+    ring:    'ring-blue-400',
+  },
+  {
+    id:      'preparing',
+    emoji:   '☕',
+    label:   'Preparing',
+    sub:     'Being made with love ❤️',
+    color:   'bg-amber-50 text-amber-600',
+    ring:    'ring-amber-400',
+  },
+  {
+    id:      'on_the_way',
+    emoji:   '🛵',
+    label:   'On the Way',
+    sub:     'Coming to you right now!',
+    color:   'bg-brand/10 text-brand',
+    ring:    'ring-brand',
+  },
+  {
+    id:      'done',
+    emoji:   '🎉',
+    label:   'Delivered!',
+    sub:     'Enjoy! Rate your experience below.',
+    color:   'bg-emerald-50 text-emerald-600',
+    ring:    'ring-emerald-400',
+  },
 ];
 
-export default function LiveTracking() {
-  const { id } = useParams();
-  const [request, setRequest] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [showRating, setShowRating] = useState(false);
-  const [rating, setRating] = useState(0);
+const CANCELLED = {
+  id:    'cancelled',
+  emoji: '❌',
+  label: 'Cancelled',
+  sub:   'This request was cancelled.',
+  color: 'bg-rose-50 text-rose-600',
+};
+
+function stageIndex(live_status) {
+  const i = STAGES.findIndex((s) => s.id === live_status);
+  return i >= 0 ? i : 0;
+}
+
+/* ── Progress bar ────────────────────────────────────────────────── */
+function ProgressBar({ current, total }) {
+  const pct = Math.round((current / (total - 1)) * 100);
+  return (
+    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+      <motion.div
+        className="h-2 bg-brand rounded-full"
+        initial={{ width: 0 }}
+        animate={{ width: `${pct}%` }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+      />
+    </div>
+  );
+}
+
+/* ── Stage row ───────────────────────────────────────────────────── */
+function StageRow({ stage, state }) {
+  // state: 'done' | 'active' | 'waiting'
+  return (
+    <div className="flex items-center gap-4">
+      {/* Icon */}
+      <motion.div
+        animate={state === 'active' ? { scale: [1, 1.15, 1] } : { scale: 1 }}
+        transition={state === 'active' ? { repeat: Infinity, duration: 1.8 } : {}}
+        className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 ring-2 ${
+          state === 'done'
+            ? 'bg-emerald-50 ring-emerald-300'
+            : state === 'active'
+            ? `${stage.color} ${stage.ring}`
+            : 'bg-slate-50 ring-slate-200 opacity-40'
+        }`}
+      >
+        {state === 'done' ? '✅' : stage.emoji}
+      </motion.div>
+
+      {/* Labels */}
+      <div className="min-w-0">
+        <div className={`font-semibold text-sm ${
+          state === 'active' ? 'text-slate-900' : state === 'done' ? 'text-slate-700' : 'text-slate-400'
+        }`}>
+          {stage.label}
+        </div>
+        {state === 'active' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-xs text-slate-500 mt-0.5"
+          >
+            {stage.sub}
+          </motion.div>
+        )}
+      </div>
+
+      {/* Active pulse dot */}
+      {state === 'active' && (
+        <motion.div
+          animate={{ opacity: [1, 0.3, 1] }}
+          transition={{ repeat: Infinity, duration: 1.5 }}
+          className="ml-auto w-2.5 h-2.5 rounded-full bg-brand shrink-0"
+        />
+      )}
+      {state === 'done' && (
+        <div className="ml-auto text-xs text-emerald-600 font-medium shrink-0">Done</div>
+      )}
+    </div>
+  );
+}
+
+/* ── Rating sheet ────────────────────────────────────────────────── */
+function RatingSheet({ requestId, onDone }) {
+  const [rating, setRating]   = useState(0);
   const [comment, setComment] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy]       = useState(false);
+
+  async function submit() {
+    if (!rating) return;
+    setBusy(true);
+    try {
+      await api.rateRequest(requestId, { rating, feedback: comment });
+      onDone();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+    >
+      <motion.div
+        initial={{ y: 120, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 120, opacity: 0 }}
+        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-8 shadow-2xl space-y-6"
+      >
+        <div className="text-center">
+          <div className="text-5xl mb-3">🎉</div>
+          <h2 className="text-2xl font-bold text-slate-900">Hope it hit the spot!</h2>
+          <p className="text-slate-500 text-sm mt-1">
+            Rate your experience — it takes 5 seconds.
+          </p>
+        </div>
+
+        <div className="flex justify-center gap-3">
+          {[1, 2, 3, 4, 5].map((s) => (
+            <button
+              key={s}
+              onClick={() => setRating(s)}
+              className="transition-transform active:scale-90 hover:scale-110"
+            >
+              <Star
+                size={40}
+                className={s <= rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}
+              />
+            </button>
+          ))}
+        </div>
+
+        <textarea
+          className="input min-h-[90px] bg-slate-50"
+          placeholder="Shoutout for the Office Boy? ✨ (optional)"
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+        />
+
+        <div className="flex gap-3">
+          <button className="btn-secondary flex-1" onClick={onDone}>
+            Later
+          </button>
+          <button
+            className="btn-primary flex-1"
+            disabled={!rating || busy}
+            onClick={submit}
+          >
+            {busy ? 'Submitting…' : '🚀 Send Rating'}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ── Main component ──────────────────────────────────────────────── */
+export default function LiveTracking() {
+  const { id }          = useParams();
+  const [req, setReq]   = useState(null);
+  const [err, setErr]   = useState('');
+  const [showRate, setShowRate] = useState(false);
+  const shownRatingRef  = useRef(false);
 
   async function load() {
     try {
-      // In a real app, we would have a specific getRequest call
-      // For now, we list all and filter, or assume api has getRequest
-      const data = await api.listRequests();
-      const found = data.find(r => r.id === id);
-      if (found) {
-        setRequest(found);
-        if (found.status === 'done' && found.rating_status === 'pending') {
-          setShowRating(true);
-        }
-      } else {
-        setError('Request not found');
+      const data = await api.getRequest(id);
+      setReq(data);
+      // Show rating once when order first reaches 'done'
+      if (data.status === 'done' && data.rating_status !== 'done' && !shownRatingRef.current) {
+        shownRatingRef.current = true;
+        setTimeout(() => setShowRate(true), 1200);
       }
     } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
+      setErr(e.message);
     }
   }
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 5000); // Poll every 5s for live updates
-    return () => clearInterval(timer);
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
   }, [id]);
 
-  const currentStageIndex = STAGES.findIndex(s => s.id === (request?.live_status || 'placed'));
+  if (err) return (
+    <div className="flex flex-col items-center justify-center py-24 gap-3 text-rose-500">
+      <div className="text-4xl">😕</div>
+      <div className="text-sm">{err}</div>
+      <Link to="/request" className="btn-secondary text-sm mt-2">← Back to Request</Link>
+    </div>
+  );
 
-  if (loading) return <div className="p-8 text-center text-slate-500">Loading tracking...</div>;
-  if (error) return <div className="p-8 text-center text-rose-600">{error}</div>;
+  if (!req) return (
+    <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+      <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
+      <span className="text-sm">Loading your order…</span>
+    </div>
+  );
+
+  const isCancelled = req.status === 'cancelled';
+  const isDone      = req.status === 'done';
+  const curIdx      = isCancelled ? -1 : stageIndex(req.live_status || 'placed');
+  const curStage    = isCancelled ? CANCELLED : STAGES[curIdx];
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-20">
-      <div className="flex items-center gap-4">
-        <Link to="/request" className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-          <ChevronLeft size={24} />
-        </Link>
-        <h1 className="text-2xl font-bold">Track Request</h1>
-      </div>
+    <div className="max-w-lg mx-auto pb-24 space-y-4">
 
-      {/* Main Status Card */}
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
+      {/* Back */}
+      <Link to="/request" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand pt-2">
+        <ChevronLeft size={16} /> Back to Request
+      </Link>
+
+      {/* Hero status card */}
+      <motion.div
+        key={curStage.id}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card bg-brand text-white overflow-hidden relative"
+        className={`card ${curStage.color} border-0 shadow-lg`}
       >
-        <div className="relative z-10">
-          <div className="text-brand-light text-sm font-medium uppercase tracking-wider">Current Status</div>
-          <div className="text-3xl font-bold mt-1 capitalize">
-            {request.live_status?.replace('_', ' ') || 'Placed'}
-          </div>
-          <div className="mt-4 flex items-center gap-2 text-brand-light">
-            <MapPin size={16} />
-            <span>{request.parsed_location || 'Office'}</span>
+        <div className="flex items-center gap-4">
+          <motion.div
+            animate={!isCancelled && !isDone ? { scale: [1, 1.12, 1] } : { scale: 1 }}
+            transition={{ repeat: Infinity, duration: 2 }}
+            className="text-6xl"
+          >
+            {curStage.emoji}
+          </motion.div>
+          <div className="min-w-0">
+            <div className="text-xl font-bold">{curStage.label}</div>
+            <div className="text-sm opacity-80 mt-0.5">{curStage.sub}</div>
+            {req.parsed_location && (
+              <div className="flex items-center gap-1 text-xs mt-2 opacity-70">
+                <MapPin size={12} /> {req.parsed_location}
+              </div>
+            )}
           </div>
         </div>
-        
-        {/* Background Animation/Decoration */}
-        <div className="absolute right-[-20px] top-[-20px] opacity-10">
-          <Coffee size={160} />
-        </div>
+
+        {/* Progress bar (only when active) */}
+        {!isCancelled && (
+          <div className="mt-5">
+            <ProgressBar current={curIdx} total={STAGES.length} />
+            <div className="flex justify-between text-[10px] mt-1 opacity-60">
+              <span>Placed</span>
+              <span>Delivered</span>
+            </div>
+          </div>
+        )}
       </motion.div>
 
-      {/* Timeline */}
-      <div className="card">
-        <div className="timeline">
-          {STAGES.map((stage, idx) => {
-            const isDone = idx < currentStageIndex || request.status === 'done';
-            const isActive = idx === currentStageIndex && request.status !== 'done';
-            const Icon = stage.icon;
-
-            return (
-              <div key={stage.id} className="timeline-item">
-                <div className={`timeline-dot ${isDone ? 'timeline-dot-done' : isActive ? 'timeline-dot-active' : 'timeline-dot-inactive'}`}>
-                  {isDone && <CheckCircle2 size={12} className="text-white" />}
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className={`font-medium ${isActive ? 'text-brand' : isDone ? 'text-slate-900' : 'text-slate-400'}`}>
-                    {stage.label}
-                  </div>
-                  {isActive && (
-                    <motion.div 
-                      animate={{ scale: [1, 1.2, 1] }}
-                      transition={{ repeat: Infinity, duration: 2 }}
-                    >
-                      <Icon size={20} className="text-brand" />
-                    </motion.div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      {/* Stage timeline */}
+      {!isCancelled && (
+        <div className="card space-y-5">
+          <h3 className="font-semibold text-slate-900 text-sm uppercase tracking-wide">Live Status</h3>
+          {STAGES.map((stage, idx) => (
+            <StageRow
+              key={stage.id}
+              stage={stage}
+              state={
+                idx < curIdx ? 'done'
+                : idx === curIdx ? 'active'
+                : 'waiting'
+              }
+            />
+          ))}
         </div>
-      </div>
+      )}
 
-      {/* Item Details */}
-      <div className="card">
-        <h3 className="font-semibold text-slate-900 mb-3">Order Details</h3>
-        <div className="flex justify-between items-start border-b border-slate-100 pb-3 mb-3">
+      {/* Order details */}
+      <div className="card space-y-3">
+        <h3 className="font-semibold text-slate-900 text-sm uppercase tracking-wide">Order Details</h3>
+        <div className="flex justify-between items-start">
           <div>
-            <div className="text-lg font-medium">{request.parsed_item}</div>
-            <div className="text-sm text-slate-500">Qty: {request.quantity || 1}</div>
+            <div className="font-medium text-slate-900 text-base">
+              {req.parsed_item || 'Your Request'}
+            </div>
+            {req.parsed_employee_name && (
+              <div className="text-xs text-slate-500 mt-0.5">For: {req.parsed_employee_name}</div>
+            )}
           </div>
-          <div className="text-right">
-            <div className="text-xs text-slate-400 uppercase">Request ID</div>
-            <div className="font-mono text-sm">{request.id.slice(0, 8)}</div>
+          <div className="text-right shrink-0">
+            <div className="text-[10px] text-slate-400 uppercase">Request ID</div>
+            <div className="font-mono text-xs text-slate-600">{req.id?.slice(0, 8)}</div>
           </div>
         </div>
-        <div className="text-sm text-slate-600 italic">
-          "{request.instruction}"
-        </div>
+        {req.instruction && (
+          <div className="text-sm text-slate-600 italic bg-slate-50 rounded-xl p-3">
+            "{req.instruction}"
+          </div>
+        )}
       </div>
 
-      {/* Rating Modal/Overlay */}
+      {/* Rating prompt when done */}
+      {isDone && req.rating_status === 'done' && (
+        <div className="card bg-emerald-50 border-0 text-center space-y-1">
+          <div className="text-2xl">⭐</div>
+          <div className="font-semibold text-emerald-800 text-sm">Thanks for the rating!</div>
+          <div className="text-xs text-emerald-600">
+            {'★'.repeat(req.rating || 0)}{'☆'.repeat(5 - (req.rating || 0))}
+          </div>
+          {req.feedback && (
+            <div className="text-xs text-emerald-700 italic">"{req.feedback}"</div>
+          )}
+        </div>
+      )}
+
+      {isDone && req.rating_status !== 'done' && !showRate && (
+        <button
+          className="w-full btn-secondary text-sm"
+          onClick={() => setShowRate(true)}
+        >
+          ⭐ Rate this order
+        </button>
+      )}
+
+      {/* Rating sheet */}
       <AnimatePresence>
-        {showRating && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
-          >
-            <motion.div 
-              initial={{ y: 100 }}
-              animate={{ y: 0 }}
-              exit={{ y: 100 }}
-              className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-8 shadow-2xl"
-            >
-              <div className="text-center">
-                <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle2 size={40} />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900">Hope it hits the spot! 😋</h2>
-                <p className="text-slate-500 mt-2">Was the Office Boy fast enough? Help us keep the office vibes 100.</p>
-              </div>
-
-              <div className="flex justify-center gap-2 my-8">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <button 
-                    key={s} 
-                    onClick={() => setRating(s)}
-                    className="transition-transform active:scale-90"
-                  >
-                    <Star 
-                      size={40} 
-                      className={s <= rating ? 'fill-brand text-brand' : 'text-slate-200'} 
-                    />
-                  </button>
-                ))}
-              </div>
-
-              <textarea 
-                className="input min-h-[100px] mb-6 border-slate-100 bg-slate-50 focus:bg-white"
-                placeholder="Any special shoutout for the Office Boy? ✨"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-              />
-
-              <div className="flex gap-3">
-                <button 
-                  className="btn-secondary flex-1" 
-                  onClick={() => setShowRating(false)}
-                >
-                  Later
-                </button>
-                <button 
-                  className="btn-primary flex-1 shadow-lg shadow-brand/20"
-                  disabled={!rating || busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    try {
-                      await api.rateRequest(id, { rating, feedback: comment });
-                      setShowRating(false);
-                      load();
-                    } catch (e) {
-                      alert(e.message);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  {busy ? 'Submitting...' : 'Send Feedback'}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
+        {showRate && (
+          <RatingSheet
+            requestId={id}
+            onDone={() => { setShowRate(false); load(); }}
+          />
         )}
       </AnimatePresence>
     </div>
