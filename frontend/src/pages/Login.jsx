@@ -65,7 +65,8 @@ export default function Login() {
         )}
 
         <div className="mt-6 text-xs text-slate-400">
-          New here? Ask Ramakrishna to add you in the Admin panel after your first Microsoft sign-in.
+          Anyone with an @applywizz.ai Microsoft account can sign in — you'll be added as an Employee automatically.
+          Ramakrishna can change your role from the Admin panel.
         </div>
       </div>
     </div>

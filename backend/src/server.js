@@ -19,6 +19,7 @@ import billsRouter from './routes/bills.js';
 import billWebhookRouter from './routes/billWebhook.js';
 import telegramWebhookRouter from './routes/telegramWebhook.js';
 import cafeteriaRouter from './routes/cafeteria.js';
+import pushRouter from './routes/push.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -65,6 +66,7 @@ app.use('/api/admin',        adminRouter);
 app.use('/api/requests',     requestsRouter);
 app.use('/api/bills',        billsRouter);
 app.use('/api/cafeteria',    cafeteriaRouter);
+app.use('/api/push',         pushRouter);
 
 app.use(errorHandler);
 

@@ -6,6 +6,7 @@ import { chatCompletion } from '../lib/openai.js';
 import { postRequestToTeams } from '../lib/teams.js';
 
 import { learnFromRating } from '../lib/learning.js';
+import { sendPushToUsers } from './push.js';
 const router = Router();
 
 // Map well-known cafeteria items to categories
@@ -102,6 +103,17 @@ router.post('/', async (req, res, next) => {
       if (qErr) throw qErr;
 
       postRequestToTeams({ ...qData, priority: 'Normal', quantity: String(quick_quantity) }).catch((e) => console.error('[Teams quick-order]', e.message));
+
+      // Push notification to office boy / facility manager
+      supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data }) => {
+        if (data?.length) sendPushToUsers(data.map(u => u.id), {
+          title: `🔔 New Order`,
+          body:  `${firstName}: ${quick_quantity}x ${quick_item}${locPart}`,
+          url:   '/queue',
+          tag:   `order-${qData.id}`,
+        }).catch(() => {});
+      });
+
       return res.status(201).json({ needs_followup: false, request: qData });
     }
 
@@ -141,6 +153,17 @@ router.post('/', async (req, res, next) => {
       .select()
       .single();
     if (error) throw error;
+
+    // Push notification to office boy / facility manager
+    const insertedId = data?.id;
+    supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data: staffRows }) => {
+      if (staffRows?.length) sendPushToUsers(staffRows.map(u => u.id), {
+        title: `🔔 New ${parsed.request_type || 'Request'}`,
+        body:  `${parsed.employee_name || req.user.full_name}: ${parsed.item || 'New request'}`,
+        url:   '/queue',
+        tag:   `order-${insertedId}`,
+      }).catch(() => {});
+    });
 
     // Fire-and-forget Teams notification
     const teamsResult = await postRequestToTeams({

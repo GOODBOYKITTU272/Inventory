@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, User, LogOut } from 'lucide-react';
+import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, User, LogOut, BellRing, BellOff } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth.js';
+import { isPushSupported, getPushStatus, subscribeToPush, unsubscribeFromPush } from '../lib/push.js';
 
 const TONES = ['Professional', 'Friendly', 'Funny', 'Mom Mode', 'Minimal'];
 
 export default function Preferences() {
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
   const [success, setSuccess]   = useState(false);
   const [tableErr, setTableErr] = useState(false);
+  const [pushStatus,  setPushStatus]  = useState('checking'); // checking | unsupported | denied | not_subscribed | subscribed
+  const [pushBusy,    setPushBusy]    = useState(false);
+  const [pushMsg,     setPushMsg]     = useState('');
   const [prefs, setPrefs] = useState({
     tea_coffee_reminder_enabled: false,
     reminder_interval_hours: 2,
@@ -23,7 +27,29 @@ export default function Preferences() {
   useEffect(() => {
     if (!profile?.id) return;
     loadPrefs();
+    getPushStatus().then(setPushStatus).catch(() => setPushStatus('unsupported'));
   }, [profile?.id]);
+
+  async function togglePush() {
+    setPushBusy(true);
+    setPushMsg('');
+    try {
+      const token = session?.access_token;
+      if (pushStatus === 'subscribed') {
+        await unsubscribeFromPush(token);
+        setPushStatus('not_subscribed');
+        setPushMsg('Push notifications disabled.');
+      } else {
+        await subscribeToPush(token);
+        setPushStatus('subscribed');
+        setPushMsg('✅ Push notifications enabled! You\'ll be notified when orders update.');
+      }
+    } catch (e) {
+      setPushMsg('⚠️ ' + e.message);
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   async function loadPrefs() {
     try {
@@ -155,23 +181,56 @@ export default function Preferences() {
           </div>
         </div>
 
-        {/* Notifications */}
+        {/* Push Notifications — real browser push */}
         <div className="space-y-4 pt-4 border-t border-slate-100">
           <h2 className="text-base font-semibold flex items-center gap-2">
-            <Bell size={18} className="text-brand" /> Notifications
+            <Bell size={18} className="text-brand" /> Push Notifications
           </h2>
-          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
-            <div>
-              <div className="font-medium text-slate-900 text-sm">Push Notifications</div>
-              <div className="text-xs text-slate-500">Real-time updates for your requests</div>
+
+          {pushStatus === 'unsupported' ? (
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-400">
+              Push notifications are not supported in this browser.
             </div>
-            <button
-              onClick={() => setPrefs((p) => ({ ...p, notification_enabled: !p.notification_enabled }))}
-              className={`w-12 h-6 rounded-full transition-colors relative shrink-0 ${prefs.notification_enabled ? 'bg-brand' : 'bg-slate-300'}`}
-            >
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${prefs.notification_enabled ? 'left-7' : 'left-1'}`} />
-            </button>
-          </div>
+          ) : pushStatus === 'denied' ? (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+              <strong>Blocked by browser.</strong> Click the 🔒 lock icon in your browser address bar → reset notifications permission → refresh and try again.
+            </div>
+          ) : (
+            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="flex items-center gap-3">
+                {pushStatus === 'subscribed'
+                  ? <BellRing size={18} className="text-brand" />
+                  : <BellOff  size={18} className="text-slate-400" />
+                }
+                <div>
+                  <div className="font-medium text-slate-900 text-sm">
+                    {pushStatus === 'subscribed' ? 'Notifications ON' : 'Notifications OFF'}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {pushStatus === 'subscribed'
+                      ? 'You\'ll get notified when your order status changes'
+                      : 'Tap to enable — office boy gets notified on new orders'}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={togglePush}
+                disabled={pushBusy || pushStatus === 'checking'}
+                className={`w-12 h-6 rounded-full transition-colors relative shrink-0 ${pushStatus === 'subscribed' ? 'bg-brand' : 'bg-slate-300'}`}
+              >
+                {pushBusy
+                  ? <div className="absolute inset-0 flex items-center justify-center"><div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /></div>
+                  : <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${pushStatus === 'subscribed' ? 'left-7' : 'left-1'}`} />
+                }
+              </button>
+            </div>
+          )}
+
+          {pushMsg && (
+            <div className={`text-xs p-3 rounded-xl ${pushMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+              {pushMsg}
+            </div>
+          )}
         </div>
 
         {/* AI Tone */}
