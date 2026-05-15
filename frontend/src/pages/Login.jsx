@@ -21,6 +21,10 @@ export default function Login() {
       options: {
         scopes: 'openid email profile',
         redirectTo: window.location.origin + '/dashboard',
+        queryParams: {
+          prompt: 'login',        // Always ask for login + authenticator — no silent SSO
+          max_age: '3600',        // Don't trust cached sessions older than 1 hour
+        },
       },
     });
     if (error) {
@@ -64,9 +68,8 @@ export default function Login() {
           <div className="mt-4 text-sm text-rose-700 bg-rose-50 p-3 rounded-md">{err}</div>
         )}
 
-        <div className="mt-6 text-xs text-slate-400">
-          Anyone with an @applywizz.ai Microsoft account can sign in — you'll be added as an Employee automatically.
-          Ramakrishna can change your role from the Admin panel.
+        <div className="mt-6 text-xs text-slate-400 text-center">
+          Use your <strong>@applywizz.ai</strong> work account to sign in.
         </div>
       </div>
     </div>
