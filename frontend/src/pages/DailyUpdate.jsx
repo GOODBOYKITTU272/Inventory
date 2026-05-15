@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
+import WakingUp from '../components/WakingUp.jsx';
 
 const INR = (n) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
@@ -90,8 +91,16 @@ export default function DailyUpdate() {
     }
   }
 
-  if (err && !items) return <div className="text-rose-600">{err}</div>;
-  if (!items) return <div className="text-slate-500">Loading inventory...</div>;
+  if (err && !items) return <div className="text-rose-600 p-4">{err}</div>;
+  if (!items) return (
+    <>
+      <WakingUp loading={!items} />
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+        <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
+        <span className="text-sm">Loading inventory…</span>
+      </div>
+    </>
+  );
 
   return (
     <div className="space-y-6">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import WakingUp from '../components/WakingUp.jsx';
 
 /* ── IST helpers ─────────────────────────────────────────────────── */
 const IST = { timeZone: 'Asia/Kolkata' };
@@ -204,8 +205,16 @@ export default function Dashboard() {
 
   const canSeeAI = profile && ['leadership', 'finance'].includes(profile.role);
 
-  if (err) return <div className="text-rose-600">{err}</div>;
-  if (!data) return <div className="text-slate-500">Loading dashboard...</div>;
+  if (err) return <div className="text-rose-600 p-4">{err}</div>;
+  if (!data) return (
+    <>
+      <WakingUp loading={!data} />
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+        <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
+        <span className="text-sm">Loading dashboard…</span>
+      </div>
+    </>
+  );
 
   return (
     <div className="space-y-6">
