@@ -61,7 +61,7 @@ export default function Admin() {
         role:      inviteRole,
         full_name: inviteName.trim(),
       });
-      setOkMsg(`✅ ${inviteName} added! They can log in with email "${inviteEmail}" and password "Lovefood".`);
+      setOkMsg(`✅ ${inviteName} added! They can log in with "${inviteEmail}" + Microsoft Authenticator.`);
       setInviteEmail(''); setInviteName(''); setInviteRole('staff');
       await load();
     } catch (e) { setErr(e.message); }
@@ -84,9 +84,7 @@ export default function Admin() {
       <div className="card">
         <h2 className="font-semibold mb-1">Add a team member</h2>
         <p className="text-xs text-slate-500 mb-4">
-          Creates their account instantly. Default password is{' '}
-          <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-700">Lovefood</code>
-          {' '}— tell them verbally. They can change it from Settings.
+          Creates their account instantly. They'll set up Microsoft Authenticator on first login.
         </p>
         <form onSubmit={onInvite} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           <input type="text" required placeholder="Full name"

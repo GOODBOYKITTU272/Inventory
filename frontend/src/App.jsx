@@ -18,13 +18,14 @@ import PreferencesPage from './pages/Preferences.jsx';
 import AuditLogPage from './pages/AuditLog.jsx';
 import ConnectionsPage from './pages/Connections.jsx';
 import OnboardingPage from './pages/Onboarding.jsx';
-import VerifyPage from './pages/Verify.jsx';
 import { useAuth } from './hooks/useAuth.js';
 
 function Protected({ children, allow }) {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, loading, aal } = useAuth();
   if (loading) return <div className="p-8 text-slate-500">Loading...</div>;
   if (!session) return <Navigate to="/login" replace />;
+  // Require MFA (AAL2) — if only AAL1, send back to login for TOTP step
+  if (aal !== 'aal2') return <Navigate to="/login" replace />;
   if (allow && profile && !allow.includes(profile.role)) {
     return <div className="p-8 text-rose-600">Access denied for role: {profile.role}</div>;
   }
@@ -119,7 +120,6 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/verify" element={<VerifyPage />} />
       <Route
         element={
           <Protected>

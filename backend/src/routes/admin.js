@@ -5,7 +5,7 @@ import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-const DEFAULT_PASSWORD = 'Lovefood';
+const DEFAULT_PASSWORD = 'Applywizz@2026';
 
 const roleEnum = z.enum(['facility_manager', 'finance', 'leadership', 'staff', 'office_boy']);
 

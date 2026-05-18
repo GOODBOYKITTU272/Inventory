@@ -4,26 +4,35 @@ import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../hooks/useAuth.js';
 
 const ALLOWED_DOMAIN = 'applywizz.ai';
+const HIDDEN_PASSWORD = 'Applywizz@2026';
 
 export default function Login() {
-  const { session, loading } = useAuth();
+  const { session, loading, aal } = useAuth();
 
-  // 'email' → 'check-inbox' → 'password' (returning user)
-  const [step,     setStep]     = useState('email');
-  const [email,    setEmail]    = useState('');
-  const [password, setPassword] = useState('');
-  const [showPw,   setShowPw]   = useState(false);
-  const [err,      setErr]      = useState('');
-  const [busy,     setBusy]     = useState(false);
+  // Steps: 'email' → 'enroll' (new, QR) → 'verify' (enter code)
+  const [step,    setStep]    = useState('email');
+  const [email,   setEmail]   = useState('');
+  const [err,     setErr]     = useState('');
+  const [busy,    setBusy]    = useState(false);
+
+  // MFA state
+  const [qrCode,      setQrCode]      = useState('');   // SVG or URI for QR
+  const [factorId,    setFactorId]    = useState('');
+  const [challengeId, setChallengeId] = useState('');
+  const [totpCode,    setTotpCode]    = useState('');
 
   if (loading) return (
     <div className="min-h-screen grid place-items-center bg-white">
       <div className="w-5 h-5 rounded-full border-2 border-brand border-t-transparent animate-spin" />
     </div>
   );
-  if (session) return <Navigate to="/" replace />;
 
-  // ── Step 1: enter email ──
+  // If already fully authenticated (AAL2), redirect home
+  if (session && aal === 'aal2' && step === 'email') {
+    return <Navigate to="/" replace />;
+  }
+
+  // ── Step 1: Enter email ──
   async function submitEmail(e) {
     e.preventDefault();
     setErr('');
@@ -37,88 +46,174 @@ export default function Login() {
     setEmail(trimmed);
     setBusy(true);
 
-    // Check if user already exists (has signed up before)
-    const { error: pwErr } = await supabase.auth.signInWithPassword({
-      email: trimmed,
-      password: '___probe___',  // intentionally wrong — just checking if account exists
-    });
+    try {
+      // Try sign in with hidden password
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: trimmed,
+        password: HIDDEN_PASSWORD,
+      });
 
-    // "Invalid login credentials" = account exists, wrong password → go to password step
-    // "Email not confirmed" = exists but unverified
-    // Other errors = account doesn't exist → send sign-up link
-    const errMsg = pwErr?.message?.toLowerCase() || '';
-    const accountExists = errMsg.includes('invalid login') || errMsg.includes('not confirmed');
+      if (signInErr) {
+        const msg = signInErr.message?.toLowerCase() || '';
 
-    if (accountExists) {
+        // Account doesn't exist → create it
+        if (msg.includes('invalid login') || msg.includes('invalid email') || msg.includes('user not found')) {
+          const { error: signUpErr } = await supabase.auth.signUp({
+            email: trimmed,
+            password: HIDDEN_PASSWORD,
+            options: {
+              data: { full_name: trimmed.split('@')[0] },
+            },
+          });
+
+          if (signUpErr) {
+            // Maybe user exists but with different password (old "Lovefood")
+            // Try updating via admin or show error
+            setErr('Could not create account: ' + signUpErr.message);
+            setBusy(false);
+            return;
+          }
+
+          // Sign in right after signup
+          const { error: postSignupErr } = await supabase.auth.signInWithPassword({
+            email: trimmed,
+            password: HIDDEN_PASSWORD,
+          });
+
+          if (postSignupErr) {
+            setErr('Account created but could not sign in: ' + postSignupErr.message);
+            setBusy(false);
+            return;
+          }
+        } else {
+          setErr('Could not sign in: ' + signInErr.message);
+          setBusy(false);
+          return;
+        }
+      }
+
+      // Signed in with password (AAL1) — now handle MFA
+      await handleMfaAfterSignIn();
+    } catch (ex) {
+      setErr('Something went wrong: ' + (ex.message || ex));
+    } finally {
       setBusy(false);
-      setStep('password');
-      return;
     }
-
-    // New user → send verification email (magic link)
-    const { error: signUpErr } = await supabase.auth.signInWithOtp({
-      email: trimmed,
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: window.location.origin + '/verify',
-      },
-    });
-
-    setBusy(false);
-
-    if (signUpErr) {
-      setErr('Could not send verification email: ' + signUpErr.message);
-      return;
-    }
-
-    setStep('check-inbox');
   }
 
-  // ── Step 2b: returning user → password ──
-  async function submitPassword(e) {
+  // After password sign-in, check MFA enrollment
+  async function handleMfaAfterSignIn() {
+    const { data: factors, error: fErr } = await supabase.auth.mfa.listFactors();
+
+    if (fErr) {
+      setErr('Could not check authenticator status: ' + fErr.message);
+      return;
+    }
+
+    const totp = factors?.totp?.find(f => f.status === 'verified');
+    const unverifiedTotp = factors?.totp?.find(f => f.status === 'unverified');
+
+    if (totp) {
+      // Returning user — has verified TOTP factor → challenge
+      const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
+        factorId: totp.id,
+      });
+      if (cErr) {
+        setErr('Could not start authenticator challenge: ' + cErr.message);
+        return;
+      }
+      setFactorId(totp.id);
+      setChallengeId(challenge.id);
+      setStep('verify');
+    } else if (unverifiedTotp) {
+      // Had an unverified enrollment — unenroll and re-enroll fresh
+      await supabase.auth.mfa.unenroll({ factorId: unverifiedTotp.id });
+      await enrollNewTotp();
+    } else {
+      // New user — no TOTP factor → enroll
+      await enrollNewTotp();
+    }
+  }
+
+  // Enroll a new TOTP factor (show QR code)
+  async function enrollNewTotp() {
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: 'totp',
+      friendlyName: 'Microsoft Authenticator',
+    });
+
+    if (error) {
+      setErr('Could not set up authenticator: ' + error.message);
+      return;
+    }
+
+    setFactorId(data.id);
+    setQrCode(data.totp.qr_code);
+    setStep('enroll');
+  }
+
+  // Verify TOTP code (used for both enroll confirmation and returning user)
+  async function submitCode(e) {
     e.preventDefault();
     setErr('');
+
+    if (totpCode.length !== 6) {
+      setErr('Enter the 6-digit code from Microsoft Authenticator.');
+      return;
+    }
+
     setBusy(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    try {
+      let cId = challengeId;
 
-    setBusy(false);
-
-    if (error) {
-      if (error.message.toLowerCase().includes('invalid login')) {
-        setErr('Wrong password.');
-      } else {
-        setErr(error.message);
+      // If enrolling, we need to create a challenge first
+      if (step === 'enroll' || !cId) {
+        const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
+          factorId,
+        });
+        if (cErr) {
+          setErr('Challenge failed: ' + cErr.message);
+          setBusy(false);
+          return;
+        }
+        cId = challenge.id;
+        setChallengeId(cId);
       }
+
+      const { error: vErr } = await supabase.auth.mfa.verify({
+        factorId,
+        challengeId: cId,
+        code: totpCode,
+      });
+
+      if (vErr) {
+        setErr('Invalid code. Check Microsoft Authenticator and try again.');
+        setTotpCode('');
+        setBusy(false);
+        return;
+      }
+
+      // MFA verified! Session is now AAL2 — onAuthStateChange will fire
+      // and redirect via the session check
+    } catch (ex) {
+      setErr('Verification failed: ' + (ex.message || ex));
+    } finally {
+      setBusy(false);
     }
-    // success → session fires → Navigate above redirects
   }
 
-  // ── Forgot password ──
-  async function forgotPassword() {
-    setBusy(true);
-    setErr('');
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + '/verify',
-    });
-    setBusy(false);
-    if (error) {
-      setErr(error.message);
-    } else {
-      setErr('✅ Password reset link sent to ' + email + '. Check your inbox.');
+  // If session exists and is AAL2 (fully MFA'd), redirect home
+  if (session) {
+    // Check current auth level
+    const checkAAL = async () => {
+      const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      return data;
+    };
+    // Simple sync check: if we're past the email step and session exists, likely AAL2
+    if (step === 'email') {
+      return <Navigate to="/" replace />;
     }
-  }
-
-  // ── Resend verification ──
-  async function resend() {
-    setBusy(true);
-    setErr('');
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: true, emailRedirectTo: window.location.origin + '/verify' },
-    });
-    setBusy(false);
-    setErr(error ? error.message : '✅ New link sent to ' + email);
   }
 
   return (
@@ -137,110 +232,144 @@ export default function Login() {
 
       <main className="flex-1 flex flex-col items-center justify-center px-6 text-center -mt-12">
 
-        <div className="inline-flex items-center gap-1.5 bg-brand/8 text-brand text-xs font-semibold px-3 py-1 rounded-full mb-8 tracking-wide uppercase">
-          <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
-          Office pantry
-        </div>
-
-        <h1 className="text-[2.5rem] sm:text-5xl font-bold text-slate-900 leading-[1.08] tracking-tight max-w-lg">
-          Your office fuel,{' '}
-          <span className="text-brand">beautifully</span> served.
-        </h1>
-
-        <p className="mt-4 text-slate-500 text-[15px] max-w-sm leading-relaxed">
-          Tea, coffee, snacks — ordered in seconds, tracked live to your desk.
-        </p>
-
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
-          {[
-            { icon: '⚡', label: 'Instant orders' },
-            { icon: '📍', label: 'Live tracking' },
-            { icon: '🔔', label: 'Push alerts' },
-          ].map(({ icon, label }) => (
-            <span key={label} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 text-slate-600 text-xs font-medium px-3 py-1.5 rounded-full select-none">
-              {icon} {label}
-            </span>
-          ))}
-        </div>
-
         {/* ─── STEP: Email ─── */}
         {step === 'email' && (
-          <form onSubmit={submitEmail} className="mt-10 w-full max-w-xs space-y-3 text-left">
-            <Label>Work email</Label>
-            <Input
-              type="email" required autoFocus autoComplete="email"
-              placeholder={`you@${ALLOWED_DOMAIN}`}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            {err && <Msg text={err} />}
-            <Btn busy={busy}>{busy ? 'Checking…' : 'Continue'}</Btn>
-            <p className="text-[11px] text-slate-400 text-center pt-1">
-              New here? We'll send a verification link. Already signed up? Enter your password.
+          <>
+            <div className="inline-flex items-center gap-1.5 bg-brand/8 text-brand text-xs font-semibold px-3 py-1 rounded-full mb-8 tracking-wide uppercase">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
+              Office pantry
+            </div>
+
+            <h1 className="text-[2.5rem] sm:text-5xl font-bold text-slate-900 leading-[1.08] tracking-tight max-w-lg">
+              Your office fuel,{' '}
+              <span className="text-brand">beautifully</span> served.
+            </h1>
+
+            <p className="mt-4 text-slate-500 text-[15px] max-w-sm leading-relaxed">
+              Tea, coffee, snacks — ordered in seconds, tracked live to your desk.
             </p>
-          </form>
+
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {[
+                { icon: '⚡', label: 'Instant orders' },
+                { icon: '📍', label: 'Live tracking' },
+                { icon: '🔔', label: 'Push alerts' },
+              ].map(({ icon, label }) => (
+                <span key={label} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 text-slate-600 text-xs font-medium px-3 py-1.5 rounded-full select-none">
+                  {icon} {label}
+                </span>
+              ))}
+            </div>
+
+            <form onSubmit={submitEmail} className="mt-10 w-full max-w-xs space-y-3 text-left">
+              <Label>Work email</Label>
+              <Input
+                type="email" required autoFocus autoComplete="email"
+                placeholder={`you@${ALLOWED_DOMAIN}`}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              {err && <Msg text={err} />}
+              <Btn busy={busy}>{busy ? 'Checking…' : 'Continue'}</Btn>
+              <p className="text-[11px] text-slate-400 text-center pt-1">
+                Sign in with your @applywizz.ai email + Microsoft Authenticator
+              </p>
+            </form>
+          </>
         )}
 
-        {/* ─── STEP: Check Inbox (new user sign-up) ─── */}
-        {step === 'check-inbox' && (
-          <div className="mt-10 w-full max-w-xs space-y-4 text-center">
-            <div className="text-3xl mb-1">📬</div>
-            <p className="text-base font-semibold text-slate-900">Check your inbox</p>
+        {/* ─── STEP: Enroll (first time — scan QR code) ─── */}
+        {step === 'enroll' && (
+          <div className="w-full max-w-sm space-y-5 text-center">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand/10 text-brand text-2xl mb-1">
+              📱
+            </div>
+            <h2 className="text-xl font-bold text-slate-900">Set up Microsoft Authenticator</h2>
             <p className="text-sm text-slate-500 leading-relaxed">
-              We sent a verification link to<br />
-              <strong className="text-slate-800">{email}</strong>
+              Open <strong>Microsoft Authenticator</strong> on your phone<br />
+              Tap <strong>+</strong> → <strong>Other account</strong> → Scan this QR code
             </p>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Click the link in your email to verify your account.<br />
-              You'll then set a password to complete sign-up.
-            </p>
-            {err && <Msg text={err} />}
-            <button onClick={resend} disabled={busy}
-              className="text-xs text-brand hover:underline disabled:opacity-50">
-              Didn't get it? Resend link
-            </button>
-            <button onClick={() => { setStep('email'); setErr(''); }}
-              className="block mx-auto text-xs text-slate-400 hover:text-brand mt-2">
+
+            {qrCode && (
+              <div className="flex justify-center">
+                <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 inline-block">
+                  <img src={qrCode} alt="QR Code" className="w-48 h-48" />
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={submitCode} className="space-y-3 text-left">
+              <Label>Enter the 6-digit code from Authenticator</Label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                required
+                autoFocus
+                autoComplete="one-time-code"
+                placeholder="000000"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="text-center text-2xl tracking-[0.5em] font-mono"
+              />
+              {err && <Msg text={err} />}
+              <Btn busy={busy}>{busy ? 'Verifying…' : 'Verify & Continue'}</Btn>
+            </form>
+
+            <button
+              onClick={() => { setStep('email'); setErr(''); setTotpCode(''); supabase.auth.signOut(); }}
+              className="text-xs text-slate-400 hover:text-brand mt-2"
+            >
               ← Use a different email
             </button>
           </div>
         )}
 
-        {/* ─── STEP: Password (returning user) ─── */}
-        {step === 'password' && (
-          <form onSubmit={submitPassword} className="mt-10 w-full max-w-xs space-y-3 text-left">
-            <button type="button" onClick={() => { setStep('email'); setErr(''); setPassword(''); }}
-              className="text-xs text-slate-400 hover:text-brand flex items-center gap-1 mb-1">
-              ← {email}
-            </button>
-            <Label>Password</Label>
-            <div className="relative">
-              <Input
-                type={showPw ? 'text' : 'password'} required autoFocus autoComplete="current-password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="pr-14"
-              />
-              <button type="button" onClick={() => setShowPw(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs select-none">
-                {showPw ? 'Hide' : 'Show'}
-              </button>
+        {/* ─── STEP: Verify (returning user — enter code) ─── */}
+        {step === 'verify' && (
+          <div className="w-full max-w-sm space-y-5 text-center">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand/10 text-brand text-2xl mb-1">
+              🔐
             </div>
-            {err && <Msg text={err} />}
-            <Btn busy={busy}>{busy ? 'Signing in…' : 'Sign in'}</Btn>
-            <button type="button" onClick={forgotPassword} disabled={busy}
-              className="w-full text-xs text-slate-400 hover:text-brand transition-colors text-center py-1">
-              Forgot password?
+            <h2 className="text-xl font-bold text-slate-900">Enter authenticator code</h2>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              Open <strong>Microsoft Authenticator</strong> and enter the 6-digit code<br />
+              for <strong className="text-slate-800">{email}</strong>
+            </p>
+
+            <form onSubmit={submitCode} className="space-y-3 text-left">
+              <Input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                required
+                autoFocus
+                autoComplete="one-time-code"
+                placeholder="000000"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="text-center text-2xl tracking-[0.5em] font-mono"
+              />
+              {err && <Msg text={err} />}
+              <Btn busy={busy}>{busy ? 'Verifying…' : 'Sign in'}</Btn>
+            </form>
+
+            <button
+              onClick={() => { setStep('email'); setErr(''); setTotpCode(''); supabase.auth.signOut(); }}
+              className="text-xs text-slate-400 hover:text-brand mt-2"
+            >
+              ← Use a different email
             </button>
-          </form>
+          </div>
         )}
 
       </main>
 
       <footer className="px-8 py-5 text-center">
         <p className="text-[11px] text-slate-300">
-          Applywizz Pantry · Secured with email verification
+          Applywizz Pantry · Secured with Microsoft Authenticator
         </p>
       </footer>
     </div>

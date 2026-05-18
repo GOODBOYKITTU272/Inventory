@@ -5,6 +5,7 @@ export function useAuth() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [aal,     setAal]     = useState('aal1');
 
   useEffect(() => {
     let cancelled = false;
@@ -13,7 +14,13 @@ export function useAuth() {
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
       setSession(data.session);
-      if (data.session) await loadProfile(data.session.user.id);
+
+      // Check MFA assurance level
+      if (data.session) {
+        const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (!cancelled && aalData) setAal(aalData.currentLevel || 'aal1');
+        await loadProfile(data.session.user.id);
+      }
       setLoading(false);
     }
 
@@ -53,10 +60,16 @@ export function useAuth() {
 
     bootstrap();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       setSession(newSession);
-      if (newSession) loadProfile(newSession.user.id);
-      else setProfile(null);
+      if (newSession) {
+        const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (!cancelled && aalData) setAal(aalData.currentLevel || 'aal1');
+        loadProfile(newSession.user.id);
+      } else {
+        setProfile(null);
+        setAal('aal1');
+      }
     });
 
     return () => {
@@ -65,5 +78,5 @@ export function useAuth() {
     };
   }, []);
 
-  return { session, profile, loading };
+  return { session, profile, loading, aal };
 }

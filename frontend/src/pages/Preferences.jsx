@@ -294,32 +294,14 @@ export default function Preferences() {
         </AnimatePresence>
       </div>
 
-      {/* Change Password */}
+      {/* Security Info */}
       <div className="card space-y-4">
         <h2 className="text-base font-semibold flex items-center gap-2">
-          <KeyRound size={18} className="text-brand" /> Change Password
+          <KeyRound size={18} className="text-brand" /> Security
         </h2>
         <p className="text-xs text-slate-500">
-          Your default password was set to <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono">Lovefood</code>. Change it to something personal.
+          Your account is secured with <strong>Microsoft Authenticator</strong>. If you lose access to your authenticator app, contact your admin to reset it.
         </p>
-        <form onSubmit={changePassword} className="flex gap-2">
-          <input
-            type="password"
-            placeholder="New password (min 6 chars)"
-            value={newPw}
-            onChange={(e) => setNewPw(e.target.value)}
-            className="input flex-1"
-            minLength={6}
-          />
-          <button className="btn-primary px-4" disabled={pwBusy}>
-            {pwBusy ? <Loader2 size={16} className="animate-spin" /> : 'Save'}
-          </button>
-        </form>
-        {pwMsg && (
-          <div className={`text-xs p-3 rounded-xl ${pwMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
-            {pwMsg}
-          </div>
-        )}
       </div>
 
       <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex gap-3 text-slate-600">
