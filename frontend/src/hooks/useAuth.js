@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase.js';
 
 export function useAuth() {
@@ -6,9 +6,18 @@ export function useAuth() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [aal,     setAal]     = useState('aal1');
+  const bootstrapped = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+
+    // Safety timeout — never stay loading forever
+    const safetyTimer = setTimeout(() => {
+      if (!bootstrapped.current && !cancelled) {
+        console.warn('[useAuth] Safety timeout — forcing loading=false after 6s');
+        setLoading(false);
+      }
+    }, 6000);
 
     async function checkAal() {
       try {
@@ -23,24 +32,32 @@ export function useAuth() {
     }
 
     async function bootstrap() {
+      console.log('[useAuth] bootstrap start');
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
+        console.log('[useAuth] getSession done, session?', !!data?.session, error?.message || '');
         if (cancelled) return;
-        setSession(data.session);
 
-        if (data.session) {
+        const sess = data?.session || null;
+        setSession(sess);
+
+        if (sess) {
+          console.log('[useAuth] session exists, checking AAL + profile');
           await checkAal();
-          await loadProfile(data.session.user.id);
+          await loadProfile(sess.user.id);
         }
       } catch (e) {
         console.error('[useAuth] bootstrap error:', e);
       } finally {
-        if (!cancelled) setLoading(false);
+        bootstrapped.current = true;
+        if (!cancelled) {
+          console.log('[useAuth] setting loading=false');
+          setLoading(false);
+        }
       }
     }
 
     async function loadProfile(userId) {
-      // Retry up to 3 times — the DB trigger may take a moment to create the profile
       for (let i = 0; i < 3; i++) {
         const { data } = await supabase
           .from('profiles')
@@ -53,7 +70,7 @@ export function useAuth() {
         }
         if (i < 2) await new Promise(r => setTimeout(r, 1200));
       }
-      // No profile after retries — auto-create as staff (first-time @applywizz.ai login)
+      // No profile after retries — auto-create as staff
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
@@ -76,6 +93,7 @@ export function useAuth() {
     bootstrap();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      console.log('[useAuth] onAuthStateChange:', _event, !!newSession);
       setSession(newSession);
       if (newSession) {
         await checkAal();
@@ -88,6 +106,7 @@ export function useAuth() {
 
     return () => {
       cancelled = true;
+      clearTimeout(safetyTimer);
       sub.subscription.unsubscribe();
     };
   }, []);
