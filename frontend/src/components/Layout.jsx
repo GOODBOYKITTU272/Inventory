@@ -27,11 +27,11 @@ const labels = {
 
 // display label for the role chip in the header
 const roleDisplay = {
-  leadership:       'Leadership (Admin)',
-  facility_manager: 'Office Boy',
-  finance:          'Accounts Team',
+  leadership:       'Admin',
+  facility_manager: 'Facility Manager',
+  finance:          'Accounts',
   office_boy:       'Office Boy',
-  staff:            'Employee',
+  staff:            'Applywizzian',
 };
 
 export default function Layout() {

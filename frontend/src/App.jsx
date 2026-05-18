@@ -18,6 +18,7 @@ import PreferencesPage from './pages/Preferences.jsx';
 import AuditLogPage from './pages/AuditLog.jsx';
 import ConnectionsPage from './pages/Connections.jsx';
 import OnboardingPage from './pages/Onboarding.jsx';
+import VerifyPage from './pages/Verify.jsx';
 import { useAuth } from './hooks/useAuth.js';
 
 function Protected({ children, allow }) {
@@ -118,6 +119,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/verify" element={<VerifyPage />} />
       <Route
         element={
           <Protected>

@@ -4,11 +4,11 @@ import { useAuth } from '../hooks/useAuth.js';
 
 // DB value : display label
 const ROLE_OPTIONS = [
-  { value: 'leadership',       label: 'Leadership (Admin)' },
+  { value: 'leadership',       label: 'Admin' },
   { value: 'facility_manager', label: 'Facility Manager' },
   { value: 'office_boy',       label: 'Office Boy' },
-  { value: 'finance',          label: 'Finance' },
-  { value: 'staff',            label: 'Employee' },
+  { value: 'finance',          label: 'Accounts' },
+  { value: 'staff',            label: 'Applywizzian' },
 ];
 const ROLE_LABEL = Object.fromEntries(ROLE_OPTIONS.map((r) => [r.value, r.label]));
 
