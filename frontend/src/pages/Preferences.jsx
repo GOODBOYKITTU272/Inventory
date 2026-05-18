@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, User, LogOut, BellRing, BellOff, KeyRound } from 'lucide-react';
+import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, User, LogOut, BellRing, BellOff } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth.js';
 import { isPushSupported, getPushStatus, subscribeToPush, unsubscribeFromPush } from '../lib/push.js';
 
@@ -13,9 +13,6 @@ export default function Preferences() {
   const [saving, setSaving]     = useState(false);
   const [success, setSuccess]   = useState(false);
   const [tableErr, setTableErr] = useState(false);
-  const [newPw,       setNewPw]       = useState('');
-  const [pwBusy,      setPwBusy]      = useState(false);
-  const [pwMsg,       setPwMsg]       = useState('');
   const [pushStatus,  setPushStatus]  = useState('checking'); // checking | unsupported | denied | not_subscribed | subscribed
   const [pushBusy,    setPushBusy]    = useState(false);
   const [pushMsg,     setPushMsg]     = useState('');
@@ -32,18 +29,6 @@ export default function Preferences() {
     loadPrefs();
     getPushStatus().then(setPushStatus).catch(() => setPushStatus('unsupported'));
   }, [profile?.id]);
-
-  async function changePassword(e) {
-    e.preventDefault();
-    if (newPw.length < 6) { setPwMsg('⚠️ Password must be at least 6 characters.'); return; }
-    setPwBusy(true); setPwMsg('');
-    const { error } = await supabase.auth.updateUser({ password: newPw });
-    setPwBusy(false);
-    if (error) { setPwMsg('⚠️ ' + error.message); return; }
-    setPwMsg('✅ Password changed successfully!');
-    setNewPw('');
-    setTimeout(() => setPwMsg(''), 4000);
-  }
 
   async function togglePush() {
     setPushBusy(true);
@@ -292,34 +277,6 @@ export default function Preferences() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-
-      {/* Change Password */}
-      <div className="card space-y-4">
-        <h2 className="text-base font-semibold flex items-center gap-2">
-          <KeyRound size={18} className="text-brand" /> Change Password
-        </h2>
-        <p className="text-xs text-slate-500">
-          Your default password was set to <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono">Lovefood</code>. Change it to something personal.
-        </p>
-        <form onSubmit={changePassword} className="flex gap-2">
-          <input
-            type="password"
-            placeholder="New password (min 6 chars)"
-            value={newPw}
-            onChange={(e) => setNewPw(e.target.value)}
-            className="input flex-1"
-            minLength={6}
-          />
-          <button className="btn-primary px-4" disabled={pwBusy}>
-            {pwBusy ? <Loader2 size={16} className="animate-spin" /> : 'Save'}
-          </button>
-        </form>
-        {pwMsg && (
-          <div className={`text-xs p-3 rounded-xl ${pwMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
-            {pwMsg}
-          </div>
-        )}
       </div>
 
       <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex gap-3 text-slate-600">
