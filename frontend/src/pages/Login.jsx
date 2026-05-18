@@ -8,11 +8,13 @@ const ALLOWED_DOMAIN = 'applywizz.ai';
 export default function Login() {
   const { session, loading } = useAuth();
 
-  const [step,  setStep]  = useState('email');   // 'email' | 'otp'
-  const [email, setEmail] = useState('');
-  const [otp,   setOtp]   = useState('');
-  const [err,   setErr]   = useState('');
-  const [busy,  setBusy]  = useState(false);
+  // 'email' → 'check-inbox' → 'password' (returning user)
+  const [step,     setStep]     = useState('email');
+  const [email,    setEmail]    = useState('');
+  const [password, setPassword] = useState('');
+  const [showPw,   setShowPw]   = useState(false);
+  const [err,      setErr]      = useState('');
+  const [busy,     setBusy]     = useState(false);
 
   if (loading) return (
     <div className="min-h-screen grid place-items-center bg-white">
@@ -21,7 +23,7 @@ export default function Login() {
   );
   if (session) return <Navigate to="/" replace />;
 
-  // Step 1 → validate domain → send OTP
+  // ── Step 1: enter email ──
   async function submitEmail(e) {
     e.preventDefault();
     setErr('');
@@ -32,56 +34,91 @@ export default function Login() {
       return;
     }
 
-    setBusy(true);
     setEmail(trimmed);
+    setBusy(true);
 
-    const { error } = await supabase.auth.signInWithOtp({
+    // Check if user already exists (has signed up before)
+    const { error: pwErr } = await supabase.auth.signInWithPassword({
       email: trimmed,
-      options: { shouldCreateUser: true },
+      password: '___probe___',  // intentionally wrong — just checking if account exists
+    });
+
+    // "Invalid login credentials" = account exists, wrong password → go to password step
+    // "Email not confirmed" = exists but unverified
+    // Other errors = account doesn't exist → send sign-up link
+    const errMsg = pwErr?.message?.toLowerCase() || '';
+    const accountExists = errMsg.includes('invalid login') || errMsg.includes('not confirmed');
+
+    if (accountExists) {
+      setBusy(false);
+      setStep('password');
+      return;
+    }
+
+    // New user → send verification email (magic link)
+    const { error: signUpErr } = await supabase.auth.signInWithOtp({
+      email: trimmed,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: window.location.origin + '/verify',
+      },
     });
 
     setBusy(false);
 
-    if (error) {
-      setErr('Could not send code: ' + error.message);
+    if (signUpErr) {
+      setErr('Could not send verification email: ' + signUpErr.message);
       return;
     }
 
-    setStep('otp');
+    setStep('check-inbox');
   }
 
-  // Step 2 → verify OTP → logged in
-  async function submitOtp(e) {
+  // ── Step 2b: returning user → password ──
+  async function submitPassword(e) {
     e.preventDefault();
     setErr('');
     setBusy(true);
 
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token: otp.trim(),
-      type: 'email',
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     setBusy(false);
 
     if (error) {
-      setErr('Invalid or expired code. Check your email and try again.');
+      if (error.message.toLowerCase().includes('invalid login')) {
+        setErr('Wrong password.');
+      } else {
+        setErr(error.message);
+      }
+    }
+    // success → session fires → Navigate above redirects
+  }
+
+  // ── Forgot password ──
+  async function forgotPassword() {
+    setBusy(true);
+    setErr('');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/verify',
+    });
+    setBusy(false);
+    if (error) {
+      setErr(error.message);
+    } else {
+      setErr('✅ Password reset link sent to ' + email + '. Check your inbox.');
     }
   }
 
-  async function resendOtp() {
+  // ── Resend verification ──
+  async function resend() {
     setBusy(true);
     setErr('');
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: true },
+      options: { shouldCreateUser: true, emailRedirectTo: window.location.origin + '/verify' },
     });
     setBusy(false);
-    if (error) {
-      setErr('Could not resend: ' + error.message);
-    } else {
-      setErr('✅ New code sent to ' + email);
-    }
+    setErr(error ? error.message : '✅ New link sent to ' + email);
   }
 
   return (
@@ -100,13 +137,11 @@ export default function Login() {
 
       <main className="flex-1 flex flex-col items-center justify-center px-6 text-center -mt-12">
 
-        {/* Badge */}
         <div className="inline-flex items-center gap-1.5 bg-brand/8 text-brand text-xs font-semibold px-3 py-1 rounded-full mb-8 tracking-wide uppercase">
           <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
           Office pantry
         </div>
 
-        {/* Headline */}
         <h1 className="text-[2.5rem] sm:text-5xl font-bold text-slate-900 leading-[1.08] tracking-tight max-w-lg">
           Your office fuel,{' '}
           <span className="text-brand">beautifully</span> served.
@@ -116,118 +151,91 @@ export default function Login() {
           Tea, coffee, snacks — ordered in seconds, tracked live to your desk.
         </p>
 
-        {/* Feature pills */}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           {[
             { icon: '⚡', label: 'Instant orders' },
             { icon: '📍', label: 'Live tracking' },
             { icon: '🔔', label: 'Push alerts' },
           ].map(({ icon, label }) => (
-            <span
-              key={label}
-              className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 text-slate-600 text-xs font-medium px-3 py-1.5 rounded-full select-none"
-            >
+            <span key={label} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 text-slate-600 text-xs font-medium px-3 py-1.5 rounded-full select-none">
               {icon} {label}
             </span>
           ))}
         </div>
 
-        {/* ─── Step 1: Email ─── */}
+        {/* ─── STEP: Email ─── */}
         {step === 'email' && (
           <form onSubmit={submitEmail} className="mt-10 w-full max-w-xs space-y-3 text-left">
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1">
-              Work email
-            </label>
-            <input
-              type="email"
-              required
-              autoFocus
-              autoComplete="email"
+            <Label>Work email</Label>
+            <Input
+              type="email" required autoFocus autoComplete="email"
               placeholder={`you@${ALLOWED_DOMAIN}`}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand transition-shadow"
             />
-
             {err && <Msg text={err} />}
-
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full bg-brand hover:bg-brand/90 active:scale-[0.98] text-white text-sm font-semibold py-3 rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-            >
-              {busy ? <Spin /> : null}
-              {busy ? 'Sending code…' : 'Continue'}
-            </button>
-
+            <Btn busy={busy}>{busy ? 'Checking…' : 'Continue'}</Btn>
             <p className="text-[11px] text-slate-400 text-center pt-1">
-              A one-time code will be sent to your work email
+              New here? We'll send a verification link. Already signed up? Enter your password.
             </p>
           </form>
         )}
 
-        {/* ─── Step 2: OTP ─── */}
-        {step === 'otp' && (
-          <form onSubmit={submitOtp} className="mt-10 w-full max-w-xs space-y-4 text-left">
-
-            {/* Back link */}
-            <button
-              type="button"
-              onClick={() => { setStep('email'); setOtp(''); setErr(''); }}
-              className="text-xs text-slate-400 hover:text-brand transition-colors flex items-center gap-1"
-            >
-              ← Change email
-            </button>
-
-            {/* Inbox prompt */}
-            <div className="text-center py-2">
-              <div className="text-3xl mb-2">📬</div>
-              <p className="text-sm font-semibold text-slate-800">Check your inbox</p>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                We sent a 6-digit code to<br />
-                <strong className="text-slate-700">{email}</strong>
-              </p>
-            </div>
-
-            {/* Code input */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1">
-                Verification code
-              </label>
-              <input
-                type="text"
-                required
-                autoFocus
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="••••••"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                className="w-full border border-slate-200 rounded-xl px-4 py-3.5 text-center text-xl font-mono tracking-[0.4em] text-slate-900 placeholder-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand transition-shadow"
-              />
-            </div>
-
+        {/* ─── STEP: Check Inbox (new user sign-up) ─── */}
+        {step === 'check-inbox' && (
+          <div className="mt-10 w-full max-w-xs space-y-4 text-center">
+            <div className="text-3xl mb-1">📬</div>
+            <p className="text-base font-semibold text-slate-900">Check your inbox</p>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              We sent a verification link to<br />
+              <strong className="text-slate-800">{email}</strong>
+            </p>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Click the link in your email to verify your account.<br />
+              You'll then set a password to complete sign-up.
+            </p>
             {err && <Msg text={err} />}
-
-            <button
-              type="submit"
-              disabled={busy || otp.length < 6}
-              className="w-full bg-brand hover:bg-brand/90 active:scale-[0.98] text-white text-sm font-semibold py-3 rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-            >
-              {busy ? <Spin /> : null}
-              {busy ? 'Verifying…' : 'Sign in'}
+            <button onClick={resend} disabled={busy}
+              className="text-xs text-brand hover:underline disabled:opacity-50">
+              Didn't get it? Resend link
             </button>
+            <button onClick={() => { setStep('email'); setErr(''); }}
+              className="block mx-auto text-xs text-slate-400 hover:text-brand mt-2">
+              ← Use a different email
+            </button>
+          </div>
+        )}
 
-            <button
-              type="button"
-              onClick={resendOtp}
-              disabled={busy}
-              className="w-full text-xs text-slate-400 hover:text-brand transition-colors text-center py-1"
-            >
-              Didn't get it? Resend code
+        {/* ─── STEP: Password (returning user) ─── */}
+        {step === 'password' && (
+          <form onSubmit={submitPassword} className="mt-10 w-full max-w-xs space-y-3 text-left">
+            <button type="button" onClick={() => { setStep('email'); setErr(''); setPassword(''); }}
+              className="text-xs text-slate-400 hover:text-brand flex items-center gap-1 mb-1">
+              ← {email}
+            </button>
+            <Label>Password</Label>
+            <div className="relative">
+              <Input
+                type={showPw ? 'text' : 'password'} required autoFocus autoComplete="current-password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="pr-14"
+              />
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs select-none">
+                {showPw ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            {err && <Msg text={err} />}
+            <Btn busy={busy}>{busy ? 'Signing in…' : 'Sign in'}</Btn>
+            <button type="button" onClick={forgotPassword} disabled={busy}
+              className="w-full text-xs text-slate-400 hover:text-brand transition-colors text-center py-1">
+              Forgot password?
             </button>
           </form>
         )}
+
       </main>
 
       <footer className="px-8 py-5 text-center">
@@ -239,21 +247,36 @@ export default function Login() {
   );
 }
 
-/* ── Tiny components ── */
+/* ── Shared UI pieces ── */
 
-function Spin() {
-  return <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />;
+function Label({ children }) {
+  return <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1">{children}</label>;
+}
+
+function Input({ className = '', ...props }) {
+  return (
+    <input
+      {...props}
+      className={`w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand transition-shadow ${className}`}
+    />
+  );
+}
+
+function Btn({ busy, children }) {
+  return (
+    <button type="submit" disabled={busy}
+      className="w-full bg-brand hover:bg-brand/90 active:scale-[0.98] text-white text-sm font-semibold py-3 rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+      {busy && <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />}
+      {children}
+    </button>
+  );
 }
 
 function Msg({ text }) {
   const ok = text.startsWith('✅');
   return (
     <div className={`text-xs px-4 py-2.5 rounded-xl border leading-relaxed ${
-      ok
-        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-        : 'bg-rose-50 text-rose-600 border-rose-100'
-    }`}>
-      {text}
-    </div>
+      ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-100'
+    }`}>{text}</div>
   );
 }
