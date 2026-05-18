@@ -13,9 +13,6 @@ export default function Preferences() {
   const [saving, setSaving]     = useState(false);
   const [success, setSuccess]   = useState(false);
   const [tableErr, setTableErr] = useState(false);
-  const [newPw,       setNewPw]       = useState('');
-  const [pwBusy,      setPwBusy]      = useState(false);
-  const [pwMsg,       setPwMsg]       = useState('');
   const [pushStatus,  setPushStatus]  = useState('checking'); // checking | unsupported | denied | not_subscribed | subscribed
   const [pushBusy,    setPushBusy]    = useState(false);
   const [pushMsg,     setPushMsg]     = useState('');
@@ -32,18 +29,6 @@ export default function Preferences() {
     loadPrefs();
     getPushStatus().then(setPushStatus).catch(() => setPushStatus('unsupported'));
   }, [profile?.id]);
-
-  async function changePassword(e) {
-    e.preventDefault();
-    if (newPw.length < 6) { setPwMsg('⚠️ Password must be at least 6 characters.'); return; }
-    setPwBusy(true); setPwMsg('');
-    const { error } = await supabase.auth.updateUser({ password: newPw });
-    setPwBusy(false);
-    if (error) { setPwMsg('⚠️ ' + error.message); return; }
-    setPwMsg('✅ Password changed successfully!');
-    setNewPw('');
-    setTimeout(() => setPwMsg(''), 4000);
-  }
 
   async function togglePush() {
     setPushBusy(true);

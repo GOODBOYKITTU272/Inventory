@@ -14,13 +14,10 @@ import transactionsRouter from './routes/transactions.js';
 import reportsRouter from './routes/reports.js';
 import aiSummaryRouter from './routes/aiSummary.js';
 import adminRouter from './routes/admin.js';
-import authRouter from './routes/auth.js';
 import requestsRouter from './routes/requests.js';
 import billsRouter from './routes/bills.js';
 import billWebhookRouter from './routes/billWebhook.js';
 import telegramWebhookRouter from './routes/telegramWebhook.js';
-import cafeteriaRouter from './routes/cafeteria.js';
-import pushRouter from './routes/push.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -31,11 +28,7 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173')
   .split(',')
-  .map((o) => o.trim().replace(/\/$/, ''));
-
-if (process.env.NODE_ENV !== 'production') {
-  allowedOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173');
-}
+  .map((o) => o.trim());
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -60,7 +53,6 @@ app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOStrin
 
 app.use('/api/bills/webhook', billWebhookRouter);
 app.use('/api/telegram/webhook', telegramWebhookRouter);
-app.use('/api/auth', authRouter);
 
 app.use('/api', authMiddleware);
 app.use('/api/products',     productsRouter);
@@ -71,10 +63,10 @@ app.use('/api/reports',      aiSummaryRouter);
 app.use('/api/admin',        adminRouter);
 app.use('/api/requests',     requestsRouter);
 app.use('/api/bills',        billsRouter);
-app.use('/api/cafeteria',    cafeteriaRouter);
-app.use('/api/push',         pushRouter);
 
 app.use(errorHandler);
 
-if (process.env.NODE_ENV !== 'production') { app.listen(PORT); }
-export default app;
+app.listen(PORT, () => {
+  console.log(`[applyways-api] listening on http://localhost:${PORT}`);
+});
+
