@@ -1,45 +1,39 @@
-import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
-import { useAuth } from '../hooks/useAuth.js';
 
 const ALLOWED_DOMAIN = 'applywizz.ai';
 const HIDDEN_PASSWORD = 'Applywizz@2026';
 
 export default function Login() {
-  const { session, loading, aal } = useAuth();
+  const navigate = useNavigate();
 
-  // Steps: 'email' → 'enroll' (new, QR) → 'verify' (enter code)
+  // Steps: 'email' → 'enroll' (new, QR) → 'verify' (enter code) → 'done'
   const [step,    setStep]    = useState('email');
   const [email,   setEmail]   = useState('');
   const [err,     setErr]     = useState('');
   const [busy,    setBusy]    = useState(false);
 
   // MFA state
-  const [qrCode,      setQrCode]      = useState('');   // SVG or URI for QR
+  const [qrCode,      setQrCode]      = useState('');
   const [factorId,    setFactorId]    = useState('');
   const [challengeId, setChallengeId] = useState('');
   const [totpCode,    setTotpCode]    = useState('');
 
-  if (loading) return (
-    <div className="min-h-screen grid place-items-center bg-white">
-      <div className="w-5 h-5 rounded-full border-2 border-brand border-t-transparent animate-spin" />
-    </div>
-  );
-
-  // If already fully authenticated (AAL2), redirect home
-  if (session && aal === 'aal2' && step === 'email') {
-    return <Navigate to="/" replace />;
-  }
+  // Prevent double-submit
+  const submitting = useRef(false);
 
   // ── Step 1: Enter email ──
   async function submitEmail(e) {
     e.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
     setErr('');
     const trimmed = email.trim().toLowerCase();
 
     if (!trimmed.endsWith('@' + ALLOWED_DOMAIN)) {
       setErr(`Only @${ALLOWED_DOMAIN} accounts are allowed.`);
+      submitting.current = false;
       return;
     }
 
@@ -48,7 +42,7 @@ export default function Login() {
 
     try {
       // Try sign in with hidden password
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
+      let { error: signInErr } = await supabase.auth.signInWithPassword({
         email: trimmed,
         password: HIDDEN_PASSWORD,
       });
@@ -56,103 +50,130 @@ export default function Login() {
       if (signInErr) {
         const msg = signInErr.message?.toLowerCase() || '';
 
-        // Account doesn't exist → create it
-        if (msg.includes('invalid login') || msg.includes('invalid email') || msg.includes('user not found')) {
+        if (msg.includes('invalid login') || msg.includes('invalid email') || msg.includes('user not found') || msg.includes('invalid credentials')) {
+          // Account doesn't exist → create it
+          console.log('[Login] Account not found, creating...');
           const { error: signUpErr } = await supabase.auth.signUp({
             email: trimmed,
             password: HIDDEN_PASSWORD,
-            options: {
-              data: { full_name: trimmed.split('@')[0] },
-            },
+            options: { data: { full_name: trimmed.split('@')[0] } },
           });
 
           if (signUpErr) {
-            // Maybe user exists but with different password (old "Lovefood")
-            // Try updating via admin or show error
             setErr('Could not create account: ' + signUpErr.message);
             setBusy(false);
+            submitting.current = false;
             return;
           }
 
           // Sign in right after signup
-          const { error: postSignupErr } = await supabase.auth.signInWithPassword({
+          const { error: postErr } = await supabase.auth.signInWithPassword({
             email: trimmed,
             password: HIDDEN_PASSWORD,
           });
 
-          if (postSignupErr) {
-            setErr('Account created but could not sign in: ' + postSignupErr.message);
+          if (postErr) {
+            setErr('Account created but sign-in failed: ' + postErr.message);
             setBusy(false);
+            submitting.current = false;
             return;
           }
         } else {
           setErr('Could not sign in: ' + signInErr.message);
           setBusy(false);
+          submitting.current = false;
           return;
         }
       }
 
-      // Signed in with password (AAL1) — now handle MFA
+      console.log('[Login] Signed in, checking MFA...');
+      // Signed in (AAL1) — now handle MFA
       await handleMfaAfterSignIn();
     } catch (ex) {
       setErr('Something went wrong: ' + (ex.message || ex));
-    } finally {
       setBusy(false);
+      submitting.current = false;
     }
   }
 
   // After password sign-in, check MFA enrollment
   async function handleMfaAfterSignIn() {
-    const { data: factors, error: fErr } = await supabase.auth.mfa.listFactors();
+    try {
+      const { data: factors, error: fErr } = await supabase.auth.mfa.listFactors();
+      console.log('[Login] MFA factors:', JSON.stringify(factors), fErr?.message);
 
-    if (fErr) {
-      setErr('Could not check authenticator status: ' + fErr.message);
-      return;
-    }
-
-    const totp = factors?.totp?.find(f => f.status === 'verified');
-    const unverifiedTotp = factors?.totp?.find(f => f.status === 'unverified');
-
-    if (totp) {
-      // Returning user — has verified TOTP factor → challenge
-      const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
-        factorId: totp.id,
-      });
-      if (cErr) {
-        setErr('Could not start authenticator challenge: ' + cErr.message);
+      if (fErr) {
+        setErr('Could not check authenticator: ' + fErr.message);
+        setBusy(false);
+        submitting.current = false;
         return;
       }
-      setFactorId(totp.id);
-      setChallengeId(challenge.id);
-      setStep('verify');
-    } else if (unverifiedTotp) {
-      // Had an unverified enrollment — unenroll and re-enroll fresh
-      await supabase.auth.mfa.unenroll({ factorId: unverifiedTotp.id });
-      await enrollNewTotp();
-    } else {
-      // New user — no TOTP factor → enroll
-      await enrollNewTotp();
+
+      const totp = factors?.totp?.find(f => f.status === 'verified');
+      const unverified = factors?.totp?.find(f => f.status === 'unverified');
+
+      if (totp) {
+        // Returning user — challenge existing TOTP
+        console.log('[Login] Existing TOTP factor, creating challenge...');
+        const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
+          factorId: totp.id,
+        });
+        if (cErr) {
+          setErr('Authenticator challenge failed: ' + cErr.message);
+          setBusy(false);
+          submitting.current = false;
+          return;
+        }
+        setFactorId(totp.id);
+        setChallengeId(challenge.id);
+        setBusy(false);
+        setStep('verify');
+      } else {
+        // Clean up any unverified enrollments first
+        if (unverified) {
+          await supabase.auth.mfa.unenroll({ factorId: unverified.id }).catch(() => {});
+        }
+        // New user — enroll TOTP
+        console.log('[Login] No TOTP factor, enrolling...');
+        await enrollNewTotp();
+      }
+    } catch (ex) {
+      setErr('MFA setup error: ' + (ex.message || ex));
+      setBusy(false);
+      submitting.current = false;
     }
   }
 
   // Enroll a new TOTP factor (show QR code)
   async function enrollNewTotp() {
-    const { data, error } = await supabase.auth.mfa.enroll({
-      factorType: 'totp',
-      friendlyName: 'Microsoft Authenticator',
-    });
+    try {
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: 'totp',
+        friendlyName: 'Microsoft Authenticator',
+      });
 
-    if (error) {
-      setErr('Could not set up authenticator: ' + error.message);
-      return;
+      console.log('[Login] MFA enroll result:', !!data, error?.message);
+
+      if (error) {
+        setErr('Could not set up authenticator: ' + error.message);
+        setBusy(false);
+        submitting.current = false;
+        return;
+      }
+
+      setFactorId(data.id);
+      setQrCode(data.totp.qr_code);
+      setBusy(false);
+      setStep('enroll');
+      console.log('[Login] QR code ready, showing enroll screen');
+    } catch (ex) {
+      setErr('Authenticator setup failed: ' + (ex.message || ex));
+      setBusy(false);
+      submitting.current = false;
     }
-
-    setFactorId(data.id);
-    setQrCode(data.totp.qr_code);
-    setStep('enroll');
   }
 
-  // Verify TOTP code (used for both enroll confirmation and returning user)
+  // Verify TOTP code (both enroll and returning user)
   async function submitCode(e) {
     e.preventDefault();
     setErr('');
@@ -167,8 +188,8 @@ export default function Login() {
     try {
       let cId = challengeId;
 
-      // If enrolling, we need to create a challenge first
-      if (step === 'enroll' || !cId) {
+      // Create challenge if needed (enrollment flow)
+      if (!cId) {
         const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
           factorId,
         });
@@ -190,29 +211,18 @@ export default function Login() {
       if (vErr) {
         setErr('Invalid code. Check Microsoft Authenticator and try again.');
         setTotpCode('');
+        setChallengeId(''); // Force new challenge on retry
         setBusy(false);
         return;
       }
 
-      // MFA verified! Session is now AAL2 — onAuthStateChange will fire
-      // and redirect via the session check
+      // MFA verified! Session is now AAL2.
+      console.log('[Login] MFA verified! Navigating home...');
+      setStep('done');
+      navigate('/', { replace: true });
     } catch (ex) {
       setErr('Verification failed: ' + (ex.message || ex));
-    } finally {
       setBusy(false);
-    }
-  }
-
-  // If session exists and is AAL2 (fully MFA'd), redirect home
-  if (session) {
-    // Check current auth level
-    const checkAAL = async () => {
-      const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      return data;
-    };
-    // Simple sync check: if we're past the email step and session exists, likely AAL2
-    if (step === 'email') {
-      return <Navigate to="/" replace />;
     }
   }
 
@@ -318,7 +328,7 @@ export default function Login() {
             </form>
 
             <button
-              onClick={() => { setStep('email'); setErr(''); setTotpCode(''); supabase.auth.signOut(); }}
+              onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }}
               className="text-xs text-slate-400 hover:text-brand mt-2"
             >
               ← Use a different email
@@ -357,11 +367,19 @@ export default function Login() {
             </form>
 
             <button
-              onClick={() => { setStep('email'); setErr(''); setTotpCode(''); supabase.auth.signOut(); }}
+              onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }}
               className="text-xs text-slate-400 hover:text-brand mt-2"
             >
               ← Use a different email
             </button>
+          </div>
+        )}
+
+        {/* ─── STEP: Done ─── */}
+        {step === 'done' && (
+          <div className="text-center space-y-3">
+            <div className="w-8 h-8 mx-auto rounded-full border-2 border-brand border-t-transparent animate-spin" />
+            <p className="text-sm text-slate-500">Signing you in…</p>
           </div>
         )}
 
