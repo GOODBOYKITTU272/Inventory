@@ -98,6 +98,13 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove }) {
         )}
       </div>
 
+      {/* Low stock badge */}
+      {item.stock_today !== null && item.stock_today !== undefined && item.stock_today > 0 && item.stock_today <= 5 && (
+        <div className="absolute top-1.5 right-1.5 bg-amber-100 text-amber-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">
+          {item.stock_today} left
+        </div>
+      )}
+
       {inCart ? (
         <div className="flex items-center justify-center gap-2 mt-1">
           <button
@@ -470,6 +477,8 @@ export default function Cafeteria() {
       }, 1500);
     } catch (e) {
       setErrorMsg(e.message);
+      // Refresh items to get updated stock counts
+      api.cafeteriaItems().then((d) => d && setItems(d)).catch(() => {});
     } finally {
       setOrderBusy(false);
     }
@@ -664,6 +673,12 @@ export default function Cafeteria() {
             <Clock size={15} className="text-slate-400" />
             <h2 className="font-extrabold text-slate-800 text-sm tracking-wide">Recent Orders</h2>
             <div className="h-px flex-1 bg-slate-100" />
+            <button
+              onClick={() => navigate('/orders')}
+              className="text-xs font-bold text-brand hover:underline shrink-0"
+            >
+              View All →
+            </button>
           </div>
           <div className="space-y-2">
             {recentOrders.map((r) => (

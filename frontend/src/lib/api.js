@@ -59,6 +59,8 @@ export const api = {
   listRequests:    (status='')       => request(`/api/requests${status ? `?status=${status}` : ''}`),
   setRequestStatus:(id, status, live_status, notes) =>
     request(`/api/requests/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, live_status, notes }) }),
+  cancelOrder: (id) => request(`/api/requests/${id}/cancel`, { method: 'POST' }),
+  queueCount:  ()   => request('/api/requests/queue-count'),
   rateRequest: (id, body) => request(`/api/requests/${id}/rate`, { method: 'POST', body: JSON.stringify(body) }),
 
   extractBill: (file_url) => request('/api/bills/extract', { method: 'POST', body: JSON.stringify({ file_url }) }),

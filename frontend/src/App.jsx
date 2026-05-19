@@ -12,6 +12,7 @@ import RequestSubmitPage from './pages/RequestSubmit.jsx';
 import CafeteriaPage from './pages/Cafeteria.jsx';
 import RequestQueuePage from './pages/RequestQueue.jsx';
 import LiveTrackingPage from './pages/LiveTracking.jsx';
+import OrderHistoryPage from './pages/OrderHistory.jsx';
 import BillUploadPage from './pages/BillUpload.jsx';
 import BillApprovalPage from './pages/BillApproval.jsx';
 import PreferencesPage from './pages/Preferences.jsx';
@@ -149,6 +150,7 @@ export default function App() {
         {/* /request now renders the full cafeteria UI for all roles */}
         <Route path="/request"   element={<CafeteriaPage />} />
         <Route path="/track/:id" element={<LiveTrackingPage />} />
+        <Route path="/orders"   element={<OrderHistoryPage />} />
         <Route path="/settings"  element={<PreferencesPage />} />
         <Route
           path="/queue"

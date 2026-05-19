@@ -80,16 +80,39 @@ router.post('/', async (req, res, next) => {
     // ── Quick order (cafeteria tap — no AI needed) ───────────────
     const { quick_item, quick_location, quick_quantity = 1, quick_instruction = '' } = req.body;
     if (quick_item) {
+      const qty = parseInt(quick_quantity, 10) || 1;
       const firstName = req.user.preferred_name || (req.user.full_name || req.user.email || 'Someone').split(' ')[0];
       const locPart  = quick_location ? ` to ${quick_location}` : '';
       const notePart = quick_instruction ? ` Note: ${quick_instruction}.` : '';
-      const instruction = `🚀 ${firstName} needs ${quick_quantity}x ${quick_item}${locPart}. Please deliver promptly!${notePart}`;
+      const instruction = `🚀 ${firstName} needs ${qty}x ${quick_item}${locPart}. Please deliver promptly!${notePart}`;
       const category = ITEM_CATEGORY[quick_item.toLowerCase()] || 'other';
+
+      // ── Stock check & decrement ───────────────────────────────────
+      const { data: itemRow } = await supabaseAdmin
+        .from('cafeteria_items')
+        .select('id, stock_today')
+        .ilike('item_name', quick_item)
+        .maybeSingle();
+
+      if (itemRow && itemRow.stock_today !== null) {
+        if (itemRow.stock_today < qty) {
+          return res.status(400).json({
+            error: itemRow.stock_today === 0
+              ? `😔 ${quick_item} is out of stock for today`
+              : `😔 Only ${itemRow.stock_today} ${quick_item} left, but you ordered ${qty}`,
+          });
+        }
+        // Decrement stock
+        await supabaseAdmin
+          .from('cafeteria_items')
+          .update({ stock_today: itemRow.stock_today - qty })
+          .eq('id', itemRow.id);
+      }
 
       const { data: qData, error: qErr } = await supabaseAdmin
         .from('requests')
         .insert({
-          raw_text:              `${quick_quantity}x ${quick_item}${locPart}`,
+          raw_text:              `${qty}x ${quick_item}${locPart}`,
           category,
           parsed_item:           quick_item,
           parsed_location:       quick_location || null,
@@ -102,13 +125,13 @@ router.post('/', async (req, res, next) => {
         .single();
       if (qErr) throw qErr;
 
-      postRequestToTeams({ ...qData, priority: 'Normal', quantity: String(quick_quantity) }).catch((e) => console.error('[Teams quick-order]', e.message));
+      postRequestToTeams({ ...qData, priority: 'Normal', quantity: String(qty) }).catch((e) => console.error('[Teams quick-order]', e.message));
 
       // Push notification to office boy / facility manager
       supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data }) => {
         if (data?.length) sendPushToUsers(data.map(u => u.id), {
           title: `🔔 New Order`,
-          body:  `${firstName}: ${quick_quantity}x ${quick_item}${locPart}`,
+          body:  `${firstName}: ${qty}x ${quick_item}${locPart}`,
           url:   '/queue',
           tag:   `order-${qData.id}`,
         }).catch(() => {});
@@ -183,6 +206,27 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// GET /api/requests/queue-count — count of active orders (for ETA calculation)
+router.get('/queue-count', async (req, res, next) => {
+  try {
+    const { count: pending, error: e1 } = await supabaseAdmin
+      .from('requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending');
+    if (e1) throw e1;
+
+    const { count: in_progress, error: e2 } = await supabaseAdmin
+      .from('requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'in_progress');
+    if (e2) throw e2;
+
+    res.json({ pending: pending || 0, in_progress: in_progress || 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/', async (req, res, next) => {
   try {
     const status = req.query.status;
@@ -239,9 +283,9 @@ router.patch(
       const update = { status };
       if (live_status) update.live_status = live_status;
       if (notes !== undefined) update.notes = notes;
-      
+
       if (status === 'in_progress' && !live_status) update.live_status = 'accepted';
-      
+
       if (live_status === 'accepted')    update.accepted_at = new Date().toISOString();
       if (live_status === 'preparing')   update.started_at = new Date().toISOString();
       if (live_status === 'on_the_way')  update.on_the_way_at = new Date().toISOString();
@@ -262,6 +306,22 @@ router.patch(
         .select()
         .single();
       if (error) throw error;
+
+      // ── Restore stock on staff cancel ─────────────────────────────────────
+      if (status === 'cancelled' && data?.parsed_item) {
+        const cancelQty = parseInt(data.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+        const { data: itemRow } = await supabaseAdmin
+          .from('cafeteria_items')
+          .select('id, stock_today')
+          .ilike('item_name', data.parsed_item)
+          .maybeSingle();
+        if (itemRow && itemRow.stock_today !== null) {
+          await supabaseAdmin
+            .from('cafeteria_items')
+            .update({ stock_today: itemRow.stock_today + cancelQty })
+            .eq('id', itemRow.id);
+        }
+      }
 
       // ── Push notification to the employee who placed the order ──────────────
       if (data?.submitted_by) {
@@ -293,6 +353,70 @@ router.patch(
   },
 );
 
+// POST /api/requests/:id/cancel — self-cancel by order owner within 30s
+router.post('/:id/cancel', async (req, res, next) => {
+  try {
+    // Fetch the order
+    const { data: order, error: fetchErr } = await supabaseAdmin
+      .from('requests')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (fetchErr) throw fetchErr;
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    // Must be the owner
+    if (order.submitted_by !== req.user.id) {
+      return res.status(403).json({ error: 'You can only cancel your own orders' });
+    }
+
+    // Must be pending + placed
+    if (order.status !== 'pending' || (order.live_status && order.live_status !== 'placed')) {
+      return res.status(400).json({ error: 'Order has already been accepted and cannot be cancelled' });
+    }
+
+    // Must be within 30 seconds
+    const createdAt = new Date(order.created_at).getTime();
+    const elapsed = (Date.now() - createdAt) / 1000;
+    if (elapsed > 35) { // 5s grace for network latency
+      return res.status(400).json({ error: 'Cancel window has expired' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('requests')
+      .update({
+        status: 'cancelled',
+        live_status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+        notes: 'Cancelled by user',
+      })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+
+    // ── Restore stock on cancel ──────────────────────────────────────
+    if (order.parsed_item) {
+      const cancelQty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+      const { data: itemRow } = await supabaseAdmin
+        .from('cafeteria_items')
+        .select('id, stock_today')
+        .ilike('item_name', order.parsed_item)
+        .maybeSingle();
+      if (itemRow && itemRow.stock_today !== null) {
+        await supabaseAdmin
+          .from('cafeteria_items')
+          .update({ stock_today: itemRow.stock_today + cancelQty })
+          .eq('id', itemRow.id);
+      }
+    }
+
+    res.json(data);
+  } catch (e) {
+    next(e);
+  }
+});
+
 // POST /api/requests/:id/rate
 router.post(
   '/:id/rate',
@@ -301,8 +425,8 @@ router.post(
       const { rating, feedback } = req.body;
       const { data, error } = await supabaseAdmin
         .from('requests')
-        .update({ 
-          rating, 
+        .update({
+          rating,
           feedback,
           rating_status: 'done'
         })
@@ -310,7 +434,7 @@ router.post(
         .select()
         .single();
       if (error) throw error;
-      
+
       // Trigger AI Learning (Async)
       learnFromRating(req.user.id, req.params.id).catch(console.error);
 

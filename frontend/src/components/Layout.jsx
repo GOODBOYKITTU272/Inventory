@@ -3,11 +3,11 @@ import { useAuth } from '../hooks/useAuth.js';
 import { supabase } from '../lib/supabase.js';
 
 const navByRole = {
-  facility_manager: ['/dashboard', '/daily-update', '/request', '/queue', '/available', '/bills', '/settings'],
-  finance:          ['/dashboard', '/finance', '/request', '/available', '/bills', '/bills/approve', '/settings'],
-  leadership:       ['/dashboard', '/daily-update', '/finance', '/request', '/queue', '/available', '/admin', '/bills', '/bills/approve', '/reports', '/connections', '/settings'],
-  staff:            ['/request', '/settings'],
-  office_boy:       ['/request', '/queue', '/bills', '/settings'],
+  facility_manager: ['/dashboard', '/daily-update', '/request', '/orders', '/queue', '/available', '/bills', '/settings'],
+  finance:          ['/dashboard', '/finance', '/request', '/orders', '/available', '/bills', '/bills/approve', '/settings'],
+  leadership:       ['/dashboard', '/daily-update', '/finance', '/request', '/orders', '/queue', '/available', '/admin', '/bills', '/bills/approve', '/reports', '/connections', '/settings'],
+  staff:            ['/request', '/orders', '/settings'],
+  office_boy:       ['/request', '/orders', '/queue', '/bills', '/settings'],
 };
 
 const labels = {
@@ -17,6 +17,7 @@ const labels = {
   '/available':     "What's Available",
   '/admin':         'Admin',
   '/request':       'Cafeteria',
+  '/orders':        'Orders',
   '/queue':         'Queue',
   '/bills':         'Bills',
   '/bills/approve': 'Verify Bills',

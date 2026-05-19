@@ -2,7 +2,14 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Star, MapPin } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Star, MapPin, ArrowRight } from 'lucide-react';
+
+const CANCEL_WINDOW_SEC = 30;
+
+const CATEGORY_EMOJI = {
+  beverage: '☕', food: '🥪', snack: '🍪',
+  meal: '🍱', stationery: '📎', cleaning: '🧹', other: '📦',
+};
 
 /* ── Stages definition ───────────────────────────────────────────── */
 const STAGES = [
@@ -208,6 +215,243 @@ function RatingSheet({ requestId, onDone }) {
   );
 }
 
+/* ── ETA Calculator ─────────────────────────────────────────────────── */
+function calcETA(qty, queueAhead) {
+  // Base time by quantity
+  const q = parseInt(qty, 10) || 1;
+  let base;
+  if (q <= 1) base = 10;
+  else if (q === 2) base = 12;
+  else if (q === 3) base = 15;
+  else base = 18;
+
+  // Queue adjustment
+  let bonus = 0;
+  if (queueAhead >= 6) bonus = 10;
+  else if (queueAhead >= 3) bonus = 5;
+
+  const eta = base + bonus;
+  return { min: eta, max: eta + 2 };
+}
+
+/* ── Circular Countdown Timer (SVG) ────────────────────────────────── */
+function CircularTimer({ secsLeft, total }) {
+  const radius = 54;
+  const circumference = 2 * Math.PI * radius;
+  const progress = secsLeft / total;
+  const offset = circumference * (1 - progress);
+  const mins = Math.floor(secsLeft / 60);
+  const secs = secsLeft % 60;
+
+  return (
+    <div className="relative w-24 h-24 sm:w-32 sm:h-32">
+      <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+        {/* Background circle */}
+        <circle cx="60" cy="60" r={radius} fill="none" stroke="#f1f5f9" strokeWidth="6" />
+        {/* Progress circle */}
+        <circle
+          cx="60" cy="60" r={radius} fill="none"
+          stroke={secsLeft > 10 ? '#f43f5e' : '#ef4444'}
+          strokeWidth="6" strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          style={{ transition: 'stroke-dashoffset 1s linear' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-xl sm:text-2xl font-extrabold text-slate-900 tabular-nums">
+          {mins}:{secs.toString().padStart(2, '0')}
+        </span>
+        <span className="text-[9px] sm:text-[10px] text-slate-400 font-medium mt-0.5">to cancel</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Order Confirmed Screen (Zomato/Swiggy style) ─────────────────── */
+function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
+  const [secsLeft, setSecsLeft] = useState(() => {
+    const created = new Date(req.created_at).getTime();
+    return Math.max(0, Math.ceil((created + CANCEL_WINDOW_SEC * 1000 - Date.now()) / 1000));
+  });
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelled, setCancelled]   = useState(false);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const created = new Date(req.created_at).getTime();
+      const remaining = Math.max(0, Math.ceil((created + CANCEL_WINDOW_SEC * 1000 - Date.now()) / 1000));
+      setSecsLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(t);
+        // Auto-dismiss after countdown ends + 1s
+        setTimeout(onDismiss, 1000);
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [req.created_at, onDismiss]);
+
+  async function doCancel() {
+    setCancelling(true);
+    try {
+      await api.cancelOrder(req.id);
+      setCancelled(true);
+      setTimeout(onCancelled, 1500);
+    } catch (e) {
+      alert(e.message);
+      setCancelling(false);
+    }
+  }
+
+  const emoji = CATEGORY_EMOJI[req.category] || '📦';
+  const qty = parseInt(req.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+  const eta = calcETA(qty, queueAhead);
+
+  if (cancelled) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center p-4 sm:p-6 text-center"
+      >
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', damping: 15, stiffness: 200 }}
+          className="text-7xl mb-4"
+        >
+          ❌
+        </motion.div>
+        <h1 className="text-2xl font-extrabold text-slate-900">Order Cancelled</h1>
+        <p className="text-sm text-slate-500 mt-2">You can place a new order anytime</p>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center p-4 sm:p-6 overflow-y-auto"
+    >
+      {/* Celebration animation */}
+      <motion.div
+        initial={{ scale: 0, rotate: -20 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: 'spring', damping: 12, stiffness: 200, delay: 0.1 }}
+        className="relative mb-1"
+      >
+        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-100 flex items-center justify-center">
+          <motion.span
+            animate={{ scale: [1, 1.15, 1] }}
+            transition={{ repeat: 2, duration: 0.5 }}
+            className="text-4xl sm:text-5xl"
+          >
+            ✅
+          </motion.span>
+        </div>
+        {/* Sparkles */}
+        {[...Array(6)].map((_, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: [0, 1, 0], scale: [0, 1, 0] }}
+            transition={{ delay: 0.3 + i * 0.1, duration: 0.8 }}
+            className="absolute w-2 h-2 rounded-full bg-amber-400"
+            style={{
+              top:  `${50 + 55 * Math.sin((i * Math.PI * 2) / 6)}%`,
+              left: `${50 + 55 * Math.cos((i * Math.PI * 2) / 6)}%`,
+              transform: 'translate(-50%, -50%)',
+            }}
+          />
+        ))}
+      </motion.div>
+
+      <motion.h1
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="text-xl sm:text-2xl font-extrabold text-slate-900 mb-1"
+      >
+        Order Confirmed!
+      </motion.h1>
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.4 }}
+        className="text-xs sm:text-sm text-slate-400 mb-4 sm:mb-6"
+      >
+        Your order is in the queue
+      </motion.p>
+
+      {/* Order summary card */}
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="w-full max-w-xs bg-slate-50 rounded-2xl p-4 mb-4 sm:mb-6"
+      >
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center text-2xl shadow-sm shrink-0">
+            {emoji}
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-bold text-slate-900 text-sm truncate">{req.parsed_item || req.raw_text}</h3>
+            {req.parsed_location && (
+              <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                <MapPin size={10} /> {req.parsed_location}
+              </p>
+            )}
+          </div>
+          {qty > 1 && (
+            <span className="text-brand font-bold text-sm shrink-0">×{qty}</span>
+          )}
+        </div>
+
+        {/* ETA */}
+        <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
+          <div>
+            <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Estimated delivery</div>
+            <div className="text-lg font-extrabold text-slate-900">~{eta.min}-{eta.max} min</div>
+          </div>
+          <div className="text-2xl">🕐</div>
+        </div>
+      </motion.div>
+
+      {/* Circular countdown timer */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.6 }}
+        className="flex flex-col items-center mb-4 sm:mb-6"
+      >
+        <CircularTimer secsLeft={secsLeft} total={CANCEL_WINDOW_SEC} />
+        <button
+          onClick={doCancel}
+          disabled={cancelling || secsLeft <= 0}
+          className="mt-3 px-6 py-2.5 bg-rose-50 text-rose-600 text-sm font-bold rounded-xl border-2 border-rose-200 hover:bg-rose-100 active:scale-95 transition-all disabled:opacity-30"
+        >
+          {cancelling
+            ? <span className="flex items-center gap-2"><span className="h-3.5 w-3.5 border-2 border-rose-300 border-t-rose-600 rounded-full animate-spin" /> Cancelling…</span>
+            : 'Cancel Order'}
+        </button>
+      </motion.div>
+
+      {/* Track order button */}
+      <motion.button
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.8 }}
+        onClick={onDismiss}
+        className="flex items-center gap-2 text-brand font-bold text-sm hover:underline"
+      >
+        Track Order <ArrowRight size={16} />
+      </motion.button>
+    </motion.div>
+  );
+}
+
 /* ── Single Order View (extracted, unchanged logic) ──────────────── */
 function OrderView({ req, onRate }) {
   const isCancelled = req.status === 'cancelled';
@@ -331,17 +575,32 @@ export default function LiveTracking() {
   const [err, setErr]     = useState('');
   const [showRate, setShowRate]   = useState(false);
   const [rateId, setRateId]       = useState(null);
+  const [queueAhead, setQueueAhead] = useState(0);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const confirmChecked    = useRef(false);
   const shownRatingRef    = useRef(false);
   const touchStartX       = useRef(null);
 
   // Load the current order + all active orders
   const load = useCallback(async () => {
     try {
-      const [data, allRequests] = await Promise.all([
+      const [data, allRequests, queueData] = await Promise.all([
         api.getRequest(id),
         api.listRequests(),
+        api.queueCount().catch(() => ({ pending: 0, in_progress: 0 })),
       ]);
       setReq(data);
+      setQueueAhead((queueData.pending || 0) + (queueData.in_progress || 0));
+
+      // Show confirmation screen for freshly placed orders (< 30s old)
+      if (!confirmChecked.current) {
+        confirmChecked.current = true;
+        const created = new Date(data.created_at).getTime();
+        const elapsed = (Date.now() - created) / 1000;
+        if (data.status === 'pending' && (data.live_status || 'placed') === 'placed' && elapsed < CANCEL_WINDOW_SEC) {
+          setShowConfirm(true);
+        }
+      }
 
       // Collect all active (non-done, non-cancelled) orders
       const active = (allRequests || []).filter(
@@ -487,6 +746,18 @@ export default function LiveTracking() {
           <RatingSheet
             requestId={rateId || id}
             onDone={() => { setShowRate(false); setRateId(null); load(); }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Order Confirmed Screen — Zomato/Swiggy style */}
+      <AnimatePresence>
+        {showConfirm && req && (
+          <OrderConfirmedScreen
+            req={req}
+            queueAhead={Math.max(0, queueAhead - 1)}
+            onDismiss={() => setShowConfirm(false)}
+            onCancelled={() => { setShowConfirm(false); load(); }}
           />
         )}
       </AnimatePresence>
