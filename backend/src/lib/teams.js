@@ -1,10 +1,7 @@
 /**
  * Posts order notifications to Microsoft Teams via Power Automate webhook.
  *
- * Setup: Power Automate → "When a HTTP request is received" trigger
- *        → "Post message in a chat or channel"
- *        → Use trigger body fields: title, employee, item, location, instruction, url
- *
+ * Uses Adaptive Card format for "When a Teams webhook request is received" trigger.
  * Optional TEAMS_WEBHOOK_URL env var — if missing, silently skips.
  */
 const TEAMS_URL = process.env.TEAMS_WEBHOOK_URL;
@@ -22,18 +19,54 @@ export async function postRequestToTeams(req) {
   const priority = req.priority        || 'Normal';
   const qty      = req.quantity        || '1';
   const instr    = req.instruction     || '';
+  const time     = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
-  // Simple JSON body — Power Automate workflow reads these fields
+  // Adaptive Card format for "When a Teams webhook request is received" trigger
   const payload = {
-    title:       `🔔 New ${priority === 'Urgent' ? '🚨 URGENT' : ''} Order`,
-    employee,
-    item:        `${qty}x ${item}`,
-    location,
-    instruction: instr,
-    priority,
-    url:         `${APP_URL}/queue`,
-    request_id:  req.id || '',
-    timestamp:   new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+    type: 'message',
+    attachments: [
+      {
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        contentUrl: null,
+        content: {
+          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+          type: 'AdaptiveCard',
+          version: '1.4',
+          body: [
+            {
+              type: 'TextBlock',
+              size: 'Large',
+              weight: 'Bolder',
+              text: `🔔 New ${priority === 'Urgent' ? '🚨 URGENT ' : ''}Order`,
+            },
+            {
+              type: 'FactSet',
+              facts: [
+                { title: 'Item', value: `${qty}x ${item}` },
+                { title: 'For', value: employee },
+                { title: 'Location', value: location },
+                { title: 'Priority', value: priority },
+                { title: 'Time', value: time },
+              ],
+            },
+            ...(instr ? [{
+              type: 'TextBlock',
+              text: instr,
+              wrap: true,
+              size: 'Small',
+              color: 'Accent',
+            }] : []),
+          ],
+          actions: [
+            {
+              type: 'Action.OpenUrl',
+              title: '📋 Open Queue',
+              url: `${APP_URL}/queue`,
+            },
+          ],
+        },
+      },
+    ],
   };
 
   try {
