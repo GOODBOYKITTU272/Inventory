@@ -450,11 +450,29 @@ export default function Onboarding({ onComplete }) {
   const next = () => setStep(s => Math.min(s + 1, TOTAL - 1));
   const back = () => setStep(s => Math.max(s - 1, 0));
 
+  // Timeout wrapper — never let a save hang forever
+  function withTimeout(promise, ms = 8000) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Save timed out')), ms)),
+    ]);
+  }
+
   async function savePrefs(data) {
-    const { error } = await supabase
-      .from('employee_cafeteria_preferences')
-      .upsert(data, { onConflict: 'user_id' });
-    if (error) throw error;
+    console.log('[Onboarding] savePrefs called with:', JSON.stringify(data));
+    try {
+      const { data: result, error } = await withTimeout(
+        supabase
+          .from('employee_cafeteria_preferences')
+          .upsert(data, { onConflict: 'user_id' })
+          .select()
+      );
+      console.log('[Onboarding] savePrefs result:', result, 'error:', error?.message);
+      if (error) throw error;
+    } catch (e) {
+      console.error('[Onboarding] savePrefs error:', e.message || e);
+      throw e;
+    }
   }
 
   async function finish() {
@@ -477,15 +495,15 @@ export default function Onboarding({ onComplete }) {
         preferred_location:   prefs.location || null,
         reminder_enabled:     prefs.morningReminder || prefs.afternoonReminder || prefs.lunchReminder || prefs.waterReminder,
         reminder_time:        prefs.morningTime || null,
-        notification_tone:    prefs.tone,
+        notification_tone:    prefs.tone || 'gen_z',
         onboarding_completed: true,
       });
-      onComplete(prefs);
     } catch (e) {
-      alert('Could not save preferences: ' + e.message);
-    } finally {
-      setSaving(false);
+      console.warn('[Onboarding] finish save failed, continuing anyway:', e.message);
     }
+    // Always proceed — never block the user from using the app
+    setSaving(false);
+    onComplete(prefs);
   }
 
   async function skip() {
@@ -496,12 +514,12 @@ export default function Onboarding({ onComplete }) {
         notification_tone:    'gen_z',
         onboarding_completed: true,
       });
-    } catch (_) {
-      // Silently ignore — gate will still be cleared
-    } finally {
-      setSaving(false);
-      onComplete({});
+    } catch (e) {
+      console.warn('[Onboarding] skip save failed, continuing anyway:', e.message);
     }
+    // Always proceed — never block the user
+    setSaving(false);
+    onComplete({});
   }
 
   const steps = [

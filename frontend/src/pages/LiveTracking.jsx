@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Star, MapPin } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Star, MapPin } from 'lucide-react';
 
 /* ── Stages definition ───────────────────────────────────────────── */
 const STAGES = [
@@ -208,62 +208,15 @@ function RatingSheet({ requestId, onDone }) {
   );
 }
 
-/* ── Main component ──────────────────────────────────────────────── */
-export default function LiveTracking() {
-  const { id }          = useParams();
-  const [req, setReq]   = useState(null);
-  const [err, setErr]   = useState('');
-  const [showRate, setShowRate] = useState(false);
-  const shownRatingRef  = useRef(false);
-
-  async function load() {
-    try {
-      const data = await api.getRequest(id);
-      setReq(data);
-      // Show rating once when order first reaches 'done'
-      if (data.status === 'done' && data.rating_status !== 'done' && !shownRatingRef.current) {
-        shownRatingRef.current = true;
-        setTimeout(() => setShowRate(true), 1200);
-      }
-    } catch (e) {
-      setErr(e.message);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, [id]);
-
-  if (err) return (
-    <div className="flex flex-col items-center justify-center py-24 gap-3 text-rose-500">
-      <div className="text-4xl">😕</div>
-      <div className="text-sm">{err}</div>
-      <Link to="/request" className="btn-secondary text-sm mt-2">← Back to Request</Link>
-    </div>
-  );
-
-  if (!req) return (
-    <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
-      <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
-      <span className="text-sm">Loading your order…</span>
-    </div>
-  );
-
+/* ── Single Order View (extracted, unchanged logic) ──────────────── */
+function OrderView({ req, onRate }) {
   const isCancelled = req.status === 'cancelled';
   const isDone      = req.status === 'done';
   const curIdx      = isCancelled ? -1 : stageIndex(req.live_status || 'placed');
   const curStage    = isCancelled ? CANCELLED : STAGES[curIdx];
 
   return (
-    <div className="max-w-lg mx-auto pb-24 space-y-4">
-
-      {/* Back */}
-      <Link to="/request" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand pt-2">
-        <ChevronLeft size={16} /> Back to Request
-      </Link>
-
+    <div className="space-y-4">
       {/* Hero status card */}
       <motion.div
         key={curStage.id}
@@ -290,7 +243,6 @@ export default function LiveTracking() {
           </div>
         </div>
 
-        {/* Progress bar (only when active) */}
         {!isCancelled && (
           <div className="mt-5">
             <ProgressBar current={curIdx} total={STAGES.length} />
@@ -339,7 +291,7 @@ export default function LiveTracking() {
         </div>
         {req.instruction && (
           <div className="text-sm text-slate-600 italic bg-slate-50 rounded-xl p-3">
-            "{req.instruction}"
+            &ldquo;{req.instruction}&rdquo;
           </div>
         )}
       </div>
@@ -353,26 +305,188 @@ export default function LiveTracking() {
             {'★'.repeat(req.rating || 0)}{'☆'.repeat(5 - (req.rating || 0))}
           </div>
           {req.feedback && (
-            <div className="text-xs text-emerald-700 italic">"{req.feedback}"</div>
+            <div className="text-xs text-emerald-700 italic">&ldquo;{req.feedback}&rdquo;</div>
           )}
         </div>
       )}
 
-      {isDone && req.rating_status !== 'done' && !showRate && (
+      {isDone && req.rating_status !== 'done' && (
         <button
           className="w-full btn-secondary text-sm"
-          onClick={() => setShowRate(true)}
+          onClick={() => onRate(req.id)}
         >
           ⭐ Rate this order
         </button>
       )}
+    </div>
+  );
+}
+
+/* ── Main component ──────────────────────────────────────────────── */
+export default function LiveTracking() {
+  const { id }            = useParams();
+  const navigate          = useNavigate();
+  const [allOrders, setAllOrders] = useState([]);   // all active orders
+  const [req, setReq]     = useState(null);          // current viewed order
+  const [err, setErr]     = useState('');
+  const [showRate, setShowRate]   = useState(false);
+  const [rateId, setRateId]       = useState(null);
+  const shownRatingRef    = useRef(false);
+  const touchStartX       = useRef(null);
+
+  // Load the current order + all active orders
+  const load = useCallback(async () => {
+    try {
+      const [data, allRequests] = await Promise.all([
+        api.getRequest(id),
+        api.listRequests(),
+      ]);
+      setReq(data);
+
+      // Collect all active (non-done, non-cancelled) orders
+      const active = (allRequests || []).filter(
+        (r) => ['pending', 'in_progress'].includes(r.status)
+      );
+      // Make sure current order is included even if done/cancelled
+      const hasCurrentInActive = active.some((r) => r.id === id);
+      const combined = hasCurrentInActive ? active : [data, ...active];
+      setAllOrders(combined);
+
+      // Show rating once when order first reaches 'done'
+      if (data.status === 'done' && data.rating_status !== 'done' && !shownRatingRef.current) {
+        shownRatingRef.current = true;
+        setTimeout(() => setShowRate(true), 1200);
+      }
+    } catch (e) {
+      setErr(e.message);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  // ── Swipe handling ──
+  const currentIndex = allOrders.findIndex((r) => r.id === id);
+
+  function goToOrder(index) {
+    if (index >= 0 && index < allOrders.length) {
+      const nextId = allOrders[index].id;
+      if (nextId !== id) {
+        shownRatingRef.current = false;
+        setShowRate(false);
+        navigate(`/track/${nextId}`, { replace: true });
+      }
+    }
+  }
+
+  function handleTouchStart(e) {
+    touchStartX.current = e.touches[0].clientX;
+  }
+
+  function handleTouchEnd(e) {
+    if (touchStartX.current === null) return;
+    const diff = touchStartX.current - e.changedTouches[0].clientX;
+    touchStartX.current = null;
+    if (Math.abs(diff) < 50) return; // too small, not a swipe
+    if (diff > 0) goToOrder(currentIndex + 1);  // swipe left → next
+    else goToOrder(currentIndex - 1);            // swipe right → prev
+  }
+
+  if (err) return (
+    <div className="flex flex-col items-center justify-center py-24 gap-3 text-rose-500">
+      <div className="text-4xl">😕</div>
+      <div className="text-sm">{err}</div>
+      <Link to="/request" className="btn-secondary text-sm mt-2">← Back to Request</Link>
+    </div>
+  );
+
+  if (!req) return (
+    <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+      <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
+      <span className="text-sm">Loading your order…</span>
+    </div>
+  );
+
+  const hasMultiple = allOrders.length > 1;
+
+  return (
+    <div
+      className="max-w-lg mx-auto pb-24 space-y-4"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Back + order nav */}
+      <div className="flex items-center justify-between pt-2">
+        <Link to="/request" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand">
+          <ChevronLeft size={16} /> Back to Request
+        </Link>
+
+        {/* Multi-order nav arrows + dots */}
+        {hasMultiple && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => goToOrder(currentIndex - 1)}
+              disabled={currentIndex <= 0}
+              className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center disabled:opacity-30 hover:bg-slate-200 transition-colors"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <div className="flex gap-1.5">
+              {allOrders.map((o, i) => (
+                <button
+                  key={o.id}
+                  onClick={() => goToOrder(i)}
+                  className={`h-2 rounded-full transition-all ${
+                    i === currentIndex
+                      ? 'w-5 bg-brand'
+                      : 'w-2 bg-slate-300 hover:bg-slate-400'
+                  }`}
+                />
+              ))}
+            </div>
+            <button
+              onClick={() => goToOrder(currentIndex + 1)}
+              disabled={currentIndex >= allOrders.length - 1}
+              className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center disabled:opacity-30 hover:bg-slate-200 transition-colors"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Order counter */}
+      {hasMultiple && (
+        <div className="text-center text-xs text-slate-400 font-medium -mt-2">
+          Order {currentIndex + 1} of {allOrders.length}
+        </div>
+      )}
+
+      {/* Swipeable order view */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={req.id}
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -40 }}
+          transition={{ duration: 0.2 }}
+        >
+          <OrderView
+            req={req}
+            onRate={(rid) => { setRateId(rid); setShowRate(true); }}
+          />
+        </motion.div>
+      </AnimatePresence>
 
       {/* Rating sheet */}
       <AnimatePresence>
         {showRate && (
           <RatingSheet
-            requestId={id}
-            onDone={() => { setShowRate(false); load(); }}
+            requestId={rateId || id}
+            onDone={() => { setShowRate(false); setRateId(null); load(); }}
           />
         )}
       </AnimatePresence>

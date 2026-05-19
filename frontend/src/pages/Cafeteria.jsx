@@ -340,7 +340,7 @@ export default function Cafeteria() {
   const firstName   = (profile?.full_name || profile?.email || 'there').split(' ')[0];
 
   const [items,        setItems]        = useState([]);
-  const [activeOrder,  setActiveOrder]  = useState(null);
+  const [activeOrders, setActiveOrders] = useState([]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [cart,         setCart]         = useState({});     // { [id]: qty }
   const [customizations, setCustomizations] = useState({}); // { [id]: 'instruction text' }
@@ -369,10 +369,10 @@ export default function Cafeteria() {
       ]);
       setItems(itemsData || []);
 
-      const active = (requestsData || []).find(
+      const active = (requestsData || []).filter(
         (r) => ['pending', 'in_progress'].includes(r.status)
       );
-      setActiveOrder(active || null);
+      setActiveOrders(active);
 
       const recent = (requestsData || [])
         .filter((r) => r.status === 'done' || r.status === 'cancelled')
@@ -529,13 +529,14 @@ export default function Cafeteria() {
         <p className="text-slate-500 text-sm mt-1">What can we get you today?</p>
       </div>
 
-      {/* ── Active order banner ── */}
-      {activeOrder && (
+      {/* ── Active order banners ── */}
+      {activeOrders.map((order) => (
         <ActiveOrderBanner
-          order={activeOrder}
-          onPress={() => navigate(`/track/${activeOrder.id}`)}
+          key={order.id}
+          order={order}
+          onPress={() => navigate(`/track/${order.id}`)}
         />
-      )}
+      ))}
 
       {/* ── Flash messages ── */}
       <AnimatePresence>

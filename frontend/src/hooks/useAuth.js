@@ -1,6 +1,18 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase.js';
 
+/** Try to read AAL from the JWT's aal claim directly (no network call) */
+function readAalFromSession(session) {
+  try {
+    const token = session?.access_token;
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.aal || null;
+  } catch {
+    return null;
+  }
+}
+
 export function useAuth() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -15,13 +27,24 @@ export function useAuth() {
     const safetyTimer = setTimeout(() => {
       if (!bootstrapped.current && !cancelled) {
         console.warn('[useAuth] Safety timeout — forcing loading=false after 6s');
+        bootstrapped.current = true;
         setLoading(false);
       }
     }, 6000);
 
-    async function checkAal() {
+    async function checkAal(sess) {
+      // Read AAL from JWT instantly (no network call)
+      const jwtAal = readAalFromSession(sess);
+      if (jwtAal) {
+        console.log('[useAuth] AAL from JWT:', jwtAal);
+        if (!cancelled) setAal(jwtAal);
+        return;
+      }
+
+      // Fallback: ask Supabase API
       try {
         const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        console.log('[useAuth] AAL from API:', aalData?.currentLevel);
         if (!cancelled && aalData) {
           setAal(aalData.currentLevel || 'aal1');
         }
@@ -43,7 +66,7 @@ export function useAuth() {
 
         if (sess) {
           console.log('[useAuth] session exists, checking AAL + profile');
-          await checkAal();
+          await checkAal(sess);
           await loadProfile(sess.user.id);
         }
       } catch (e) {
@@ -96,7 +119,7 @@ export function useAuth() {
       console.log('[useAuth] onAuthStateChange:', _event, !!newSession);
       setSession(newSession);
       if (newSession) {
-        await checkAal();
+        await checkAal(newSession);
         loadProfile(newSession.user.id);
       } else {
         setProfile(null);
