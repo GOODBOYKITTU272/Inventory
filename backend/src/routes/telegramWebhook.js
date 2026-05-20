@@ -15,14 +15,40 @@ function isDuplicate(updateId) {
 }
 
 const EXTRACTION_SYSTEM = `You are an Office Bill, Inventory, and Expense Extraction Assistant.
-Extract only visible bill details. Do not guess missing values.
-Return JSON only with vendor_name, bill_date, invoice_number, items, delivery_charges,
-discount, grand_total, payment_status, confidence_score, needs_manual_review, and
-manual_review_reason. Mark needs_manual_review true if any important value is unclear.
+Extract only visible bill details from the document. Do not guess missing values.
+Return ONLY valid JSON (no markdown, no backticks) with this exact structure:
 
-For each item, also add:
-- "emoji": a single relevant emoji for the item (e.g. ☕ for coffee, 🍵 for tea, 🥛 for milk, 🍪 for biscuits, 🧹 for cleaning items, 🍋 for lemon, 🫖 for tea bags, 🍞 for bread, 🥜 for peanut butter, 🫙 for jam, 🧈 for butter, 🍫 for chocolate, 🥤 for juice, 💧 for water, 🧻 for tissue/napkins, 🧴 for soap/sanitizer, 📎 for stationery)
-- "cafeteria_category": one of "beverage", "food", "snack", "cleaning", "stationery", "other" — classify based on what the item is`;
+{
+  "vendor_name": "string",
+  "bill_date": "string",
+  "invoice_number": "string",
+  "items": [
+    {
+      "item_name": "product name as shown on bill",
+      "quantity": number,
+      "unit": "pcs/kg/ml/Count/etc",
+      "unit_rate": number,
+      "tax": number,
+      "total_amount": number,
+      "emoji": "single emoji like ☕🍵🥛🍪🧹🍋🫖🍞🥜🫙🧈🍫🥤💧🧻🧴📎🍓🍍",
+      "cafeteria_category": "beverage|food|snack|cleaning|stationery|other"
+    }
+  ],
+  "delivery_charges": number or null,
+  "discount": number or null,
+  "grand_total": number,
+  "payment_status": "string or null",
+  "confidence_score": number between 0 and 1,
+  "needs_manual_review": boolean,
+  "manual_review_reason": "string or null"
+}
+
+CRITICAL RULES:
+- Every item MUST have "item_name" (never use "name" or "product")
+- Every item MUST have "quantity" (never use "qty")
+- Extract ALL line items from the bill, even if there are many
+- Use the actual product name from the bill, never return "Unknown"
+- Mark needs_manual_review true if any important value is unclear`;
 
 const DUPLICATE_MESSAGES = [
   'Bhai, ye bill pehle se system mein hai. Ek hi bill se do baar stock update nahi hoga.',
@@ -299,7 +325,7 @@ async function extractBill({ buffer, fileName, mimeType, fileUrl }) {
   if (isPdf) {
     return fileCompletion({
       system: EXTRACTION_SYSTEM,
-      user: 'Extract the details from this PDF vendor bill.',
+      user: 'Extract all details from this vendor bill PDF. List every single item with its item_name, quantity, unit_rate, tax, and total_amount. Return valid JSON only.',
       fileBuffer: buffer,
       filename: fileName,
       mimeType: mimeType || 'application/pdf',
@@ -309,7 +335,7 @@ async function extractBill({ buffer, fileName, mimeType, fileUrl }) {
 
   return visionCompletion({
     system: EXTRACTION_SYSTEM,
-    user: 'Extract the details from this bill image.',
+    user: 'Extract all details from this bill image. List every single item with its item_name, quantity, unit_rate, tax, and total_amount. Return valid JSON only.',
     imageUrl: fileUrl,
     model: 'gpt-4o',
   });
@@ -342,7 +368,9 @@ router.post('/', (req, res) => {
       const buffer = await downloadTelegramFile(file.fileId);
       const fileUrl = await uploadFile({ buffer, fileName: file.fileName, mimeType: file.mimeType });
       const { content } = await extractBill({ ...file, buffer, fileUrl });
+      console.log('[Telegram] Raw AI response (first 500 chars):', content.slice(0, 500));
       const parsed = JSON.parse(cleanJson(content));
+      console.log('[Telegram] Parsed items count:', parsed.items?.length, 'First item keys:', parsed.items?.[0] ? Object.keys(parsed.items[0]) : 'none');
 
       const duplicate = await findDuplicate(parsed);
       if (duplicate) {
