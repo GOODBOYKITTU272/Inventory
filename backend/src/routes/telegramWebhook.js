@@ -169,18 +169,34 @@ async function saveBill({ parsed, fileUrl }) {
 
   if (billErr) throw billErr;
 
-  const items = Array.isArray(parsed.items) ? parsed.items : [];
+  // Normalize item fields — AI may return different field names
+  const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+  const items = rawItems.map((item) => ({
+    item_name: item.item_name || item.name || item.product_name || item.product || 'Unknown',
+    category: item.category || item.type || null,
+    quantity: normalizeNumber(item.quantity || item.qty) || 0,
+    unit: item.unit || item.uom || 'pcs',
+    unit_rate: normalizeNumber(item.unit_rate || item.rate || item.price || item.unit_price),
+    tax: normalizeNumber(item.tax || item.gst) || 0,
+    total_amount: normalizeNumber(item.total_amount || item.total || item.amount),
+    inventory_action: item.inventory_action || null,
+    emoji: item.emoji || '📦',
+    cafeteria_category: item.cafeteria_category || 'other',
+  }));
+
+  console.log('[Telegram] Normalized items:', JSON.stringify(items.map(i => ({ name: i.item_name, qty: i.quantity, emoji: i.emoji }))));
+
   if (items.length) {
     const rows = items.map((item) => ({
       bill_id: bill.id,
-      item_name: item.item_name || 'Unknown item',
-      category: item.category || null,
-      quantity: normalizeNumber(item.quantity) || 0,
-      unit: item.unit || null,
-      unit_rate: normalizeNumber(item.unit_rate),
-      tax: normalizeNumber(item.tax) || 0,
-      total_amount: normalizeNumber(item.total_amount),
-      inventory_action: item.inventory_action || null,
+      item_name: item.item_name,
+      category: item.category,
+      quantity: item.quantity,
+      unit: item.unit,
+      unit_rate: item.unit_rate,
+      tax: item.tax,
+      total_amount: item.total_amount,
+      inventory_action: item.inventory_action,
     }));
 
     const { error: itemsErr } = await supabaseAdmin.from('bill_items').insert(rows);
@@ -189,10 +205,10 @@ async function saveBill({ parsed, fileUrl }) {
 
   // ── Auto-sync: Update inventory + cafeteria items ──
   for (const item of items) {
-    const qty = normalizeNumber(item.quantity) || 0;
-    const itemName = item.item_name || 'Unknown';
-    const emoji = item.emoji || '📦';
-    const cafeCat = item.cafeteria_category || 'other';
+    const qty = item.quantity;
+    const itemName = item.item_name;
+    const emoji = item.emoji;
+    const cafeCat = item.cafeteria_category;
 
     // 1. Upsert into products table
     const { data: existingProduct } = await supabaseAdmin
@@ -275,7 +291,7 @@ async function saveBill({ parsed, fileUrl }) {
     }
   }
 
-  return { bill, itemCount: items.length };
+  return { bill, itemCount: items.length, normalizedItems: items };
 }
 
 async function extractBill({ buffer, fileName, mimeType, fileUrl }) {
@@ -339,11 +355,11 @@ router.post('/', (req, res) => {
         return;
       }
 
-      const { bill, itemCount } = await saveBill({ parsed, fileUrl });
+      const { bill, itemCount, normalizedItems } = await saveBill({ parsed, fileUrl });
 
-      // Build items summary
-      const itemsList = (parsed.items || [])
-        .map(i => `  ${i.emoji || '📦'} ${i.item_name} — ${i.quantity} ${i.unit || 'pcs'}`)
+      // Build items summary from normalized data
+      const itemsList = (normalizedItems || [])
+        .map(i => `  ${i.emoji} ${i.item_name} — ${i.quantity} ${i.unit}`)
         .join('\n');
 
       await sendTelegramMessage(
