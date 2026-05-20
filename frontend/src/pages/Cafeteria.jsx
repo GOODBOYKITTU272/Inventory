@@ -571,8 +571,9 @@ export default function Cafeteria() {
     }
   }
 
-  // ── Group items by category ──────────────────────────────────────────────────
-  const grouped = items.reduce((acc, item) => {
+  // ── Group items by category (only orderable items) ───────────────────────────
+  const orderableItems = items.filter((item) => item.orderable !== false);
+  const grouped = orderableItems.reduce((acc, item) => {
     const cat = item.category || 'other';
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(item);

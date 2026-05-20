@@ -290,6 +290,9 @@ async function saveBill({ parsed, fileUrl }) {
     }
 
     // 4. Upsert into cafeteria_items (for quick ordering on frontend)
+    // Internal supplies (cleaning, stationery, other) are NOT orderable by employees
+    const isOrderable = ['beverage', 'food', 'snack'].includes(cafeCat);
+
     const { data: existingCafe } = await supabaseAdmin
       .from('cafeteria_items')
       .select('id, stock_today')
@@ -301,7 +304,7 @@ async function saveBill({ parsed, fileUrl }) {
       const newStock = (existingCafe.stock_today || 0) + qty;
       await supabaseAdmin
         .from('cafeteria_items')
-        .update({ stock_today: newStock, available: true })
+        .update({ stock_today: newStock, available: true, orderable: isOrderable })
         .eq('id', existingCafe.id);
     } else {
       // Create new cafeteria item
@@ -313,6 +316,7 @@ async function saveBill({ parsed, fileUrl }) {
           category: cafeCat,
           available: true,
           stock_today: qty,
+          orderable: isOrderable,
         });
     }
   }
