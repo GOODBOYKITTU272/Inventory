@@ -78,6 +78,15 @@ export default function MealBooking() {
     return bookings.find(b => b.meal_date === dateStr);
   }
 
+  // Next working day calculation (mirrors backend logic)
+  function getNextWorkingDay() {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    d.setDate(d.getDate() + 1);
+    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  const nextWorkingDay = getNextWorkingDay();
+
   async function quickBook(dateStr, choice) {
     setBooking(true);
     try {
@@ -163,9 +172,10 @@ export default function MealBooking() {
 
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const b = getBookingForDate(dateStr);
-            const isPast = dateObj < today;
+            const isPast = dateObj < today || dateObj.getTime() === today.getTime();
             const isToday = dateObj.getTime() === today.getTime();
             const isSelected = selectedDate === dateStr;
+            const isBookable = dateStr === nextWorkingDay;
             const ui = b ? CHOICE_UI[b.choice] : null;
 
             return (
@@ -175,13 +185,17 @@ export default function MealBooking() {
                 onClick={() => setSelectedDate(isSelected ? null : dateStr)}
                 className={`h-16 rounded-xl border-2 flex flex-col items-center justify-center gap-0.5 transition-all text-xs
                   ${isSelected ? 'border-brand bg-brand/5' : 'border-transparent'}
-                  ${isPast ? 'opacity-50' : 'hover:bg-slate-50'}
-                  ${isToday ? 'ring-2 ring-brand/30' : ''}
+                  ${isPast ? 'opacity-40' : ''}
+                  ${!isPast && !isBookable ? 'opacity-60' : ''}
+                  ${isBookable ? 'bg-brand/5 hover:bg-brand/10 ring-2 ring-brand/20' : 'hover:bg-slate-50'}
+                  ${isToday ? 'ring-2 ring-slate-300' : ''}
                 `}
               >
-                <span className={`font-bold ${isToday ? 'text-brand' : 'text-slate-700'}`}>{day}</span>
+                <span className={`font-bold ${isBookable ? 'text-brand' : isToday ? 'text-slate-500' : 'text-slate-700'}`}>{day}</span>
                 {b ? (
                   <span className="text-base">{ui?.emoji}</span>
+                ) : isBookable ? (
+                  <span className="text-[9px] text-brand font-bold">Book</span>
                 ) : (
                   <span className="w-2 h-2 rounded-full bg-slate-200" />
                 )}
@@ -213,8 +227,10 @@ export default function MealBooking() {
             const dateObj = new Date(selectedDate + 'T00:00:00+05:30');
             const dow = dateObj.getDay();
             const dayOpts = DAY_OPTIONS[dow] || [];
-            const isPast = dateObj < today;
+            const isPast = dateObj < today || dateObj.getTime() === today.getTime();
+            const isBookable = selectedDate === nextWorkingDay;
 
+            // Past or today — view only
             if (isPast) {
               return (
                 <div className={`p-3 rounded-xl ${b ? `${CHOICE_UI[b.choice]?.bg} border` : 'bg-slate-50 border border-slate-200'}`}>
@@ -225,9 +241,26 @@ export default function MealBooking() {
               );
             }
 
+            // Future but NOT next working day — locked, no advance booking
+            if (!isBookable) {
+              return (
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-1">
+                  <span className="text-lg">🔒</span>
+                  <div className="text-sm font-semibold text-slate-500">Not available yet</div>
+                  <div className="text-xs text-slate-400">You can only book for the next working day</div>
+                  {b && (
+                    <div className={`mt-2 p-2 rounded-lg ${CHOICE_UI[b.choice]?.bg}`}>
+                      <span className="text-sm font-semibold">{CHOICE_UI[b.choice]?.emoji} {CHOICE_UI[b.choice]?.label}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // Next working day — show booking options
             return (
               <div className="space-y-2">
-                <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Your booking</div>
+                <div className="text-xs text-brand font-bold uppercase tracking-wider">Your booking — Next working day</div>
                 <div className="flex gap-2">
                   {dayOpts.map(opt => {
                     const ui = CHOICE_UI[opt];

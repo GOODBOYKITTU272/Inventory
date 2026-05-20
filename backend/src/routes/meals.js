@@ -39,7 +39,27 @@ function getOptionsForDate(dateStr) {
   return DAY_OPTIONS[day] || [];
 }
 
+// Get the next working day (Mon-Fri) from today
+function getNextWorkingDay() {
+  const now = getISTNow();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  d.setDate(d.getDate() + 1); // start from tomorrow
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1); // skip weekends
+  }
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 // Determine what actions are allowed right now for a given meal_date
+// RULE: Only the NEXT WORKING DAY is bookable. No advance booking.
+// Cutoff times (for next working day):
+//   Before 6 PM  → full booking (choose Veg/Non-Veg/Egg/Skip)
+//   6 PM – 8 PM  → skip only (cancel existing booking)
+//   After 8 PM   → locked (no changes)
+// All other dates → view only (past bookings shown but not editable)
 function getAllowedActions(mealDate) {
   const now = getISTNow();
   const hour = getISTHour();
@@ -54,25 +74,27 @@ function getAllowedActions(mealDate) {
     return { canBook: false, canSkip: false, reason: 'past' };
   }
 
-  // If meal date is tomorrow
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // Calculate next working day
+  const nextWD = getNextWorkingDay();
+  const nextWDDate = new Date(nextWD + 'T00:00:00+05:30');
+  const nextWDClean = new Date(nextWDDate.getFullYear(), nextWDDate.getMonth(), nextWDDate.getDate());
 
-  if (mealDayClean.getTime() === tomorrow.getTime()) {
-    // Before 6 PM → full booking
-    if (hour < 18) {
-      return { canBook: true, canSkip: true, reason: 'open' };
-    }
-    // 6 PM – 8 PM → only skip
-    if (hour < 20) {
-      return { canBook: false, canSkip: true, reason: 'skip_only' };
-    }
-    // After 8 PM → locked
-    return { canBook: false, canSkip: false, reason: 'locked' };
+  // Only next working day is bookable — all other future dates are locked
+  if (mealDayClean.getTime() !== nextWDClean.getTime()) {
+    return { canBook: false, canSkip: false, reason: 'future_locked' };
   }
 
-  // Future dates (day after tomorrow+) → full booking
-  return { canBook: true, canSkip: true, reason: 'open' };
+  // Next working day — apply cutoff rules
+  // Before 6 PM → full booking
+  if (hour < 18) {
+    return { canBook: true, canSkip: true, reason: 'open' };
+  }
+  // 6 PM – 8 PM → only skip
+  if (hour < 20) {
+    return { canBook: false, canSkip: true, reason: 'skip_only' };
+  }
+  // After 8 PM → locked
+  return { canBook: false, canSkip: false, reason: 'locked' };
 }
 
 // ── GET /api/meals/options?date=2026-05-21 ────────────────────────────────────
