@@ -78,8 +78,8 @@ function StockManager() {
             <Package size={18} className="text-amber-600" />
           </div>
           <div className="text-left">
-            <div className="font-bold text-slate-800 text-sm">Stock Control</div>
-            <div className="text-xs text-slate-400">Mark items as out of stock</div>
+            <div className="font-bold text-slate-800 text-sm">Quick Stock Control</div>
+            <div className="text-xs text-slate-400">Water, dispensers & unlimited items</div>
           </div>
         </div>
         {open ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
@@ -94,7 +94,10 @@ function StockManager() {
             className="overflow-hidden"
           >
             <div className="px-4 pb-4 space-y-2">
-              {items.map(item => {
+              {items.filter(item =>
+                // Only show unlimited items (like Water) — bill items have numeric stock managed automatically
+                item.stock_today === null || item.stock_today === undefined || item.stock_today === 0
+              ).map(item => {
                 const isOut = item.stock_today !== null && item.stock_today !== undefined && item.stock_today <= 0;
                 return (
                   <div key={item.id} className="flex items-center justify-between py-2 px-3 rounded-xl bg-slate-50">
