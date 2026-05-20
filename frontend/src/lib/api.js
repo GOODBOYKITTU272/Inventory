@@ -73,6 +73,13 @@ export const api = {
   addCafeteriaItem:(body) => request('/api/cafeteria/items', { method: 'POST', body: JSON.stringify(body) }),
   updateCafeteriaItem: (id, body) => request(`/api/cafeteria/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
+  // Meals
+  mealOptions:    (date)    => request(`/api/meals/options?date=${date}`),
+  bookMeal:       (body)    => request('/api/meals/book', { method: 'POST', body: JSON.stringify(body) }),
+  myMealBookings: (month)   => request(`/api/meals/my-bookings?month=${month}`),
+  mealSummary:    (date)    => request(`/api/meals/summary?date=${date}`),
+  mealSettings:   ()        => request('/api/meals/settings'),
+
   listMonthlyExpenses: () => request('/api/reports/monthly-expenses'),
   addMonthlyExpense: (body) => request('/api/reports/monthly-expenses', { method: 'POST', body: JSON.stringify(body) }),
   deleteMonthlyExpense: (id) => request(`/api/reports/monthly-expenses/${id}`, { method: 'DELETE' }),

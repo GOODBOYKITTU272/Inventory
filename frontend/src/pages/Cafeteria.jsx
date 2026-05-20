@@ -9,6 +9,7 @@ import { api } from '../lib/api.js';
 import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../hooks/useAuth.js';
 import WakingUp from '../components/WakingUp.jsx';
+import MealCard from '../components/MealCard.jsx';
 
 const LOCATIONS = [
   'Balaji Cabin', 'RK Cabin', 'Manisha Cabin',
@@ -602,6 +603,9 @@ export default function Cafeteria() {
         </h1>
         <p className="text-slate-500 text-sm mt-1">What can we get you today?</p>
       </div>
+
+      {/* ── Meal Booking Card ── */}
+      <MealCard />
 
       {/* ── Active order banners ── */}
       {activeOrders.map((order) => (
