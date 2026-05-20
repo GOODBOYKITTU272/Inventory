@@ -70,13 +70,26 @@ function ActiveOrderBanner({ order, onPress }) {
 function ItemChip({ item, qty, outOfStock, onAdd, onRemove }) {
   const inCart = qty > 0;
 
+  // Fun out-of-stock messages — Gen-Z / mom style
+  const OOS_MESSAGES = [
+    "Sorry beta, khatam ho gaya 🥺",
+    "Aaj ki quota over hai bestie 💅",
+    "Unlucky yaar, next time jaldi aa 😭",
+    "Sold out era fr fr 🫠",
+    "Beta too late, sab kha gaye 🤷‍♀️",
+    "Not your day bestie 💀",
+    "Mummy kasam khatam hai 🙏",
+    "RIP stock, try tomorrow 🪦",
+  ];
+
   if (outOfStock) {
+    const msg = OOS_MESSAGES[Math.floor(Math.random() * OOS_MESSAGES.length)];
     return (
       <div className="relative rounded-2xl border-2 border-rose-100 bg-rose-50/60 p-3 flex flex-col gap-2 opacity-70">
         <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
         <div className="text-center">
           <div className="text-xs font-bold text-slate-500 leading-tight">{item.item_name}</div>
-          <div className="text-[10px] text-rose-500 font-bold mt-1">😔 Out today</div>
+          <div className="text-[10px] text-rose-500 font-bold mt-1">{msg}</div>
         </div>
       </div>
     );

@@ -96,11 +96,22 @@ router.post('/', async (req, res, next) => {
 
       if (itemRow && itemRow.stock_today !== null) {
         if (itemRow.stock_today < qty) {
-          return res.status(400).json({
-            error: itemRow.stock_today === 0
-              ? `😔 ${quick_item} is out of stock for today`
-              : `😔 Only ${itemRow.stock_today} ${quick_item} left, but you ordered ${qty}`,
-          });
+          const oosMessages = [
+            `Sorry beta, ${quick_item} khatam ho gaya 🥺`,
+            `Aaj ki ${quick_item} quota over hai bestie 💅`,
+            `Unlucky yaar, ${quick_item} sold out 😭`,
+            `${quick_item} ka stock RIP ho gaya 🫠`,
+            `Beta too late, sab ${quick_item} kha/pi gaye 🤷‍♀️`,
+          ];
+          const lowMessages = [
+            `Arre yaar, sirf ${itemRow.stock_today} ${quick_item} bacha hai but you want ${qty} 😬`,
+            `Only ${itemRow.stock_today} left bestie, ${qty} nahi milega 🥲`,
+            `${quick_item} almost khatam — ${itemRow.stock_today} hi bacha, ${qty} chahiye? No can do 💀`,
+          ];
+          const msg = itemRow.stock_today === 0
+            ? oosMessages[Math.floor(Math.random() * oosMessages.length)]
+            : lowMessages[Math.floor(Math.random() * lowMessages.length)];
+          return res.status(400).json({ error: msg });
         }
         // Decrement stock
         await supabaseAdmin
