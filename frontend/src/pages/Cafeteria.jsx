@@ -129,7 +129,7 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone }) {
       <div className="relative rounded-2xl border-2 border-rose-100 bg-rose-50/60 p-3 flex flex-col gap-2 opacity-70">
         <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
         <div className="text-center">
-          <div className="text-xs font-bold text-slate-500 leading-tight">{item.item_name}</div>
+          <div className="text-xs font-bold text-slate-500 leading-tight">{item.display_name || item.item_name}</div>
           <div className="text-[10px] text-rose-500 font-bold mt-1">{msg}</div>
         </div>
       </div>
@@ -146,7 +146,7 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone }) {
     >
       <div className="text-2xl text-center">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
       <div className="text-center">
-        <div className="text-xs font-bold text-slate-700 leading-tight">{item.item_name}</div>
+        <div className="text-xs font-bold text-slate-700 leading-tight">{item.display_name || item.item_name}</div>
         {item.description && (
           <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{item.description}</div>
         )}
@@ -278,6 +278,98 @@ function BreadCustomSheet({ item, savedPref, onConfirm, onClose }) {
             <div className="text-xs text-slate-400">Pre-fill this every time I order {item.item_name}</div>
           </div>
           <div className={`w-10 h-5.5 rounded-full relative flex items-center transition-colors ml-3 shrink-0 ${remember ? 'bg-brand' : 'bg-slate-200'}`}
+               style={{ height: 22, width: 40 }}>
+            <div className={`absolute w-4 h-4 bg-white rounded-full shadow transition-all ${remember ? 'left-5' : 'left-1'}`} />
+          </div>
+        </button>
+
+        <button
+          onClick={confirm}
+          className="w-full h-12 bg-brand text-white rounded-2xl font-bold text-sm shadow-lg shadow-brand/20 hover:scale-[1.01] active:scale-[0.99] transition-all"
+        >
+          Add to order ✓
+        </button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Jam Customization Sheet (one side / both sides) ──────────────────────────
+function JamCustomSheet({ item, savedPref, onConfirm, onClose }) {
+  const [sides, setSides] = useState(savedPref?.sides || 'one');
+  const [remember, setRemember] = useState(false);
+
+  function confirm() {
+    const instruction = sides === 'both' ? 'both sides jam' : 'one side jam';
+    onConfirm({ instruction, pref: remember ? { sides } : null });
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <div className="text-xl">{item.emoji || '🍓'}</div>
+            <h2 className="font-extrabold text-slate-900">{item.display_name || item.item_name}</h2>
+            <p className="text-xs text-slate-400">How do you want your jam?</p>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200">
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="mb-5">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+            Jam on bread
+          </label>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setSides('one')}
+              className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
+                sides === 'one' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
+              }`}
+            >
+              <span className="text-2xl">🍞</span>
+              One side
+              <span className="text-[10px] opacity-70 font-normal">1 slice, jam on top</span>
+            </button>
+            <button
+              onClick={() => setSides('both')}
+              className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
+                sides === 'both' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
+              }`}
+            >
+              <span className="text-2xl">🍞🍞</span>
+              Both sides
+              <span className="text-[10px] opacity-70 font-normal">2 slices, sandwich style</span>
+            </button>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setRemember((v) => !v)}
+          className={`w-full flex items-center justify-between p-3 rounded-2xl border-2 mb-5 transition-all ${
+            remember ? 'border-brand bg-brand/5' : 'border-slate-100'
+          }`}
+        >
+          <div className="text-left">
+            <div className="text-sm font-semibold text-slate-800">Remember my choice</div>
+            <div className="text-xs text-slate-400">Pre-fill next time I order {item.display_name || item.item_name}</div>
+          </div>
+          <div className={`rounded-full relative flex items-center transition-colors ml-3 shrink-0 ${remember ? 'bg-brand' : 'bg-slate-200'}`}
                style={{ height: 22, width: 40 }}>
             <div className={`absolute w-4 h-4 bg-white rounded-full shadow transition-all ${remember ? 'left-5' : 'left-1'}`} />
           </div>
@@ -511,9 +603,14 @@ export default function Cafeteria() {
   }
 
   // ── Cart handlers ───────────────────────────────────────────────────────────
+  const [jamTarget, setJamTarget] = useState(null); // item with sides_option
+
   function handleAdd(item) {
-    if (isBreadItem(item.item_name)) {
-      // Show customization sheet instead of adding directly
+    if (item.sides_option) {
+      // Show jam sides customization sheet
+      setJamTarget(item);
+    } else if (isBreadItem(item.item_name)) {
+      // Show bread customization sheet
       setCustomTarget(item);
     } else {
       setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 }));
@@ -527,6 +624,15 @@ export default function Cafeteria() {
     setCustomizations((c) => ({ ...c, [item.id]: instruction }));
     if (pref) saveItemPref(item.item_name, pref);
     setCustomTarget(null);
+  }
+
+  function handleJamConfirm({ instruction, pref }) {
+    const item = jamTarget;
+    if (!item) return;
+    setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 }));
+    setCustomizations((c) => ({ ...c, [item.id]: instruction }));
+    if (pref) saveItemPref(item.item_name, pref);
+    setJamTarget(null);
   }
 
   function removeFromCart(id) {
@@ -831,6 +937,18 @@ export default function Cafeteria() {
             savedPref={itemPrefs[customTarget.item_name?.toLowerCase()]}
             onConfirm={handleBreadConfirm}
             onClose={() => setCustomTarget(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Jam Customization Sheet ── */}
+      <AnimatePresence>
+        {jamTarget && (
+          <JamCustomSheet
+            item={jamTarget}
+            savedPref={itemPrefs[jamTarget.item_name?.toLowerCase()]}
+            onConfirm={handleJamConfirm}
+            onClose={() => setJamTarget(null)}
           />
         )}
       </AnimatePresence>

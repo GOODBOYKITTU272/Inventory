@@ -286,5 +286,75 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /api/bills/vendor-summary?month=YYYY-MM — vendor-wise bill breakdown
+router.get('/vendor-summary', requireRole('finance', 'leadership'), async (req, res, next) => {
+  try {
+    const { month } = req.query; // e.g. '2026-05'
+
+    let q = supabaseAdmin
+      .from('bill_uploads')
+      .select('id, vendor_name, invoice_number, bill_date, grand_total, file_url, created_at, verification_status, approval_status, bill_items(item_name, quantity, unit, unit_rate, tax, total_amount)')
+      .order('created_at', { ascending: false });
+
+    // Filter by month if provided
+    if (month) {
+      const start = `${month}-01`;
+      // Get last day of month
+      const [y, m] = month.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      const end = `${month}-${String(lastDay).padStart(2, '0')}`;
+      q = q.gte('created_at', `${start}T00:00:00`).lte('created_at', `${end}T23:59:59`);
+    }
+
+    const { data: bills, error } = await q;
+    if (error) throw error;
+
+    // Group by vendor
+    const vendorMap = {};
+    let monthTotal = 0;
+
+    for (const bill of bills || []) {
+      const vName = bill.vendor_name || 'Unknown Vendor';
+      if (!vendorMap[vName]) {
+        vendorMap[vName] = { vendor_name: vName, bill_count: 0, total_spend: 0, bills: [] };
+      }
+      vendorMap[vName].bill_count++;
+      vendorMap[vName].total_spend += Number(bill.grand_total) || 0;
+      monthTotal += Number(bill.grand_total) || 0;
+
+      vendorMap[vName].bills.push({
+        id: bill.id,
+        invoice_number: bill.invoice_number,
+        bill_date: bill.bill_date,
+        grand_total: bill.grand_total,
+        file_url: bill.file_url,
+        created_at: bill.created_at,
+        verification_status: bill.verification_status,
+        approval_status: bill.approval_status,
+        items: (bill.bill_items || []).map(i => ({
+          item_name: i.item_name,
+          quantity: i.quantity,
+          unit: i.unit,
+          unit_rate: i.unit_rate,
+          tax: i.tax,
+          total_amount: i.total_amount,
+        })),
+      });
+    }
+
+    const vendors = Object.values(vendorMap).sort((a, b) => b.total_spend - a.total_spend);
+
+    res.json({
+      month: month || 'all',
+      month_total: Number(monthTotal.toFixed(2)),
+      vendor_count: vendors.length,
+      bill_count: (bills || []).length,
+      vendors,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 export default router;
 

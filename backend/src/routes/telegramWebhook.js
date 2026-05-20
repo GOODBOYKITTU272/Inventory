@@ -77,6 +77,37 @@ function safeName(name = 'bill') {
   return name.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120);
 }
 
+// Strip brand names, weights, and pack sizes for customer-facing display
+const KNOWN_BRANDS = ['mala\'s', 'malas', 'tata', 'amul', 'nescafe', 'bru', 'britannia', 'parle', 'haldiram', 'mdh', 'everest', 'dabur', 'patanjali', 'lipton', 'brooke bond', 'red label', 'society'];
+
+function generateDisplayName(rawName) {
+  if (!rawName) return null;
+  let name = rawName.trim();
+  // Remove leading brand + separator: "Mala's - Mix Fruit Jam" → "Mix Fruit Jam"
+  for (const brand of KNOWN_BRANDS) {
+    const re = new RegExp(`^${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[-–—:]\\s*`, 'i');
+    name = name.replace(re, '');
+  }
+  // Remove trailing weight/pack info: ", 4 Kg", "(Pack of 500)", "500g", "1 Kg"
+  name = name.replace(/[,\s]*\d+(\.\d+)?\s*(kg|g|gm|gms|ml|l|ltr|litre|litres|pcs|pack|count)\b.*$/i, '');
+  // Remove parenthetical info: "(Pack of 500)", "(250ml)"
+  name = name.replace(/\s*\([^)]*\)\s*/g, ' ');
+  // Clean up extra spaces and dashes
+  name = name.replace(/\s*[-–—]\s*$/, '').replace(/\s+/g, ' ').trim();
+  return name || rawName.trim();
+}
+
+function calculateServings(quantity, unit) {
+  if (!quantity || quantity <= 0) return quantity || 0;
+  const u = (unit || '').toLowerCase().trim();
+  if (['kg', 'kgs'].includes(u)) return Math.round(quantity * 25);       // 40g per serving
+  if (['g', 'gm', 'gms', 'gram', 'grams'].includes(u)) return Math.round(quantity / 40);
+  if (['l', 'ltr', 'litre', 'litres', 'liter'].includes(u)) return Math.round(quantity * 20); // 50ml per serving
+  if (['ml'].includes(u)) return Math.round(quantity / 50);
+  // pcs, count, pack, or anything else → use as-is
+  return quantity;
+}
+
 function isSupportedFile(fileName = '', mimeType = '') {
   return (
     /\.(pdf|jpe?g|png)$/i.test(fileName) ||
@@ -292,19 +323,24 @@ async function saveBill({ parsed, fileUrl }) {
     // 4. Upsert into cafeteria_items (for quick ordering on frontend)
     // Internal supplies (cleaning, stationery, other) are NOT orderable by employees
     const isOrderable = ['beverage', 'food', 'snack'].includes(cafeCat);
+    const displayName = generateDisplayName(itemName);
+    const servings = calculateServings(qty, item.unit);
 
     const { data: existingCafe } = await supabaseAdmin
       .from('cafeteria_items')
-      .select('id, stock_today')
+      .select('id, stock_today, stock_servings')
       .ilike('item_name', itemName)
       .maybeSingle();
 
     if (existingCafe) {
       // Add to existing stock
       const newStock = (existingCafe.stock_today || 0) + qty;
+      const newServings = (existingCafe.stock_servings || 0) + servings;
+      const update = { stock_today: newStock, stock_servings: newServings, available: true, orderable: isOrderable };
+      if (!existingCafe.display_name) update.display_name = displayName;
       await supabaseAdmin
         .from('cafeteria_items')
-        .update({ stock_today: newStock, available: true, orderable: isOrderable })
+        .update(update)
         .eq('id', existingCafe.id);
     } else {
       // Create new cafeteria item
@@ -312,10 +348,12 @@ async function saveBill({ parsed, fileUrl }) {
         .from('cafeteria_items')
         .insert({
           item_name: itemName,
+          display_name: displayName,
           emoji: emoji,
           category: cafeCat,
           available: true,
           stock_today: qty,
+          stock_servings: servings,
           orderable: isOrderable,
         });
     }

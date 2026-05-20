@@ -19,6 +19,34 @@ const ITEM_CATEGORY = {
   'maintenance': 'maintenance', 'meeting room setup': 'other',
 };
 
+// ── Tone-aware dependency messages ──────────────────────────────────────────
+const DEPENDENCY_MESSAGES = {
+  'Mom Mode': {
+    _default: (item, dep) => `Beta, ${item} toh hai but ${dep} khatam ho gaya 🍞😅 Office boy ko bol diya hai!`,
+  },
+  'gen_z': {
+    _default: (item, dep) => `Bruh, ${dep}'s MIA 💀 ${item} without ${dep} is just chaotic. Restocking!`,
+  },
+  'Friendly': {
+    _default: (item, dep) => `Oops! We have ${item} but ${dep} ran out! We'll restock soon 😊`,
+  },
+  'Professional': {
+    _default: (item, dep) => `${dep} is currently unavailable. ${item} requires ${dep} to serve.`,
+  },
+  'Funny': {
+    _default: (item, dep) => `${item} bina ${dep} ke? Bhai, ye toh crime hai 😂 ${dep} ka stock khatam. Patience!`,
+  },
+  'Minimal': {
+    _default: (item, dep) => `${dep} out of stock. Can't serve ${item}.`,
+  },
+};
+
+function getDependencyMessage(tone, itemName, depName) {
+  const toneMessages = DEPENDENCY_MESSAGES[tone] || DEPENDENCY_MESSAGES['Friendly'];
+  const fn = toneMessages[depName] || toneMessages._default;
+  return fn(itemName, depName);
+}
+
 const PARSER_SYSTEM = `You are the "Applywizz Office Concierge" AI.
 Your tone is WITTY, ENERGETIC, and PERSONABLE (like Zomato push notifications).
 The office team is aged 23-25, so use emojis and Gen-Z friendly language.
@@ -90,7 +118,7 @@ router.post('/', async (req, res, next) => {
       // ── Stock check & decrement ───────────────────────────────────
       const { data: itemRow } = await supabaseAdmin
         .from('cafeteria_items')
-        .select('id, stock_today')
+        .select('id, stock_today, stock_servings, dependencies, sides_option')
         .ilike('item_name', quick_item)
         .maybeSingle();
 
@@ -117,6 +145,65 @@ router.post('/', async (req, res, next) => {
         await supabaseAdmin
           .from('cafeteria_items')
           .update({ stock_today: itemRow.stock_today - qty })
+          .eq('id', itemRow.id);
+      }
+
+      // ── Dependency check (e.g., Jam needs Bread) ───────────────────
+      const deps = itemRow?.dependencies;
+      const isBothSides = /both\s*side/i.test(quick_instruction);
+      const sidesMultiplier = (itemRow?.sides_option && isBothSides) ? 2 : 1;
+
+      if (Array.isArray(deps) && deps.length > 0) {
+        // Load user's tone preference for personalized message
+        let userTone = 'Friendly';
+        try {
+          const { data: prefRow } = await supabaseAdmin
+            .from('employee_preferences')
+            .select('notification_tone')
+            .eq('employee_id', req.user.id)
+            .maybeSingle();
+          if (prefRow?.notification_tone) userTone = prefRow.notification_tone;
+        } catch (_) { /* use default tone */ }
+
+        for (const depName of deps) {
+          const { data: depItem } = await supabaseAdmin
+            .from('cafeteria_items')
+            .select('id, stock_today, stock_servings, display_name, item_name')
+            .ilike('item_name', depName)
+            .maybeSingle();
+
+          if (!depItem) continue; // dependency item doesn't exist in menu, skip check
+
+          const depStock = depItem.stock_today;
+          const depServings = depItem.stock_servings;
+          const neededServings = qty * sidesMultiplier;
+
+          // Check servings first, then raw stock
+          if (depServings !== null && depServings < neededServings) {
+            const displayDep = depItem.display_name || depItem.item_name;
+            return res.status(400).json({ error: getDependencyMessage(userTone, quick_item, displayDep) });
+          }
+          if (depStock !== null && depStock <= 0) {
+            const displayDep = depItem.display_name || depItem.item_name;
+            return res.status(400).json({ error: getDependencyMessage(userTone, quick_item, displayDep) });
+          }
+
+          // Decrement dependency stock
+          const depUpdate = {};
+          if (depStock !== null) depUpdate.stock_today = depStock - (qty * sidesMultiplier);
+          if (depServings !== null) depUpdate.stock_servings = depServings - neededServings;
+          if (Object.keys(depUpdate).length > 0) {
+            await supabaseAdmin.from('cafeteria_items').update(depUpdate).eq('id', depItem.id);
+          }
+        }
+      }
+
+      // Also decrement servings on the main item if tracked
+      if (itemRow?.stock_servings !== null && itemRow?.stock_servings !== undefined) {
+        const mainServingsUsed = qty * sidesMultiplier;
+        await supabaseAdmin
+          .from('cafeteria_items')
+          .update({ stock_servings: (itemRow.stock_servings || 0) - mainServingsUsed })
           .eq('id', itemRow.id);
       }
 
@@ -321,16 +408,38 @@ router.patch(
       // ── Restore stock on staff cancel ─────────────────────────────────────
       if (status === 'cancelled' && data?.parsed_item) {
         const cancelQty = parseInt(data.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+        const isBoth = /both\s*side/i.test(data.instruction || '');
+        const sidesM = isBoth ? 2 : 1;
+
         const { data: itemRow } = await supabaseAdmin
           .from('cafeteria_items')
-          .select('id, stock_today')
+          .select('id, stock_today, stock_servings, dependencies, sides_option')
           .ilike('item_name', data.parsed_item)
           .maybeSingle();
+
         if (itemRow && itemRow.stock_today !== null) {
-          await supabaseAdmin
-            .from('cafeteria_items')
-            .update({ stock_today: itemRow.stock_today + cancelQty })
-            .eq('id', itemRow.id);
+          const restore = { stock_today: itemRow.stock_today + cancelQty };
+          if (itemRow.stock_servings !== null) restore.stock_servings = (itemRow.stock_servings || 0) + (cancelQty * sidesM);
+          await supabaseAdmin.from('cafeteria_items').update(restore).eq('id', itemRow.id);
+        }
+
+        // Restore dependency stock (e.g., Bread when Jam cancelled)
+        if (itemRow && Array.isArray(itemRow.dependencies) && itemRow.dependencies.length > 0) {
+          for (const depName of itemRow.dependencies) {
+            const { data: depItem } = await supabaseAdmin
+              .from('cafeteria_items')
+              .select('id, stock_today, stock_servings')
+              .ilike('item_name', depName)
+              .maybeSingle();
+            if (depItem) {
+              const depRestore = {};
+              if (depItem.stock_today !== null) depRestore.stock_today = (depItem.stock_today || 0) + (cancelQty * sidesM);
+              if (depItem.stock_servings !== null) depRestore.stock_servings = (depItem.stock_servings || 0) + (cancelQty * sidesM);
+              if (Object.keys(depRestore).length > 0) {
+                await supabaseAdmin.from('cafeteria_items').update(depRestore).eq('id', depItem.id);
+              }
+            }
+          }
         }
       }
 
@@ -409,16 +518,38 @@ router.post('/:id/cancel', async (req, res, next) => {
     // ── Restore stock on cancel ──────────────────────────────────────
     if (order.parsed_item) {
       const cancelQty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+      const isBoth = /both\s*side/i.test(order.instruction || '');
+      const sidesM = isBoth ? 2 : 1;
+
       const { data: itemRow } = await supabaseAdmin
         .from('cafeteria_items')
-        .select('id, stock_today')
+        .select('id, stock_today, stock_servings, dependencies, sides_option')
         .ilike('item_name', order.parsed_item)
         .maybeSingle();
+
       if (itemRow && itemRow.stock_today !== null) {
-        await supabaseAdmin
-          .from('cafeteria_items')
-          .update({ stock_today: itemRow.stock_today + cancelQty })
-          .eq('id', itemRow.id);
+        const restore = { stock_today: itemRow.stock_today + cancelQty };
+        if (itemRow.stock_servings !== null) restore.stock_servings = (itemRow.stock_servings || 0) + (cancelQty * sidesM);
+        await supabaseAdmin.from('cafeteria_items').update(restore).eq('id', itemRow.id);
+      }
+
+      // Restore dependency stock (e.g., Bread when Jam cancelled)
+      if (itemRow && Array.isArray(itemRow.dependencies) && itemRow.dependencies.length > 0) {
+        for (const depName of itemRow.dependencies) {
+          const { data: depItem } = await supabaseAdmin
+            .from('cafeteria_items')
+            .select('id, stock_today, stock_servings')
+            .ilike('item_name', depName)
+            .maybeSingle();
+          if (depItem) {
+            const depRestore = {};
+            if (depItem.stock_today !== null) depRestore.stock_today = (depItem.stock_today || 0) + (cancelQty * sidesM);
+            if (depItem.stock_servings !== null) depRestore.stock_servings = (depItem.stock_servings || 0) + (cancelQty * sidesM);
+            if (Object.keys(depRestore).length > 0) {
+              await supabaseAdmin.from('cafeteria_items').update(depRestore).eq('id', depItem.id);
+            }
+          }
+        }
       }
     }
 

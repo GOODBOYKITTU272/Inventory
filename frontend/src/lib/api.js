@@ -65,6 +65,7 @@ export const api = {
 
   extractBill: (file_url) => request('/api/bills/extract', { method: 'POST', body: JSON.stringify({ file_url }) }),
   listBills: () => request('/api/bills'),
+  vendorSummary: (month) => request(`/api/bills/vendor-summary${month ? `?month=${month}` : ''}`),
   updateBillStatus: (id, body) => request(`/api/bills/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // Cafeteria

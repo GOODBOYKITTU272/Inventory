@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Cart
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import WakingUp from '../components/WakingUp.jsx';
+import { ChevronDown, ChevronRight, FileText, ExternalLink, Building2, Receipt, TrendingUp } from 'lucide-react';
 
 const fmt = (n) => new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', maximumFractionDigits: 0,
@@ -37,10 +38,20 @@ export default function Finance() {
     label: '', amount: '', category: 'rental', month: CURRENT_MONTH, notes: '',
   });
 
+  // Vendor breakdown
+  const [vendorData, setVendorData]     = useState(null);
+  const [vendorMonth, setVendorMonth]   = useState(CURRENT_MONTH);
+  const [expandedVendor, setExpandedVendor] = useState(null);
+  const [expandedBill, setExpandedBill] = useState(null);
+
   useEffect(() => {
     api.spending().then(setData).catch((e) => setErr(e.message));
     api.listMonthlyExpenses().then(setExpenses).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    api.vendorSummary(vendorMonth).then(setVendorData).catch(() => {});
+  }, [vendorMonth]);
 
   async function addExpense(e) {
     e.preventDefault();
@@ -172,6 +183,146 @@ export default function Finance() {
                 ))}
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* ── Vendor Breakdown ── */}
+      <div className="card">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="font-semibold flex items-center gap-2">
+              <Building2 size={18} className="text-brand" /> Vendor Breakdown
+            </h2>
+            <p className="text-xs text-slate-400">Bills grouped by vendor — click to expand details.</p>
+          </div>
+          <input
+            type="month"
+            value={vendorMonth}
+            onChange={(e) => setVendorMonth(e.target.value)}
+            className="input text-sm"
+          />
+        </div>
+
+        {/* Summary row */}
+        {vendorData && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div className="bg-slate-50 rounded-xl p-3 text-center">
+              <div className="text-xs text-slate-500 uppercase">Vendors</div>
+              <div className="text-xl font-bold text-slate-900">{vendorData.vendor_count}</div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 text-center">
+              <div className="text-xs text-slate-500 uppercase">Bills</div>
+              <div className="text-xl font-bold text-slate-900">{vendorData.bill_count}</div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 text-center">
+              <div className="text-xs text-slate-500 uppercase">Total Spend</div>
+              <div className="text-xl font-bold text-slate-900">{fmt(vendorData.month_total)}</div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 text-center">
+              <div className="text-xs text-slate-500 uppercase">Avg / Bill</div>
+              <div className="text-xl font-bold text-slate-900">
+                {vendorData.bill_count > 0 ? fmt(vendorData.month_total / vendorData.bill_count) : '—'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Vendor accordions */}
+        {!vendorData ? (
+          <div className="text-slate-400 text-sm text-center py-8">Loading vendor data…</div>
+        ) : vendorData.vendors.length === 0 ? (
+          <div className="text-slate-400 text-sm text-center py-8">No bills found for this month.</div>
+        ) : (
+          <div className="space-y-3">
+            {vendorData.vendors.map((vendor) => {
+              const isOpen = expandedVendor === vendor.vendor_name;
+              return (
+                <div key={vendor.vendor_name} className="border border-slate-200 rounded-xl overflow-hidden">
+                  {/* Vendor header */}
+                  <button
+                    onClick={() => setExpandedVendor(isOpen ? null : vendor.vendor_name)}
+                    className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-10 w-10 bg-brand/10 text-brand rounded-xl flex items-center justify-center shrink-0">
+                        <Building2 size={18} />
+                      </div>
+                      <div className="text-left min-w-0">
+                        <div className="font-semibold text-slate-900 text-sm truncate">{vendor.vendor_name}</div>
+                        <div className="text-xs text-slate-400">{vendor.bill_count} bill{vendor.bill_count > 1 ? 's' : ''}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-bold text-slate-900">{fmt(vendor.total_spend)}</span>
+                      {isOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
+                    </div>
+                  </button>
+
+                  {/* Expanded bills */}
+                  {isOpen && (
+                    <div className="border-t border-slate-100 bg-slate-50/50 divide-y divide-slate-100">
+                      {vendor.bills.map((bill) => {
+                        const billOpen = expandedBill === bill.id;
+                        return (
+                          <div key={bill.id} className="px-4 py-3">
+                            {/* Bill row */}
+                            <button
+                              onClick={() => setExpandedBill(billOpen ? null : bill.id)}
+                              className="w-full flex items-center justify-between text-left"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Receipt size={14} className="text-slate-400 shrink-0" />
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium text-slate-800 truncate">
+                                    Invoice {bill.invoice_number || '—'}
+                                  </div>
+                                  <div className="text-xs text-slate-400">
+                                    {bill.bill_date || new Date(bill.created_at).toLocaleDateString('en-IN')}
+                                    {' · '}
+                                    <span className={bill.verification_status === 'Admin Verified' ? 'text-emerald-600' : 'text-amber-600'}>
+                                      {bill.verification_status}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="font-semibold text-sm text-slate-900">{fmt(bill.grand_total)}</span>
+                                {billOpen ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
+                              </div>
+                            </button>
+
+                            {/* Bill items */}
+                            {billOpen && (
+                              <div className="mt-3 ml-6 space-y-1.5">
+                                {(bill.items || []).map((item, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-xs">
+                                    <span className="text-slate-600">{item.item_name}</span>
+                                    <span className="text-slate-500 tabular-nums">
+                                      {item.quantity} × {fmt(item.unit_rate || 0)} = <strong className="text-slate-800">{fmt(item.total_amount)}</strong>
+                                    </span>
+                                  </div>
+                                ))}
+                                {bill.file_url && (
+                                  <a
+                                    href={bill.file_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-xs text-brand font-semibold mt-2 hover:underline"
+                                  >
+                                    <ExternalLink size={12} /> View Bill
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
