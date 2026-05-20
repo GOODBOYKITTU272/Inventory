@@ -18,7 +18,11 @@ const EXTRACTION_SYSTEM = `You are an Office Bill, Inventory, and Expense Extrac
 Extract only visible bill details. Do not guess missing values.
 Return JSON only with vendor_name, bill_date, invoice_number, items, delivery_charges,
 discount, grand_total, payment_status, confidence_score, needs_manual_review, and
-manual_review_reason. Mark needs_manual_review true if any important value is unclear.`;
+manual_review_reason. Mark needs_manual_review true if any important value is unclear.
+
+For each item, also add:
+- "emoji": a single relevant emoji for the item (e.g. ☕ for coffee, 🍵 for tea, 🥛 for milk, 🍪 for biscuits, 🧹 for cleaning items, 🍋 for lemon, 🫖 for tea bags, 🍞 for bread, 🥜 for peanut butter, 🫙 for jam, 🧈 for butter, 🍫 for chocolate, 🥤 for juice, 💧 for water, 🧻 for tissue/napkins, 🧴 for soap/sanitizer, 📎 for stationery)
+- "cafeteria_category": one of "beverage", "food", "snack", "cleaning", "stationery", "other" — classify based on what the item is`;
 
 const DUPLICATE_MESSAGES = [
   'Bhai, ye bill pehle se system mein hai. Ek hi bill se do baar stock update nahi hoga.',
@@ -140,6 +144,7 @@ async function findDuplicate(parsed) {
 }
 
 async function saveBill({ parsed, fileUrl }) {
+  // Auto-approve: bills from Telegram are auto-verified (only admins upload via Telegram)
   const { data: bill, error: billErr } = await supabaseAdmin
     .from('bill_uploads')
     .insert({
@@ -148,15 +153,16 @@ async function saveBill({ parsed, fileUrl }) {
       invoice_number: parsed.invoice_number || null,
       uploaded_by_name: 'Telegram Bot',
       file_url: fileUrl,
-      extraction_status: parsed.extraction_status || 'Extracted',
-      verification_status: parsed.verification_status || 'Pending Admin Verification',
-      approval_status: parsed.approval_status || 'Pending Accounts Approval',
+      extraction_status: 'Extracted',
+      verification_status: 'Admin Verified',
+      approval_status: 'Auto-Approved',
       grand_total: normalizeNumber(parsed.grand_total),
       delivery_charges: normalizeNumber(parsed.delivery_charges) || 0,
       discount: normalizeNumber(parsed.discount) || 0,
       confidence_score: normalizeNumber(parsed.confidence_score),
       needs_manual_review: Boolean(parsed.needs_manual_review),
       manual_review_reason: parsed.manual_review_reason || null,
+      verified_at: new Date().toISOString(),
     })
     .select()
     .single();
@@ -181,7 +187,95 @@ async function saveBill({ parsed, fileUrl }) {
     if (itemsErr) throw itemsErr;
   }
 
-  return bill;
+  // ── Auto-sync: Update inventory + cafeteria items ──
+  for (const item of items) {
+    const qty = normalizeNumber(item.quantity) || 0;
+    const itemName = item.item_name || 'Unknown';
+    const emoji = item.emoji || '📦';
+    const cafeCat = item.cafeteria_category || 'other';
+
+    // 1. Upsert into products table
+    const { data: existingProduct } = await supabaseAdmin
+      .from('products')
+      .select('id')
+      .ilike('name', itemName)
+      .maybeSingle();
+
+    let productId;
+    if (existingProduct) {
+      productId = existingProduct.id;
+    } else {
+      const { data: newProduct } = await supabaseAdmin
+        .from('products')
+        .insert({
+          name: itemName,
+          category: item.category || 'Pantry',
+          unit: item.unit || 'pcs',
+        })
+        .select('id')
+        .single();
+      productId = newProduct?.id;
+    }
+
+    // 2. Update inventory stock
+    if (productId) {
+      const { data: inv } = await supabaseAdmin
+        .from('inventory')
+        .select('current_stock')
+        .eq('product_id', productId)
+        .maybeSingle();
+
+      if (inv) {
+        await supabaseAdmin
+          .from('inventory')
+          .update({ current_stock: (inv.current_stock || 0) + qty })
+          .eq('product_id', productId);
+      } else {
+        await supabaseAdmin
+          .from('inventory')
+          .insert({ product_id: productId, current_stock: qty });
+      }
+
+      // 3. Log transaction
+      await supabaseAdmin.from('transactions').insert({
+        product_id: productId,
+        type: 'add',
+        quantity: qty,
+        unit_cost: normalizeNumber(item.unit_rate),
+        total_cost: normalizeNumber(item.total_amount),
+        notes: `Auto from Bill #${bill.invoice_number} (${bill.vendor_name})`,
+      });
+    }
+
+    // 4. Upsert into cafeteria_items (for quick ordering on frontend)
+    const { data: existingCafe } = await supabaseAdmin
+      .from('cafeteria_items')
+      .select('id, stock_today')
+      .ilike('item_name', itemName)
+      .maybeSingle();
+
+    if (existingCafe) {
+      // Add to existing stock
+      const newStock = (existingCafe.stock_today || 0) + qty;
+      await supabaseAdmin
+        .from('cafeteria_items')
+        .update({ stock_today: newStock, available: true })
+        .eq('id', existingCafe.id);
+    } else {
+      // Create new cafeteria item
+      await supabaseAdmin
+        .from('cafeteria_items')
+        .insert({
+          item_name: itemName,
+          emoji: emoji,
+          category: cafeCat,
+          available: true,
+          stock_today: qty,
+        });
+    }
+  }
+
+  return { bill, itemCount: items.length };
 }
 
 async function extractBill({ buffer, fileName, mimeType, fileUrl }) {
@@ -245,10 +339,16 @@ router.post('/', (req, res) => {
         return;
       }
 
-      const bill = await saveBill({ parsed, fileUrl });
+      const { bill, itemCount } = await saveBill({ parsed, fileUrl });
+
+      // Build items summary
+      const itemsList = (parsed.items || [])
+        .map(i => `  ${i.emoji || '📦'} ${i.item_name} — ${i.quantity} ${i.unit || 'pcs'}`)
+        .join('\n');
+
       await sendTelegramMessage(
         chatId,
-        `Bill processed successfully\n\nVendor: ${bill.vendor_name || '-'}\nInvoice: #${bill.invoice_number || '-'}\nTotal: ₹${bill.grand_total || '-'}\n\nStatus: Sent for Admin Verification\nInventory will update only after Admin verification.`,
+        `✅ Bill Auto-Approved & Inventory Updated!\n\n🏢 Vendor: ${bill.vendor_name || '-'}\n🧾 Invoice: #${bill.invoice_number || '-'}\n💰 Total: ₹${bill.grand_total || '-'}\n\n📦 ${itemCount} items added to stock:\n${itemsList}\n\n🟢 Status: Auto-Verified\n🔄 Cafeteria menu & inventory updated automatically!`,
         replyTo,
       );
     } catch (e) {
