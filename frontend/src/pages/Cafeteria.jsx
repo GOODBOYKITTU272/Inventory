@@ -28,6 +28,58 @@ const CATEGORY_EMOJI = {
   meal: '🍱', stationery: '📎', cleaning: '🧹', other: '📦',
 };
 
+// ── Out-of-stock messages by tone ─────────────────────────────────────────────
+const OOS_BY_TONE = {
+  Professional: [
+    "Currently unavailable",
+    "Out of stock for today",
+    "Not available at the moment",
+    "Stock exhausted for today",
+  ],
+  Friendly: [
+    "Oops, all gone for today! 😊",
+    "This one's finished, try tomorrow! 🌈",
+    "All out! Maybe try something else? 💛",
+    "Gone for today, come back tomorrow! ✨",
+  ],
+  Funny: [
+    "Sorry beta, khatam ho gaya 🥺",
+    "Aaj ki quota over hai bestie 💅",
+    "Unlucky yaar, next time jaldi aa 😭",
+    "Sold out era fr fr 🫠",
+    "Beta too late, sab kha gaye 🤷‍♀️",
+    "Not your day bestie 💀",
+    "RIP stock, try tomorrow 🪦",
+  ],
+  'Mom Mode': [
+    "Beta, ye aaj khatam ho gaya 🥺💝",
+    "Aur nahi hai beta, doosra le lo na 🫂",
+    "Sorry bachcha, kal laa denge 💕",
+    "Beta koi baat nahi, kuch aur kha lo 🤗",
+    "Mummy promise kal milega, aaj nahi hai 🙏💖",
+  ],
+  Minimal: [
+    "Out of stock",
+    "Unavailable",
+    "Sold out",
+    "Not available",
+  ],
+};
+
+function getOosMessage(tone, itemName) {
+  const messages = OOS_BY_TONE[tone] || OOS_BY_TONE.Friendly;
+  return messages[Math.floor(Math.random() * messages.length)];
+}
+
+// ── Low stock messages by tone ────────────────────────────────────────────────
+const LOW_STOCK_BY_TONE = {
+  Professional: (n) => `${n} remaining`,
+  Friendly: (n) => `Only ${n} left! 🏃`,
+  Funny: (n) => `${n} bache hai, jaldi kar! 🔥`,
+  'Mom Mode': (n) => `Beta jaldi, sirf ${n} hai 💝`,
+  Minimal: (n) => `${n} left`,
+};
+
 const STAGE_INFO = {
   placed:     { icon: '📋', label: 'Order placed' },
   accepted:   { icon: '✅', label: 'Accepted' },
@@ -67,23 +119,11 @@ function ActiveOrderBanner({ order, onPress }) {
 }
 
 // ── Item Chip ──────────────────────────────────────────────────────────────────
-function ItemChip({ item, qty, outOfStock, onAdd, onRemove }) {
+function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone }) {
   const inCart = qty > 0;
 
-  // Fun out-of-stock messages — Gen-Z / mom style
-  const OOS_MESSAGES = [
-    "Sorry beta, khatam ho gaya 🥺",
-    "Aaj ki quota over hai bestie 💅",
-    "Unlucky yaar, next time jaldi aa 😭",
-    "Sold out era fr fr 🫠",
-    "Beta too late, sab kha gaye 🤷‍♀️",
-    "Not your day bestie 💀",
-    "Mummy kasam khatam hai 🙏",
-    "RIP stock, try tomorrow 🪦",
-  ];
-
   if (outOfStock) {
-    const msg = OOS_MESSAGES[Math.floor(Math.random() * OOS_MESSAGES.length)];
+    const msg = getOosMessage(tone, item.item_name);
     return (
       <div className="relative rounded-2xl border-2 border-rose-100 bg-rose-50/60 p-3 flex flex-col gap-2 opacity-70">
         <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
@@ -114,7 +154,7 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove }) {
       {/* Low stock badge */}
       {item.stock_today !== null && item.stock_today !== undefined && item.stock_today > 0 && item.stock_today <= 5 && (
         <div className="absolute top-1.5 right-1.5 bg-amber-100 text-amber-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">
-          {item.stock_today} left
+          {(LOW_STOCK_BY_TONE[tone] || LOW_STOCK_BY_TONE.Friendly)(item.stock_today)}
         </div>
       )}
 
@@ -371,6 +411,7 @@ export default function Cafeteria() {
   const [orderBusy,    setOrderBusy]    = useState(false);
   const [successMsg,   setSuccessMsg]   = useState('');
   const [errorMsg,     setErrorMsg]     = useState('');
+  const [tone,         setTone]         = useState('Friendly'); // AI personality tone
 
   // Custom text request
   const [showCustom, setShowCustom] = useState(false);
@@ -405,7 +446,7 @@ export default function Cafeteria() {
     }
   }, []);
 
-  // Load saved item preferences (bread slices/toast prefs)
+  // Load saved item preferences (bread slices/toast prefs) + AI tone
   useEffect(() => {
     if (!session) return;
     supabase
@@ -417,6 +458,17 @@ export default function Cafeteria() {
         if (data?.item_prefs) setItemPrefs(data.item_prefs);
       })
       .catch(() => {});
+
+    // Load notification tone preference
+    supabase
+      .from('employee_preferences')
+      .select('notification_tone')
+      .eq('employee_id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.notification_tone) setTone(data.notification_tone);
+      })
+      .catch(() => {}); // table may not exist yet
   }, [session]);
 
   useEffect(() => { load(); }, [load]);
@@ -603,6 +655,7 @@ export default function Cafeteria() {
                   outOfStock={isOut}
                   onAdd={() => handleAdd(item)}
                   onRemove={() => removeFromCart(item.id)}
+                  tone={tone}
                 />
               );
             })}
