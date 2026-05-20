@@ -36,6 +36,11 @@ const LOCATION_OPTS = [
   { id: 'Ask Every Time',   label: 'Ask me every time' },
 ];
 
+const SHIFT_OPTS = [
+  { id: 'morning', emoji: '☀️', label: 'Morning Shift', sub: '9:00 AM – 5:00 PM', detail: 'Lunch served ~12:30 PM' },
+  { id: 'night',   emoji: '🌙', label: 'Night Shift',   sub: '8:00 PM – 5:30 AM', detail: 'Dinner served ~11:00 PM' },
+];
+
 const TONE_OPTS = [
   { id: 'gen_z',        emoji: '🔥', label: 'Gen-Z Vibes',    example: '"Your coffee is on its way bestie! ☕🚀"' },
   { id: 'Friendly',     emoji: '😊', label: 'Friendly',       example: '"Coffee time! Should we send your usual?"' },
@@ -162,7 +167,47 @@ function StepName({ prefs, set, onNext, onBack }) {
   );
 }
 
-// Step 2 — Drinks
+// Step 2 — Shift
+function StepShift({ prefs, set, onNext, onBack }) {
+  return (
+    <div className="space-y-6 pb-28">
+      <div className="text-center pt-4">
+        <div className="text-5xl mb-3">⏰</div>
+        <h2 className="text-2xl font-bold text-slate-900">What's your shift?</h2>
+        <p className="text-slate-500 mt-2 text-sm">This decides your meal booking cutoff times.</p>
+      </div>
+      <div className="space-y-3">
+        {SHIFT_OPTS.map(({ id, emoji, label, sub, detail }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => set('shift', id)}
+            className={`w-full p-5 rounded-2xl border-2 text-left transition-all active:scale-[0.98] ${
+              prefs.shift === id
+                ? 'border-brand bg-brand/5 shadow-md shadow-brand/10'
+                : 'border-slate-200 bg-white hover:border-brand/30'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">{emoji}</span>
+              <div>
+                <div className={`font-bold text-base ${prefs.shift === id ? 'text-brand' : 'text-slate-800'}`}>
+                  {label}
+                  {prefs.shift === id && <Check size={14} className="inline ml-2" />}
+                </div>
+                <div className="text-sm text-slate-500">{sub}</div>
+                <div className="text-xs text-slate-400 mt-0.5">{detail}</div>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <NavBar step={2} onBack={onBack} onNext={onNext} />
+    </div>
+  );
+}
+
+// Step 3 — Drinks
 function StepDrinks({ prefs, toggle, onNext, onBack }) {
   return (
     <div className="space-y-6 pb-28">
@@ -182,7 +227,7 @@ function StepDrinks({ prefs, toggle, onNext, onBack }) {
           />
         ))}
       </div>
-      <NavBar step={1} onBack={onBack} onNext={onNext} />
+      <NavBar step={3} onBack={onBack} onNext={onNext} />
     </div>
   );
 }
@@ -207,12 +252,12 @@ function StepSnacks({ prefs, toggle, onNext, onBack }) {
           />
         ))}
       </div>
-      <NavBar step={2} onBack={onBack} onNext={onNext} />
+      <NavBar step={4} onBack={onBack} onNext={onNext} />
     </div>
   );
 }
 
-// Step 3 — Taste preferences (dynamic based on drink selection)
+// Step 5 — Taste preferences (dynamic based on drink selection)
 function StepTaste({ prefs, toggle, onNext, onBack }) {
   const hasCoffee = prefs.drinks.some(d => d.toLowerCase().includes('coffee'));
   const hasTea    = prefs.drinks.includes('Regular Tea');
@@ -230,7 +275,7 @@ function StepTaste({ prefs, toggle, onNext, onBack }) {
           <div className="text-5xl">🤷</div>
           <p className="text-sm">No hot drinks selected — skipping taste preferences.</p>
         </div>
-        <NavBar step={3} onBack={onBack} onNext={onNext} nextLabel="Skip →" />
+        <NavBar step={5} onBack={onBack} onNext={onNext} nextLabel="Skip →" />
       </div>
     );
   }
@@ -258,12 +303,12 @@ function StepTaste({ prefs, toggle, onNext, onBack }) {
           </div>
         </div>
       ))}
-      <NavBar step={3} onBack={onBack} onNext={onNext} />
+      <NavBar step={5} onBack={onBack} onNext={onNext} />
     </div>
   );
 }
 
-// Step 4 — Location
+// Step 6 — Location
 function StepLocation({ prefs, set, onNext, onBack }) {
   return (
     <div className="space-y-6 pb-28">
@@ -289,12 +334,12 @@ function StepLocation({ prefs, set, onNext, onBack }) {
           </button>
         ))}
       </div>
-      <NavBar step={4} onBack={onBack} onNext={onNext} />
+      <NavBar step={6} onBack={onBack} onNext={onNext} />
     </div>
   );
 }
 
-// Step 5 — Reminders
+// Step 7 — Reminders
 function StepReminders({ prefs, set, onNext, onBack }) {
   const items = [
     { key: 'morningReminder',   label: '☀️ Morning drink',       sub: 'Reminds you around 10:45 AM',  timeKey: 'morningTime',   defTime: '10:45' },
@@ -337,12 +382,12 @@ function StepReminders({ prefs, set, onNext, onBack }) {
           </div>
         ))}
       </div>
-      <NavBar step={5} onBack={onBack} onNext={onNext} />
+      <NavBar step={7} onBack={onBack} onNext={onNext} />
     </div>
   );
 }
 
-// Step 6 — Tone
+// Step 8 — Tone
 function StepTone({ prefs, set, onNext, onBack }) {
   return (
     <div className="space-y-6 pb-28">
@@ -363,7 +408,7 @@ function StepTone({ prefs, set, onNext, onBack }) {
           />
         ))}
       </div>
-      <NavBar step={6} onBack={onBack} onNext={onNext} nextLabel="Almost Done →" />
+      <NavBar step={8} onBack={onBack} onNext={onNext} nextLabel="Almost Done →" />
     </div>
   );
 }
@@ -405,7 +450,7 @@ function StepDone({ onFinish, saving }) {
 }
 
 /* ── Main Onboarding ─────────────────────────────────────────────── */
-const TOTAL = 9;
+const TOTAL = 10;
 
 export default function Onboarding({ onComplete }) {
   const { session } = useAuth();
@@ -424,6 +469,7 @@ export default function Onboarding({ onComplete }) {
     drinks: [],
     snacks: [],
     tastes: [],
+    shift: 'morning',
     location: '',
     morningReminder:   true,
     morningTime:       '10:45',
@@ -492,6 +538,7 @@ export default function Onboarding({ onComplete }) {
         drink_prefs:          prefs.drinks.filter(d => d !== 'None'),
         snack_prefs:          prefs.snacks.filter(s => s !== 'none'),
         taste_prefs:          prefs.tastes,
+        shift:                prefs.shift || 'morning',
         preferred_location:   prefs.location || null,
         reminder_enabled:     prefs.morningReminder || prefs.afternoonReminder || prefs.lunchReminder || prefs.waterReminder,
         reminder_time:        prefs.morningTime || null,
@@ -525,13 +572,14 @@ export default function Onboarding({ onComplete }) {
   const steps = [
     <StepWelcome   key={0} onNext={next} />,
     <StepName      key={1} prefs={prefs} set={set} onNext={next} onBack={back} />,
-    <StepDrinks    key={2} prefs={prefs} toggle={v => toggleArr('drinks', v)} onNext={next} onBack={back} />,
-    <StepSnacks    key={3} prefs={prefs} toggle={v => toggleArr('snacks', v)} onNext={next} onBack={back} />,
-    <StepTaste     key={4} prefs={prefs} toggle={v => toggleArr('tastes', v)} onNext={next} onBack={back} />,
-    <StepLocation  key={5} prefs={prefs} set={set}  onNext={next} onBack={back} />,
-    <StepReminders key={6} prefs={prefs} set={set} onNext={next} onBack={back} />,
-    <StepTone      key={7} prefs={prefs} set={v => set('tone', v)} onNext={next} onBack={back} />,
-    <StepDone      key={8} onFinish={finish} saving={saving} />,
+    <StepShift     key={2} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepDrinks    key={3} prefs={prefs} toggle={v => toggleArr('drinks', v)} onNext={next} onBack={back} />,
+    <StepSnacks    key={4} prefs={prefs} toggle={v => toggleArr('snacks', v)} onNext={next} onBack={back} />,
+    <StepTaste     key={5} prefs={prefs} toggle={v => toggleArr('tastes', v)} onNext={next} onBack={back} />,
+    <StepLocation  key={6} prefs={prefs} set={set}  onNext={next} onBack={back} />,
+    <StepReminders key={7} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepTone      key={8} prefs={prefs} set={v => set('tone', v)} onNext={next} onBack={back} />,
+    <StepDone      key={9} onFinish={finish} saving={saving} />,
   ];
 
   return (

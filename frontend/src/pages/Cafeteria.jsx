@@ -295,8 +295,11 @@ function BreadCustomSheet({ item, savedPref, onConfirm, onClose }) {
 }
 
 // ── Order Confirmation Sheet ───────────────────────────────────────────────────
-function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy }) {
-  const [location, setLocation] = useState('');
+function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, savedLocation }) {
+  // Auto-fill saved location (Zomato style) — unless "Ask Every Time"
+  const autoFill = savedLocation && savedLocation !== 'Ask Every Time' ? savedLocation : '';
+  const [location, setLocation] = useState(autoFill);
+  const [showLocationPicker, setShowLocationPicker] = useState(!autoFill);
   const [note,     setNote]     = useState('');
 
   const cartItems = Object.entries(cart)
@@ -345,25 +348,44 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy }) {
           ))}
         </div>
 
-        {/* Location */}
+        {/* Location — auto-filled from preferences (Zomato style) */}
         <div className="mb-4">
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
             Deliver to <span className="text-rose-400">*</span>
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            {LOCATIONS.map((loc) => (
+
+          {/* If auto-filled, show compact view with Change button */}
+          {!showLocationPicker && location ? (
+            <div className="flex items-center justify-between p-3 rounded-xl border-2 border-brand bg-brand/5">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📍</span>
+                <span className="font-bold text-sm text-brand">{location}</span>
+                <span className="text-emerald-500">✓</span>
+              </div>
               <button
-                key={loc}
                 type="button"
-                onClick={() => setLocation(loc === location ? '' : loc)}
-                className={`text-xs px-3 py-2.5 rounded-xl border-2 font-semibold transition-all ${
-                  location === loc ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-100 hover:border-brand/30'
-                }`}
+                onClick={() => setShowLocationPicker(true)}
+                className="text-xs font-bold text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 transition-all"
               >
-                {loc}
+                Change
               </button>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {LOCATIONS.map((loc) => (
+                <button
+                  key={loc}
+                  type="button"
+                  onClick={() => { setLocation(loc === location ? '' : loc); if (loc !== location) setShowLocationPicker(false); }}
+                  className={`text-xs px-3 py-2.5 rounded-xl border-2 font-semibold transition-all ${
+                    location === loc ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-100 hover:border-brand/30'
+                  }`}
+                >
+                  {loc}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Extra note */}
@@ -413,6 +435,7 @@ export default function Cafeteria() {
   const [successMsg,   setSuccessMsg]   = useState('');
   const [errorMsg,     setErrorMsg]     = useState('');
   const [tone,         setTone]         = useState('Friendly'); // AI personality tone
+  const [savedLocation, setSavedLocation] = useState(''); // From onboarding preferences
 
   // Custom text request
   const [showCustom, setShowCustom] = useState(false);
@@ -452,11 +475,12 @@ export default function Cafeteria() {
     if (!session) return;
     supabase
       .from('employee_cafeteria_preferences')
-      .select('item_prefs')
+      .select('item_prefs, preferred_location')
       .eq('user_id', session.user.id)
       .maybeSingle()
       .then(({ data }) => {
         if (data?.item_prefs) setItemPrefs(data.item_prefs);
+        if (data?.preferred_location) setSavedLocation(data.preferred_location);
       })
       .catch(() => {});
 
@@ -821,6 +845,7 @@ export default function Cafeteria() {
             onClose={() => setShowSheet(false)}
             onConfirm={placeOrder}
             busy={orderBusy}
+            savedLocation={savedLocation}
           />
         )}
       </AnimatePresence>

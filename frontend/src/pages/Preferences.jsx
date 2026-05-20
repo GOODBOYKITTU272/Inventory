@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, User, LogOut, BellRing, BellOff, KeyRound } from 'lucide-react';
+import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, User, LogOut, BellRing, BellOff, KeyRound, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth.js';
 import { isPushSupported, getPushStatus, subscribeToPush, unsubscribeFromPush } from '../lib/push.js';
 
@@ -23,12 +23,42 @@ export default function Preferences() {
     notification_enabled: true,
     notification_tone: 'Friendly',
   });
+  const [shift, setShift] = useState('morning');
+  const [shiftSaving, setShiftSaving] = useState(false);
 
   useEffect(() => {
     if (!profile?.id) return;
     loadPrefs();
+    loadShift();
     getPushStatus().then(setPushStatus).catch(() => setPushStatus('unsupported'));
   }, [profile?.id]);
+
+  async function loadShift() {
+    try {
+      const { data } = await supabase
+        .from('employee_cafeteria_preferences')
+        .select('shift')
+        .eq('employee_id', profile.id)
+        .maybeSingle();
+      if (data?.shift) setShift(data.shift);
+    } catch (e) {
+      console.error('Failed to load shift', e);
+    }
+  }
+
+  async function saveShift(newShift) {
+    setShift(newShift);
+    setShiftSaving(true);
+    try {
+      await supabase
+        .from('employee_cafeteria_preferences')
+        .upsert({ employee_id: profile.id, shift: newShift }, { onConflict: 'employee_id' });
+    } catch (e) {
+      console.error('Failed to save shift', e);
+    } finally {
+      setShiftSaving(false);
+    }
+  }
 
   async function togglePush() {
     setPushBusy(true);
@@ -124,6 +154,50 @@ export default function Preferences() {
         >
           <LogOut size={14} /> Sign out
         </button>
+      </div>
+
+      {/* Shift Selection */}
+      <div className="card space-y-4">
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <Sun size={18} className="text-brand" /> Work Shift
+        </h2>
+        <p className="text-xs text-slate-500">
+          Your meal booking cutoff times depend on your shift. Morning shift books dinner for next day, night shift books for same day.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => saveShift('morning')}
+            disabled={shiftSaving}
+            className={`flex items-center justify-center gap-2 p-4 rounded-xl border-2 font-bold text-sm transition-all ${
+              shift === 'morning'
+                ? 'bg-amber-50 border-amber-400 text-amber-700 shadow-md'
+                : 'bg-white border-slate-200 text-slate-500 hover:border-amber-300'
+            }`}
+          >
+            <Sun size={20} /> Morning
+          </button>
+          <button
+            onClick={() => saveShift('night')}
+            disabled={shiftSaving}
+            className={`flex items-center justify-center gap-2 p-4 rounded-xl border-2 font-bold text-sm transition-all ${
+              shift === 'night'
+                ? 'bg-indigo-50 border-indigo-400 text-indigo-700 shadow-md'
+                : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300'
+            }`}
+          >
+            <Moon size={20} /> Night
+          </button>
+        </div>
+        {shift === 'morning' && (
+          <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+            ☀️ Book by <strong>6 PM</strong> for next day's lunch. Cancel till <strong>8 PM</strong>.
+          </p>
+        )}
+        {shift === 'night' && (
+          <p className="text-xs text-indigo-600 bg-indigo-50 rounded-lg px-3 py-2">
+            🌙 Book by <strong>2 PM</strong> for same day's dinner. Cancel till <strong>5 PM</strong>.
+          </p>
+        )}
       </div>
 
       {tableErr && (

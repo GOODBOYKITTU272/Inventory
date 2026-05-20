@@ -120,17 +120,24 @@ export default function MealCard() {
             <div className="text-xs text-slate-400">{formatDate(targetDate)}</div>
           </div>
         </div>
-        {reason === 'open' && <CountdownTimer cutoffHour={18} />}
-        {reason === 'skip_only' && (
-          <span className="text-xs bg-amber-50 text-amber-600 font-bold px-2 py-1 rounded-full">
-            Skip only until 8 PM
-          </span>
-        )}
-        {isLocked && (
-          <span className="text-xs bg-slate-100 text-slate-500 font-bold px-2 py-1 rounded-full">
-            🔒 Locked
-          </span>
-        )}
+        <div className="flex flex-col items-end gap-0.5">
+          {reason === 'open' && (
+            <>
+              <CountdownTimer cutoffHour={18} />
+              <span className="text-[10px] text-slate-300 font-medium">Book by 6 PM</span>
+            </>
+          )}
+          {reason === 'skip_only' && (
+            <span className="text-xs bg-amber-50 text-amber-600 font-bold px-2 py-1 rounded-full">
+              Skip only till 8 PM
+            </span>
+          )}
+          {isLocked && (
+            <span className="text-xs bg-slate-100 text-slate-500 font-bold px-2 py-1 rounded-full">
+              🔒 Locked
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Current booking display */}
