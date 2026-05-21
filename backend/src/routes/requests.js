@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
 import { chatCompletion } from '../lib/openai.js';
-import { postRequestToTeams } from '../lib/teams.js';
+import { postOrderToTeams, postCancelToTeams, postStockAlertToTeams } from '../lib/teams.js';
 
 import { learnFromRating } from '../lib/learning.js';
 import { sendPushToUsers } from './push.js';
@@ -201,10 +201,16 @@ router.post('/', async (req, res, next) => {
       // Also decrement servings on the main item if tracked
       if (itemRow?.stock_servings !== null && itemRow?.stock_servings !== undefined) {
         const mainServingsUsed = qty * sidesMultiplier;
+        const newServings = (itemRow.stock_servings || 0) - mainServingsUsed;
         await supabaseAdmin
           .from('cafeteria_items')
-          .update({ stock_servings: (itemRow.stock_servings || 0) - mainServingsUsed })
+          .update({ stock_servings: newServings })
           .eq('id', itemRow.id);
+
+        // Stock alert if running low
+        if (newServings <= 3 && newServings >= 0) {
+          postStockAlertToTeams({ ...itemRow, stock_servings: newServings }).catch(() => {});
+        }
       }
 
       const { data: qData, error: qErr } = await supabaseAdmin
@@ -223,7 +229,7 @@ router.post('/', async (req, res, next) => {
         .single();
       if (qErr) throw qErr;
 
-      postRequestToTeams({ ...qData, priority: 'Normal', quantity: String(qty) }).catch((e) => console.error('[Teams quick-order]', e.message));
+      postOrderToTeams({ ...qData, priority: 'Normal', quantity: String(qty) }).catch((e) => console.error('[Teams quick-order]', e.message));
 
       // Push notification to office boy / facility manager
       supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data }) => {
@@ -287,7 +293,7 @@ router.post('/', async (req, res, next) => {
     });
 
     // Fire-and-forget Teams notification
-    const teamsResult = await postRequestToTeams({
+    const teamsResult = await postOrderToTeams({
       ...data,
       priority: parsed.priority || 'Normal',
       quantity: parsed.quantity || '1',
@@ -405,6 +411,11 @@ router.patch(
         .single();
       if (error) throw error;
 
+      // ── Teams notification on staff cancel ─────────────────────────────────
+      if (status === 'cancelled' && data) {
+        postCancelToTeams(data, 'staff').catch((e) => console.error('[Teams cancel]', e.message));
+      }
+
       // ── Restore stock on staff cancel ─────────────────────────────────────
       if (status === 'cancelled' && data?.parsed_item) {
         const cancelQty = parseInt(data.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
@@ -514,6 +525,9 @@ router.post('/:id/cancel', async (req, res, next) => {
       .select()
       .single();
     if (error) throw error;
+
+    // ── Teams notification on self-cancel ─────────────────────────────
+    postCancelToTeams(data, 'self').catch((e) => console.error('[Teams self-cancel]', e.message));
 
     // ── Restore stock on cancel ──────────────────────────────────────
     if (order.parsed_item) {

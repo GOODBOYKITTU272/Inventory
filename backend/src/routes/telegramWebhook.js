@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { fileCompletion, visionCompletion } from '../lib/openai.js';
+import { postBillToTeams } from '../lib/teams.js';
 
 const router = Router();
 
@@ -188,16 +189,52 @@ async function uploadFile({ buffer, fileName, mimeType }) {
 
 async function findDuplicate(parsed) {
   if (!parsed?.invoice_number) return null;
-  let q = supabaseAdmin
+
+  // Match on invoice number only — vendor name can vary between AI extractions
+  // Use ilike for case-insensitive + trim whitespace
+  const invoiceNum = String(parsed.invoice_number).trim();
+  if (!invoiceNum) return null;
+
+  const { data, error } = await supabaseAdmin
     .from('bill_uploads')
     .select('id, vendor_name, invoice_number, grand_total')
-    .eq('invoice_number', parsed.invoice_number);
+    .eq('invoice_number', invoiceNum)
+    .limit(1)
+    .maybeSingle();
 
-  if (parsed.vendor_name) q = q.ilike('vendor_name', parsed.vendor_name);
-
-  const { data, error } = await q.maybeSingle();
-  if (error) throw error;
+  if (error) {
+    // If maybeSingle fails because multiple rows match, still treat as duplicate
+    if (error.code === 'PGRST116') {
+      const { data: first } = await supabaseAdmin
+        .from('bill_uploads')
+        .select('id, vendor_name, invoice_number, grand_total')
+        .eq('invoice_number', invoiceNum)
+        .limit(1)
+        .single();
+      return first;
+    }
+    throw error;
+  }
   return data;
+}
+
+// Normalize date from any format (DD-MM-YYYY, DD/MM/YYYY, etc.) to YYYY-MM-DD
+function normalizeDate(dateStr) {
+  if (!dateStr) return null;
+  // Already YYYY-MM-DD?
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  // DD-MM-YYYY or DD/MM/YYYY
+  const m = dateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  // MM-DD-YYYY (unlikely for Indian bills but handle it)
+  const m2 = dateStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (m2) return `${m2[1]}-${m2[2].padStart(2, '0')}-${m2[3].padStart(2, '0')}`;
+  // Try JS Date parse as last resort
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().slice(0, 10);
+  }
+  return null;
 }
 
 async function saveBill({ parsed, fileUrl }) {
@@ -206,7 +243,7 @@ async function saveBill({ parsed, fileUrl }) {
     .from('bill_uploads')
     .insert({
       vendor_name: parsed.vendor_name || null,
-      bill_date: parsed.bill_date || null,
+      bill_date: normalizeDate(parsed.bill_date),
       invoice_number: parsed.invoice_number || null,
       uploaded_by_name: 'Telegram Bot',
       file_url: fileUrl,
@@ -437,6 +474,15 @@ router.post('/', (req, res) => {
         `✅ Bill Auto-Approved & Inventory Updated!\n\n🏢 Vendor: ${bill.vendor_name || '-'}\n🧾 Invoice: #${bill.invoice_number || '-'}\n💰 Total: ₹${bill.grand_total || '-'}\n\n📦 ${itemCount} items added to stock:\n${itemsList}\n\n🟢 Status: Auto-Verified\n🔄 Cafeteria menu & inventory updated automatically!`,
         replyTo,
       );
+
+      // Teams notification for bill upload
+      postBillToTeams({
+        vendor_name: bill.vendor_name,
+        invoice_number: bill.invoice_number,
+        grand_total: bill.grand_total,
+        items_count: itemCount,
+        uploaded_by: 'Telegram Bot',
+      }).catch((e) => console.error('[Teams bill]', e.message));
     } catch (e) {
       await sendTelegramMessage(
         chatId,

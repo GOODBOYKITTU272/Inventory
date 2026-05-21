@@ -1,79 +1,26 @@
 /**
- * Posts order notifications to Microsoft Teams via Power Automate webhook.
+ * Posts notifications to Microsoft Teams via Power Automate HTTP trigger.
  *
- * Uses Adaptive Card format for "When a Teams webhook request is received" trigger.
- * Optional TEAMS_WEBHOOK_URL env var — if missing, silently skips.
+ * Power Automate expects simple JSON body — NOT Adaptive Cards.
+ * Env var: POWER_AUTOMATE_URL (falls back to TEAMS_WEBHOOK_URL for backward compat)
  */
-const TEAMS_URL = process.env.TEAMS_WEBHOOK_URL;
-const APP_URL   = process.env.APP_PUBLIC_URL || 'https://inventory-ashen-theta.vercel.app';
+const PA_URL = process.env.POWER_AUTOMATE_URL || process.env.TEAMS_WEBHOOK_URL;
 
-export async function postRequestToTeams(req) {
-  if (!TEAMS_URL) {
-    console.log('[Teams] TEAMS_WEBHOOK_URL not set — skipping');
+function istNow() {
+  return new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+}
+
+async function postToPA(body) {
+  if (!PA_URL) {
+    console.log('[Teams] No Power Automate URL set — skipping');
     return { skipped: true };
   }
 
-  const item     = req.parsed_item     || req.raw_text  || 'Request';
-  const employee = req.parsed_employee_name || 'Someone';
-  const location = req.parsed_location || '—';
-  const priority = req.priority        || 'Normal';
-  const qty      = req.quantity        || '1';
-  const instr    = req.instruction     || '';
-  const time     = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-
-  // Adaptive Card format for "When a Teams webhook request is received" trigger
-  const payload = {
-    type: 'message',
-    attachments: [
-      {
-        contentType: 'application/vnd.microsoft.card.adaptive',
-        contentUrl: null,
-        content: {
-          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-          type: 'AdaptiveCard',
-          version: '1.4',
-          body: [
-            {
-              type: 'TextBlock',
-              size: 'Large',
-              weight: 'Bolder',
-              text: `🔔 New ${priority === 'Urgent' ? '🚨 URGENT ' : ''}Order`,
-            },
-            {
-              type: 'FactSet',
-              facts: [
-                { title: 'Item', value: `${qty}x ${item}` },
-                { title: 'For', value: employee },
-                { title: 'Location', value: location },
-                { title: 'Priority', value: priority },
-                { title: 'Time', value: time },
-              ],
-            },
-            ...(instr ? [{
-              type: 'TextBlock',
-              text: instr,
-              wrap: true,
-              size: 'Small',
-              color: 'Accent',
-            }] : []),
-          ],
-          actions: [
-            {
-              type: 'Action.OpenUrl',
-              title: '📋 Open Queue',
-              url: `${APP_URL}/queue`,
-            },
-          ],
-        },
-      },
-    ],
-  };
-
   try {
-    const res  = await fetch(TEAMS_URL, {
-      method:  'POST',
+    const res = await fetch(PA_URL, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     const text = await res.text();
 
@@ -89,3 +36,78 @@ export async function postRequestToTeams(req) {
     return { ok: false, error: e.message };
   }
 }
+
+// ── New Order ────────────────────────────────────────────────────────────────
+export async function postOrderToTeams(order) {
+  const item = order.parsed_item || order.raw_text || 'Request';
+  const employee = order.parsed_employee_name || order.ordered_by || 'Someone';
+  const location = order.parsed_location || order.deliver_to || 'Not specified';
+  const qty = parseInt(order.quantity, 10) || 1;
+
+  return postToPA({
+    event_type: 'new_order',
+    ordered_by: employee,
+    items: [{ name: item, qty }],
+    deliver_to: location,
+    instruction: order.instruction || '',
+    time: istNow(),
+  });
+}
+
+// ── Order Cancelled ──────────────────────────────────────────────────────────
+export async function postCancelToTeams(order, cancelledBy = 'self') {
+  const item = order.parsed_item || order.raw_text || 'Request';
+  const employee = order.parsed_employee_name || 'Someone';
+  const qty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+
+  return postToPA({
+    event_type: 'cancelled',
+    ordered_by: employee,
+    items: [{ name: item, qty }],
+    cancelled_by: cancelledBy,
+    time: istNow(),
+  });
+}
+
+// ── Meal Summary (daily at cutoff) ───────────────────────────────────────────
+export async function postMealSummaryToTeams(summary) {
+  return postToPA({
+    event_type: 'meal_summary',
+    date: summary.date,
+    veg: summary.veg_count || 0,
+    non_veg: summary.non_veg_count || 0,
+    egg: summary.egg_count || 0,
+    skip: summary.skip_count || 0,
+    not_booked: summary.not_booked || 0,
+    total_meals: summary.total_meals || 0,
+    total_cost: summary.cost?.total || 0,
+    time: istNow(),
+  });
+}
+
+// ── Bill Uploaded ────────────────────────────────────────────────────────────
+export async function postBillToTeams(bill) {
+  return postToPA({
+    event_type: 'bill_uploaded',
+    vendor: bill.vendor_name || 'Unknown',
+    invoice_number: bill.invoice_number || '—',
+    grand_total: bill.grand_total || 0,
+    items_count: bill.items_count || 0,
+    uploaded_by: bill.uploaded_by || 'Office Boy',
+    time: istNow(),
+  });
+}
+
+// ── Stock Alert ──────────────────────────────────────────────────────────────
+export async function postStockAlertToTeams(item) {
+  return postToPA({
+    event_type: 'stock_alert',
+    item_name: item.display_name || item.item_name || 'Unknown',
+    stock_remaining: item.stock_servings ?? item.stock_today ?? 0,
+    unit: 'servings',
+    time: istNow(),
+  });
+}
+
+// ── Backward compat — keep old name working ──────────────────────────────────
+export const postRequestToTeams = postOrderToTeams;

@@ -134,12 +134,22 @@ router.post(
         message: `❌ Duplicate Bill Detected!\nVendor: ${parsed.vendor_name}\nInvoice: #${parsed.invoice_number}\n\n${randomRoast}`
       });
 
+      // Normalize date from any format to YYYY-MM-DD for Postgres
+      function normalizeDate(dateStr) {
+        if (!dateStr) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+        const m = dateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+        if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+        const d = new Date(dateStr);
+        return !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null;
+      }
+
       // Save to DB
       const { data: bill, error: billErr } = await supabaseAdmin
         .from('bill_uploads')
         .insert({
           vendor_name: parsed.vendor_name,
-          bill_date: parsed.bill_date,
+          bill_date: normalizeDate(parsed.bill_date),
           invoice_number: parsed.invoice_number,
           uploaded_by_user_id: req.user.id,
           uploaded_by_name: req.user.full_name || 'Office Boy',
