@@ -673,8 +673,11 @@ export default function Cafeteria() {
       }, 1500);
     } catch (e) {
       setErrorMsg(e.message);
+      setShowSheet(false); // Close order sheet so error toast is visible on top
       // Refresh items to get updated stock counts
       api.cafeteriaItems().then((d) => d && setItems(d)).catch(() => {});
+      // Auto-dismiss error after 6 seconds
+      setTimeout(() => setErrorMsg(''), 6000);
     } finally {
       setOrderBusy(false);
     }
@@ -696,6 +699,7 @@ export default function Cafeteria() {
       }
     } catch (e) {
       setErrorMsg(e.message);
+      setTimeout(() => setErrorMsg(''), 6000);
     } finally {
       setCustomBusy(false);
     }
@@ -759,16 +763,7 @@ export default function Cafeteria() {
             <CheckCircle size={20} /> {successMsg}
           </motion.div>
         )}
-        {errorMsg && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="bg-rose-50 text-rose-700 rounded-2xl p-4 text-sm border border-rose-100"
-          >
-            {errorMsg}
-          </motion.div>
-        )}
+        {/* Inline error placeholder — real error shows as floating toast below */}
       </AnimatePresence>
 
       {/* ── Items by category ── */}
@@ -965,6 +960,38 @@ export default function Cafeteria() {
             busy={orderBusy}
             savedLocation={savedLocation}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ── Floating Error Toast — always on TOP of everything ── */}
+      <AnimatePresence>
+        {errorMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] w-full max-w-sm px-4"
+          >
+            <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 overflow-hidden">
+              {/* Red accent bar */}
+              <div className="h-1 bg-gradient-to-r from-rose-500 to-amber-500" />
+              <div className="p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl shrink-0 mt-0.5">😔</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-slate-800 text-sm mb-1">Oops!</div>
+                    <div className="text-sm text-slate-600 leading-relaxed">{errorMsg}</div>
+                  </div>
+                  <button
+                    onClick={() => setErrorMsg('')}
+                    className="shrink-0 h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                  >
+                    <X size={14} className="text-slate-500" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
