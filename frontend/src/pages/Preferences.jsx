@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, User, LogOut, BellRing, BellOff, KeyRound, Sun, Moon } from 'lucide-react';
+import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, LogOut, BellRing, BellOff, KeyRound, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth.js';
 import { isPushSupported, getPushStatus, subscribeToPush, unsubscribeFromPush } from '../lib/push.js';
 
@@ -12,8 +12,7 @@ export default function Preferences() {
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
   const [success, setSuccess]   = useState(false);
-  const [tableErr, setTableErr] = useState(false);
-  const [pushStatus,  setPushStatus]  = useState('checking'); // checking | unsupported | denied | not_subscribed | subscribed
+  const [pushStatus,  setPushStatus]  = useState('checking');
   const [pushBusy,    setPushBusy]    = useState(false);
   const [pushMsg,     setPushMsg]     = useState('');
   const [prefs, setPrefs] = useState({
@@ -72,10 +71,10 @@ export default function Preferences() {
       } else {
         await subscribeToPush(token);
         setPushStatus('subscribed');
-        setPushMsg('✅ Push notifications enabled! You\'ll be notified when orders update.');
+        setPushMsg('Push notifications enabled! You\'ll be notified when orders update.');
       }
     } catch (e) {
-      setPushMsg('⚠️ ' + e.message);
+      setPushMsg(e.message);
     } finally {
       setPushBusy(false);
     }
@@ -83,19 +82,20 @@ export default function Preferences() {
 
   async function loadPrefs() {
     try {
-      const { data, error } = await supabase
-        .from('employee_preferences')
-        .select('*')
-        .eq('employee_id', profile.id)
-        .single();
-      if (error && error.code !== 'PGRST116') {
-        if (error.message?.includes('does not exist') || error.code === '42P01') {
-          setTableErr(true);
-        } else {
-          throw error;
-        }
+      // Load from employee_cafeteria_preferences (unified table)
+      const { data } = await supabase
+        .from('employee_cafeteria_preferences')
+        .select('notification_tone, reminder_enabled, reminder_time, preferred_drink')
+        .eq('user_id', profile.id)
+        .maybeSingle();
+      if (data) {
+        setPrefs(p => ({
+          ...p,
+          notification_tone: data.notification_tone || 'Friendly',
+          tea_coffee_reminder_enabled: data.reminder_enabled || false,
+          preferred_drink: data.preferred_drink || 'Tea',
+        }));
       }
-      if (data) setPrefs(data);
     } catch (e) {
       console.error('Failed to load preferences', e);
     } finally {
@@ -104,13 +104,17 @@ export default function Preferences() {
   }
 
   async function savePrefs() {
-    if (tableErr) return;
     setSaving(true);
     setSuccess(false);
     try {
       const { error } = await supabase
-        .from('employee_preferences')
-        .upsert({ employee_id: profile.id, ...prefs });
+        .from('employee_cafeteria_preferences')
+        .upsert({
+          user_id: profile.id,
+          notification_tone: prefs.notification_tone,
+          reminder_enabled: prefs.tea_coffee_reminder_enabled,
+          preferred_drink: prefs.preferred_drink,
+        }, { onConflict: 'user_id' });
       if (error) throw error;
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -162,7 +166,7 @@ export default function Preferences() {
           <Sun size={18} className="text-brand" /> Work Shift
         </h2>
         <p className="text-xs text-slate-500">
-          Your meal booking cutoff times depend on your shift. Morning shift books dinner for next day, night shift books for same day.
+          Your meal booking cutoff times depend on your shift.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <button
@@ -190,21 +194,15 @@ export default function Preferences() {
         </div>
         {shift === 'morning' && (
           <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
-            ☀️ Book by <strong>6 PM</strong> for next day's lunch. Cancel till <strong>8 PM</strong>.
+            Book by <strong>6 PM</strong> for next day's lunch. Cancel till <strong>8 PM</strong>.
           </p>
         )}
         {shift === 'night' && (
           <p className="text-xs text-indigo-600 bg-indigo-50 rounded-lg px-3 py-2">
-            🌙 Book by <strong>2 PM</strong> for same day's dinner. Cancel till <strong>5 PM</strong>.
+            Book by <strong>2 PM</strong> for same day's dinner. Cancel till <strong>5 PM</strong>.
           </p>
         )}
       </div>
-
-      {tableErr && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl text-sm">
-          <strong>Note:</strong> The preferences table hasn't been set up yet. Your settings won't be saved until the admin creates the <code className="bg-amber-100 px-1 rounded">employee_preferences</code> table in Supabase.
-        </div>
-      )}
 
       <div className="card space-y-8">
         {/* Tea & Coffee Reminders */}
@@ -255,7 +253,7 @@ export default function Preferences() {
           </div>
         </div>
 
-        {/* Push Notifications — real browser push */}
+        {/* Push Notifications */}
         <div className="space-y-4 pt-4 border-t border-slate-100">
           <h2 className="text-base font-semibold flex items-center gap-2">
             <Bell size={18} className="text-brand" /> Push Notifications
@@ -267,7 +265,7 @@ export default function Preferences() {
             </div>
           ) : pushStatus === 'denied' ? (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-              <strong>Blocked by browser.</strong> Click the 🔒 lock icon in your browser address bar → reset notifications permission → refresh and try again.
+              <strong>Blocked by browser.</strong> Click the lock icon in your browser address bar, reset notifications permission, then refresh.
             </div>
           ) : (
             <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
@@ -301,7 +299,7 @@ export default function Preferences() {
           )}
 
           {pushMsg && (
-            <div className={`text-xs p-3 rounded-xl ${pushMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+            <div className={`text-xs p-3 rounded-xl ${pushMsg.includes('enabled') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
               {pushMsg}
             </div>
           )}
@@ -333,7 +331,7 @@ export default function Preferences() {
         <button
           className="btn-primary w-full py-3 flex items-center justify-center gap-2"
           onClick={savePrefs}
-          disabled={saving || tableErr}
+          disabled={saving}
         >
           {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
           {saving ? 'Saving...' : 'Save Preferences'}

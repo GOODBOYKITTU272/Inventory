@@ -116,13 +116,24 @@ function PreferencesSummary({ prefs, location, onEdit }) {
     );
   }
 
-  const PREF_ICONS = { location: '📍', coffee: '☕', tea: '🍵', jam: '🍓', 'peanut butter': '🥜', bread: '🍞' };
+  const PREF_ICONS = { location: '📍', coffee: '☕', espresso: '☕', latte: '☕', cappuccino: '☕', tea: '🍵', assam: '🍵', elaichi: '🍵', ginger: '🍵', lemon: '🍋', 'hot chocolate': '🍫', badam: '🥜', jam: '🍓', 'peanut butter': '🥜', bread: '🍞' };
   const prefItems = [];
   if (location) prefItems.push({ label: `Location: ${location}`, icon: '📍' });
   for (const [key, val] of entries) {
     const icon = Object.entries(PREF_ICONS).find(([k]) => key.toLowerCase().includes(k))?.[1] || '⚙️';
-    const detail = val.note || val.sides ? `${val.sides === 'both' ? 'Both sides' : 'One side'}${val.bread_type ? `, ${val.bread_type}` : ''}` : val.toast ? `${val.slices} slice${val.slices > 1 ? 's' : ''}, ${val.toast}` : JSON.stringify(val);
-    if (typeof detail === 'string' && detail.length < 80) {
+    let detail;
+    if (Array.isArray(val?.taste) && val.taste.length > 0) {
+      detail = val.taste.join(', ');
+    } else if (val?.sides) {
+      detail = `${val.sides === 'both' ? 'Both sides' : 'One side'}${val.bread_type ? `, ${val.bread_type}` : ''}`;
+    } else if (val?.toast) {
+      detail = `${val.slices} slice${val.slices > 1 ? 's' : ''}, ${val.toast}`;
+    } else if (val?.note) {
+      detail = val.note;
+    } else {
+      detail = JSON.stringify(val);
+    }
+    if (typeof detail === 'string' && detail.length < 80 && detail !== '{}') {
       prefItems.push({ label: `${key}: ${detail}`, icon });
     }
   }
@@ -510,6 +521,110 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
   );
 }
 
+// ── Beverage Taste Preference Sheet (first-time popup for coffee/tea) ─────────
+const COFFEE_TASTES = ['Strong Coffee', 'Light Coffee', 'Less Sugar', 'No Sugar', 'With Milk', 'Without Milk'];
+const TEA_TASTES    = ['Strong Tea', 'Light Tea', 'Less Sugar', 'No Sugar'];
+const LEMON_TASTES  = ['Normal', 'Less Sugar', 'Strong Lemon', 'Mild Lemon'];
+const HOT_CHOC_TASTES = ['Less Sugar', 'No Sugar', 'Extra Milk'];
+
+function getTastesForItem(itemName) {
+  const n = (itemName || '').toLowerCase();
+  if (n.includes('lemon')) return LEMON_TASTES;
+  if (n.includes('tea') || n.includes('elaichi') || n.includes('ginger') || n.includes('assam')) return TEA_TASTES;
+  if (n.includes('hot chocolate') || n.includes('hot choc')) return HOT_CHOC_TASTES;
+  if (n.includes('coffee') || n.includes('espresso') || n.includes('latte') || n.includes('cappuccino') || n.includes('badam')) return COFFEE_TASTES;
+  return null;
+}
+
+function BeverageCustomSheet({ item, savedPref, onConfirm, onClose }) {
+  const tastes = getTastesForItem(item.item_name) || COFFEE_TASTES;
+  const [selected, setSelected] = useState(savedPref?.taste || []);
+  const [remember, setRemember] = useState(false);
+
+  function toggleTaste(t) {
+    setSelected(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  }
+
+  function confirm() {
+    const instruction = selected.length > 0 ? selected.join(', ') : '';
+    onConfirm({
+      instruction,
+      pref: remember ? { taste: selected } : null,
+    });
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <div className="text-xl">{item.emoji || '☕'}</div>
+            <h2 className="font-extrabold text-slate-900">{item.display_name || item.item_name}</h2>
+            <p className="text-xs text-slate-400">How do you like it?</p>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Taste grid */}
+        <div className="grid grid-cols-2 gap-2 mb-5">
+          {tastes.map(t => (
+            <button
+              key={t}
+              onClick={() => toggleTaste(t)}
+              className={`py-3 px-2 rounded-2xl border-2 text-xs font-bold transition-all ${
+                selected.includes(t)
+                  ? 'bg-brand text-white border-brand'
+                  : 'border-slate-200 text-slate-600 hover:border-brand/30'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {/* Remember toggle */}
+        <button
+          onClick={() => setRemember(v => !v)}
+          className={`w-full flex items-center justify-between p-3 rounded-2xl border-2 mb-5 transition-all ${
+            remember ? 'border-brand bg-brand/5' : 'border-slate-100'
+          }`}
+        >
+          <div className="text-left">
+            <div className="text-sm font-semibold text-slate-800">Remember my preference</div>
+            <div className="text-xs text-slate-400">Auto-apply next time</div>
+          </div>
+          <div className={`rounded-full relative flex items-center transition-colors ml-3 shrink-0 ${remember ? 'bg-brand' : 'bg-slate-200'}`}
+               style={{ height: 22, width: 40 }}>
+            <div className={`absolute w-4 h-4 bg-white rounded-full shadow transition-all ${remember ? 'left-5' : 'left-1'}`} />
+          </div>
+        </button>
+
+        <button
+          onClick={confirm}
+          className="w-full h-12 bg-brand text-white rounded-2xl font-bold text-sm shadow-lg shadow-brand/20 hover:scale-[1.01] active:scale-[0.99] transition-all"
+        >
+          {selected.length > 0 ? `Add with ${selected.join(', ')} ✓` : 'Add to order ✓'}
+        </button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── Order Confirmation Sheet ───────────────────────────────────────────────────
 function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, savedLocation, onRemoveItem, onUpdateQty, itemPrefs, queueAhead }) {
   // Auto-fill saved location (Zomato style) — unless "Ask Every Time"
@@ -772,6 +887,11 @@ export default function Cafeteria() {
 
   // ── Cart handlers ───────────────────────────────────────────────────────────
   const [jamTarget, setJamTarget] = useState(null); // item with sides_option
+  const [beverageTarget, setBeverageTarget] = useState(null); // beverage needing taste popup
+
+  function isBeverage(item) {
+    return item.category === 'beverage' && getTastesForItem(item.item_name) !== null;
+  }
 
   function handleAdd(item) {
     if (item.sides_option) {
@@ -780,6 +900,19 @@ export default function Cafeteria() {
     } else if (isBreadItem(item.item_name)) {
       // Show bread customization sheet
       setCustomTarget(item);
+    } else if (isBeverage(item)) {
+      // Beverage: check if user has saved taste preference
+      const key = item.item_name.toLowerCase();
+      const saved = itemPrefs[key];
+      if (saved?.taste && saved.taste.length > 0) {
+        // Auto-apply saved preference — no popup needed
+        const instruction = saved.taste.join(', ');
+        setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 }));
+        setCustomizations((c) => ({ ...c, [item.id]: instruction }));
+      } else {
+        // First time — show taste preference popup
+        setBeverageTarget(item);
+      }
     } else {
       setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 }));
     }
@@ -792,6 +925,15 @@ export default function Cafeteria() {
     setCustomizations((c) => ({ ...c, [item.id]: instruction }));
     if (pref) saveItemPref(item.item_name, pref);
     setCustomTarget(null);
+  }
+
+  function handleBeverageConfirm({ instruction, pref }) {
+    const item = beverageTarget;
+    if (!item) return;
+    setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 }));
+    if (instruction) setCustomizations((c) => ({ ...c, [item.id]: instruction }));
+    if (pref) saveItemPref(item.item_name, pref);
+    setBeverageTarget(null);
   }
 
   function handleJamConfirm({ instruction, pref, breadType }) {
@@ -1154,6 +1296,18 @@ export default function Cafeteria() {
             onConfirm={handleJamConfirm}
             onClose={() => setJamTarget(null)}
             breadItems={breadItems}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Beverage Taste Preference Sheet ── */}
+      <AnimatePresence>
+        {beverageTarget && (
+          <BeverageCustomSheet
+            item={beverageTarget}
+            savedPref={itemPrefs[beverageTarget.item_name?.toLowerCase()]}
+            onConfirm={handleBeverageConfirm}
+            onClose={() => setBeverageTarget(null)}
           />
         )}
       </AnimatePresence>

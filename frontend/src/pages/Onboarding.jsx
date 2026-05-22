@@ -5,14 +5,30 @@ import { useAuth } from '../hooks/useAuth.js';
 import { Check, ChevronLeft } from 'lucide-react';
 
 /* ── Static data ─────────────────────────────────────────────────── */
-const DRINK_OPTS = [
-  { id: 'CCD Coffee',   emoji: '☕', label: 'CCD Coffee' },
-  { id: 'Regular Tea',  emoji: '🍵', label: 'Regular Tea' },
-  { id: 'Lemon Tea',    emoji: '🍋', label: 'Lemon Tea' },
-  { id: 'Water',        emoji: '💧', label: 'Water' },
-  { id: 'Black Coffee', emoji: '🖤', label: 'Black Coffee' },
-  { id: 'None',         emoji: '🚫', label: 'None for me' },
+// Top-level drink categories
+const DRINK_CATEGORIES = [
+  { id: 'coffee', emoji: '☕', label: 'CCD Coffee',
+    subs: [
+      { id: 'Espresso',      emoji: '☕', label: 'Espresso' },
+      { id: 'Latte',         emoji: '☕', label: 'Latte' },
+      { id: 'Cappuccino',    emoji: '☕', label: 'Cappuccino' },
+      { id: 'Milk Coffee',   emoji: '🥛', label: 'Milk Coffee' },
+      { id: 'Hot Chocolate',  emoji: '🍫', label: 'Hot Chocolate' },
+      { id: 'Badam Mix',     emoji: '🥜', label: 'Badam Mix' },
+    ]},
+  { id: 'tea', emoji: '🍵', label: 'Tea',
+    subs: [
+      { id: 'Assam Tea',    emoji: '🍵', label: 'Assam Tea' },
+      { id: 'Elaichi Tea',  emoji: '🍵', label: 'Elaichi Tea' },
+      { id: 'Ginger Tea',   emoji: '🍵', label: 'Ginger Tea' },
+      { id: 'Lemon Tea',    emoji: '🍋', label: 'Lemon Tea' },
+    ]},
+  { id: 'water', emoji: '💧', label: 'Water', subs: [] },
+  { id: 'none',  emoji: '🚫', label: 'None for me', subs: [] },
 ];
+
+// Legacy format compat
+const DRINK_OPTS = DRINK_CATEGORIES;
 
 const SNACK_OPTS = [
   { id: 'Bread + Peanut Butter', emoji: '🥜', label: 'Bread + PB' },
@@ -207,26 +223,100 @@ function StepShift({ prefs, set, onNext, onBack }) {
   );
 }
 
-// Step 3 — Drinks
+// Step 3 — Drinks (two-level: category → sub-options)
 function StepDrinks({ prefs, toggle, onNext, onBack }) {
+  // Track which categories are expanded
+  const [expanded, setExpanded] = useState({});
+  const selectedDrinks = prefs.drinks || [];
+
+  // Check if any sub from a category is selected
+  const hasCatSelection = (cat) => cat.subs?.some(s => selectedDrinks.includes(s.id));
+
+  function toggleCategory(cat) {
+    if (cat.id === 'none') {
+      toggle('None');
+      return;
+    }
+    if (cat.id === 'water') {
+      toggle('Water');
+      return;
+    }
+    // Toggle expand/collapse
+    setExpanded(prev => ({ ...prev, [cat.id]: !prev[cat.id] }));
+  }
+
   return (
     <div className="space-y-6 pb-28">
       <div className="text-center pt-4">
         <div className="text-5xl mb-3">☕</div>
         <h2 className="text-2xl font-bold text-slate-900">What do you drink?</h2>
-        <p className="text-slate-500 mt-2 text-sm">Select all that apply — we'll personalise your home screen.</p>
+        <p className="text-slate-500 mt-2 text-sm">Tap a category, then pick your favourites.</p>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        {DRINK_OPTS.map(({ id, emoji, label }) => (
-          <MultiChip
-            key={id}
-            emoji={emoji}
-            label={label}
-            selected={prefs.drinks.includes(id)}
-            onToggle={() => toggle(id)}
-          />
-        ))}
+
+      <div className="space-y-3">
+        {DRINK_CATEGORIES.map((cat) => {
+          const isExpanded = expanded[cat.id];
+          const hasSubs = cat.subs && cat.subs.length > 0;
+          const hasSelection = hasCatSelection(cat);
+
+          // Simple items (Water, None)
+          if (!hasSubs) {
+            const isSelected = cat.id === 'none' ? selectedDrinks.includes('None') : selectedDrinks.includes('Water');
+            return (
+              <button
+                key={cat.id}
+                onClick={() => toggleCategory(cat)}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 text-left transition-all ${
+                  isSelected ? 'border-brand bg-brand/5' : 'border-slate-200 bg-white hover:border-brand/30'
+                }`}
+              >
+                <span className="text-2xl">{cat.emoji}</span>
+                <span className={`font-bold text-sm ${isSelected ? 'text-brand' : 'text-slate-700'}`}>{cat.label}</span>
+                {isSelected && <Check size={16} className="text-brand ml-auto" />}
+              </button>
+            );
+          }
+
+          // Category with sub-options
+          return (
+            <div key={cat.id}>
+              <button
+                onClick={() => toggleCategory(cat)}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 text-left transition-all ${
+                  hasSelection ? 'border-brand bg-brand/5' : 'border-slate-200 bg-white hover:border-brand/30'
+                }`}
+              >
+                <span className="text-2xl">{cat.emoji}</span>
+                <div className="flex-1">
+                  <span className={`font-bold text-sm ${hasSelection ? 'text-brand' : 'text-slate-700'}`}>{cat.label}</span>
+                  {hasSelection && (
+                    <div className="text-[10px] text-brand/70 mt-0.5">
+                      {cat.subs.filter(s => selectedDrinks.includes(s.id)).map(s => s.label).join(', ')}
+                    </div>
+                  )}
+                </div>
+                <span className={`text-xs font-bold transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+              </button>
+
+              {/* Sub-options grid */}
+              {isExpanded && (
+                <div className="grid grid-cols-2 gap-2 mt-2 ml-2 mr-2">
+                  {cat.subs.map(sub => (
+                    <MultiChip
+                      key={sub.id}
+                      emoji={sub.emoji}
+                      label={sub.label}
+                      selected={selectedDrinks.includes(sub.id)}
+                      onToggle={() => toggle(sub.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
+
       <NavBar step={3} onBack={onBack} onNext={onNext} />
     </div>
   );
@@ -259,9 +349,13 @@ function StepSnacks({ prefs, toggle, onNext, onBack }) {
 
 // Step 5 — Taste preferences (dynamic based on drink selection)
 function StepTaste({ prefs, toggle, onNext, onBack }) {
-  const hasCoffee = prefs.drinks.some(d => d.toLowerCase().includes('coffee'));
-  const hasTea    = prefs.drinks.includes('Regular Tea');
-  const hasLemon  = prefs.drinks.includes('Lemon Tea');
+  const drinks = prefs.drinks || [];
+  const CCD_SUBS = ['Espresso', 'Latte', 'Cappuccino', 'Milk Coffee', 'Hot Chocolate', 'Badam Mix'];
+  const TEA_SUBS = ['Assam Tea', 'Elaichi Tea', 'Ginger Tea', 'Lemon Tea'];
+
+  const hasCoffee = drinks.some(d => CCD_SUBS.includes(d) || d.toLowerCase().includes('coffee'));
+  const hasTea    = drinks.some(d => TEA_SUBS.includes(d) || d === 'Regular Tea');
+  const hasLemon  = drinks.includes('Lemon Tea');
 
   const groups = [];
   if (hasCoffee) groups.push({ label: '☕ Coffee — how do you take it?', opts: COFFEE_TASTE });
