@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Package, AlertTriangle, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 
@@ -26,117 +24,7 @@ function timeAgo(ts) {
   return `${Math.floor(sec / 86400)}d ago`;
 }
 
-// ── Stock Manager for Office Boy ──────────────────────────────────────────────
-function StockManager() {
-  const [items, setItems] = useState([]);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState({});
 
-  useEffect(() => {
-    api.cafeteriaItems().then(setItems).catch(() => {});
-  }, []);
-
-  // Also load unavailable items
-  useEffect(() => {
-    if (!open) return;
-    // Reload all items (including unavailable) when opened
-    fetch('/api/cafeteria/items/all', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-    }).catch(() => {});
-  }, [open]);
-
-  async function toggleStock(item) {
-    setBusy(b => ({ ...b, [item.id]: true }));
-    try {
-      if (item.stock_today === 0) {
-        // Restore — set to null (unlimited) or a default
-        await api.updateCafeteriaItem(item.id, { stock_today: null });
-      } else {
-        // Mark no stock
-        await api.updateCafeteriaItem(item.id, { stock_today: 0 });
-      }
-      // Refresh
-      const updated = await api.cafeteriaItems();
-      setItems(updated || []);
-    } catch (e) {
-      console.error('Stock toggle error:', e);
-    } finally {
-      setBusy(b => ({ ...b, [item.id]: false }));
-    }
-  }
-
-  if (!items.length) return null;
-
-  return (
-    <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-amber-50 flex items-center justify-center">
-            <Package size={18} className="text-amber-600" />
-          </div>
-          <div className="text-left">
-            <div className="font-bold text-slate-800 text-sm">Quick Stock Control</div>
-            <div className="text-xs text-slate-400">Water, dispensers & unlimited items</div>
-          </div>
-        </div>
-        {open ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 space-y-2">
-              {items.filter(item =>
-                // Only show unlimited items (like Water) — bill items have numeric stock managed automatically
-                item.stock_today === null || item.stock_today === undefined || item.stock_today === 0
-              ).map(item => {
-                const isOut = item.stock_today !== null && item.stock_today !== undefined && item.stock_today <= 0;
-                return (
-                  <div key={item.id} className="flex items-center justify-between py-2 px-3 rounded-xl bg-slate-50">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{item.emoji || '📦'}</span>
-                      <div>
-                        <div className="text-sm font-semibold text-slate-700">{item.item_name}</div>
-                        {item.stock_today !== null && item.stock_today !== undefined && item.stock_today > 0 && (
-                          <div className="text-[10px] text-slate-400">{item.stock_today} in stock</div>
-                        )}
-                        {isOut && (
-                          <div className="text-[10px] text-rose-500 font-bold">No stock</div>
-                        )}
-                        {(item.stock_today === null || item.stock_today === undefined) && (
-                          <div className="text-[10px] text-emerald-500">Unlimited</div>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      disabled={busy[item.id]}
-                      onClick={() => toggleStock(item)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        isOut
-                          ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                          : 'bg-rose-100 text-rose-700 hover:bg-rose-200'
-                      } ${busy[item.id] ? 'opacity-40' : ''}`}
-                    >
-                      {isOut ? '✅ Restore' : '❌ No Stock'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 export default function RequestQueue() {
   const { profile } = useAuth();
@@ -212,8 +100,7 @@ export default function RequestQueue() {
         </div>
       </div>
 
-      {/* Stock Control for office boy / facility manager */}
-      {isStaff && <StockManager />}
+
 
       {err && <div className="text-sm text-rose-700 bg-rose-50 p-3 rounded-md">{err}</div>}
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
 import { fileUrlCompletion, visionCompletion } from '../lib/openai.js';
+import { mapProductToCafeteria } from '../lib/stockHelper.js';
 
 const router = Router();
 
@@ -128,9 +129,9 @@ router.post(
       ];
       const randomRoast = roasts[Math.floor(Math.random() * roasts.length)] || "Bhai, duplicate bill hai. Kya kar raha hai?";
 
-      if (existing) return res.status(200).json({ 
+      if (existing) return res.status(200).json({
         ok: false,
-        error: 'Duplicate Bill Detected', 
+        error: 'Duplicate Bill Detected',
         message: `❌ Duplicate Bill Detected!\nVendor: ${parsed.vendor_name}\nInvoice: #${parsed.invoice_number}\n\n${randomRoast}`
       });
 
@@ -185,7 +186,7 @@ router.post(
         const { error: itemsErr } = await supabaseAdmin
           .from('bill_items')
           .insert(billItems);
-        
+
         if (itemsErr) throw itemsErr;
       }
 
@@ -213,31 +214,31 @@ router.patch(
   async (req, res, next) => {
     try {
       const { verification_status, approval_status, notes } = req.body;
-      
+
       // 1. Update the bill status
       const { data: bill, error: updateErr } = await supabaseAdmin
         .from('bill_uploads')
-        .update({ 
-          verification_status, 
-          approval_status, 
+        .update({
+          verification_status,
+          approval_status,
           notes,
           verified_at: verification_status === 'Admin Verified' ? new Date().toISOString() : null
         })
         .eq('id', req.params.id)
         .select('*, bill_items(*)')
         .single();
-      
+
       if (updateErr) throw updateErr;
 
       // 2. If Admin Verified, try to sync with inventory
       if (verification_status === 'Admin Verified') {
         const { data: products } = await supabaseAdmin.from('products').select('id, name');
-        
+
         for (const item of bill.bill_items || []) {
           // Simple matching: look for item name in products
           // In a production app, we'd use OpenAI here to map "Assam Tea" to "Tea (Assam)"
-          const match = products.find(p => 
-            p.name.toLowerCase().includes(item.item_name.toLowerCase()) || 
+          const match = products.find(p =>
+            p.name.toLowerCase().includes(item.item_name.toLowerCase()) ||
             item.item_name.toLowerCase().includes(p.name.toLowerCase())
           );
 
@@ -248,15 +249,15 @@ router.patch(
               .select('current_stock')
               .eq('product_id', match.id)
               .single();
-            
+
             const qty = parseFloat(item.quantity) || 0;
             const newStock = (inv?.current_stock || 0) + qty;
 
             await supabaseAdmin
               .from('inventory')
-              .update({ 
+              .update({
                 current_stock: newStock,
-                last_updated_by: req.user.id 
+                last_updated_by: req.user.id
               })
               .eq('product_id', match.id);
 
@@ -270,6 +271,51 @@ router.patch(
               notes: `Auto-synced from Bill #${bill.invoice_number} (${bill.vendor_name})`,
               facility_manager_id: req.user.id
             });
+
+            // Sync with cafeteria_items
+            const { cafeteriaItemName, servings, isOrderable, category: cafeCat } = mapProductToCafeteria(item.item_name, qty, item.unit);
+
+            const { data: existingCafe } = await supabaseAdmin
+              .from('cafeteria_items')
+              .select('id, stock_today, stock_servings')
+              .ilike('item_name', cafeteriaItemName)
+              .maybeSingle();
+
+            if (existingCafe) {
+              const newStock = (existingCafe.stock_today || 0) + qty;
+              const newServings = (servings === null) ? null : ((existingCafe.stock_servings || 0) + servings);
+
+              const updateData = {
+                stock_today: newStock,
+                stock_servings: newServings,
+                available: true
+              };
+
+              if (cafeteriaItemName === 'Bread' || cafeteriaItemName === 'MDRN AT SHK BRD400G') {
+                updateData.orderable = false;
+              } else {
+                updateData.orderable = isOrderable;
+              }
+
+              await supabaseAdmin
+                .from('cafeteria_items')
+                .update(updateData)
+                .eq('id', existingCafe.id);
+            } else {
+              const isBread = cafeteriaItemName === 'Bread' || cafeteriaItemName === 'MDRN AT SHK BRD400G';
+              await supabaseAdmin
+                .from('cafeteria_items')
+                .insert({
+                  item_name: cafeteriaItemName,
+                  display_name: isBread ? (cafeteriaItemName === 'Bread' ? 'Milk Bread' : 'Atta Bread') : cafeteriaItemName,
+                  emoji: '📦',
+                  category: cafeCat,
+                  available: true,
+                  stock_today: qty,
+                  stock_servings: servings,
+                  orderable: isBread ? false : isOrderable,
+                });
+            }
           }
         }
       }
@@ -288,7 +334,7 @@ router.get('/', async (req, res, next) => {
       .from('bill_uploads')
       .select('*, bill_items(*)')
       .order('created_at', { ascending: false });
-    
+
     if (error) throw error;
     res.json(data);
   } catch (e) {

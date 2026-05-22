@@ -222,7 +222,7 @@ function RatingSheet({ requestId, onDone }) {
 }
 
 /* ── ETA Calculator ─────────────────────────────────────────────────── */
-function calcETA(qty, queueAhead) {
+function calcETA(qty, queueAhead, isBeverage = false) {
   // Base time by quantity
   const q = parseInt(qty, 10) || 1;
   let base;
@@ -235,6 +235,11 @@ function calcETA(qty, queueAhead) {
   let bonus = 0;
   if (queueAhead >= 6) bonus = 10;
   else if (queueAhead >= 3) bonus = 5;
+
+  // Beverage penalty: 10-minute penalty if beverage and (qty >= 3 or queueAhead >= 3)
+  if (isBeverage && (q >= 3 || queueAhead >= 3)) {
+    bonus += 10;
+  }
 
   const eta = base + bonus;
   return { min: eta, max: eta + 2 };
@@ -317,7 +322,7 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
 
   const emoji = CATEGORY_EMOJI[req.category] || '📦';
   const qty = parseInt(req.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
-  const eta = calcETA(qty, queueAhead);
+  const eta = calcETA(qty, queueAhead, req.category === 'beverage');
 
   if (cancelled) {
     return (

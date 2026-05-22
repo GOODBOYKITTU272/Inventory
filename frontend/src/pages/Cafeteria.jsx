@@ -117,7 +117,9 @@ const BREAD_ITEMS = ['bread + peanut butter', 'bread + jam'];
 const isBreadItem = (name) => BREAD_ITEMS.includes((name || '').toLowerCase());
 
 // ── Preferences Summary Card (Swiggy/Zomato style) ──────────────────────────
-function PreferencesSummary({ prefs, location, drinkPrefs, tastePrefs, onEdit }) {
+
+
+function PreferencesSummary({ prefs, location, drinkPrefs, tastePrefs, items, onEdit, onQuickOrder }) {
   const entries = Object.entries(prefs || {});
   const hasDrinks = drinkPrefs && drinkPrefs.length > 0;
   const hasTastes = tastePrefs && tastePrefs.length > 0;
@@ -147,13 +149,24 @@ function PreferencesSummary({ prefs, location, drinkPrefs, tastePrefs, onEdit })
     return Object.entries(DRINK_EMOJI).find(([k]) => n.includes(k))?.[1] || '☕';
   }
 
+  // Check if a drink from preferences is currently in stock
+  function isDrinkInStock(drinkName) {
+    if (!items || !items.length) return true; // optimistic if items not loaded yet
+    const dn = drinkName.toLowerCase();
+    const match = items.find(i => (i.item_name || '').toLowerCase().includes(dn) || (i.display_name || '').toLowerCase().includes(dn));
+    if (!match) return false; // not in menu
+    const obOut = match.stock_today !== null && match.stock_today !== undefined && match.stock_today <= 0;
+    const servOut = match.stock_servings !== null && match.stock_servings !== undefined && match.stock_servings <= 0;
+    return !obOut && !servOut;
+  }
+
   return (
     <div className="rounded-2xl bg-gradient-to-br from-brand/5 via-white to-amber-50/50 border border-brand/10 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-extrabold text-brand uppercase tracking-wider flex items-center gap-1.5">
-          ✨ Your Preferences
+          ⚡ Quick Order
         </h3>
-        <button onClick={onEdit} className="text-[11px] font-bold text-brand bg-brand/10 px-2.5 py-1 rounded-full hover:bg-brand/20 transition-all">Edit</button>
+        <button onClick={onEdit} className="text-[11px] font-bold text-brand bg-brand/10 px-2.5 py-1 rounded-full hover:bg-brand/20 transition-all">Edit Prefs</button>
       </div>
 
       {/* Location chip */}
@@ -165,22 +178,37 @@ function PreferencesSummary({ prefs, location, drinkPrefs, tastePrefs, onEdit })
         </div>
       )}
 
-      {/* Drink preference chips */}
+      {/* Drink preference chips — TAPPABLE for quick order */}
       {hasDrinks && (
         <div className="flex flex-wrap gap-1.5 mb-2">
-          {drinkPrefs.map(d => (
-            <span key={d} className="text-[11px] bg-amber-50 text-amber-800 font-bold px-2.5 py-1 rounded-full flex items-center gap-1 border border-amber-100">
-              {getDrinkEmoji(d)} {d}
-            </span>
-          ))}
+          {drinkPrefs.map(d => {
+            const inStock = isDrinkInStock(d);
+            const emoji = getDrinkEmoji(d);
+            return inStock ? (
+              <button
+                key={d}
+                onClick={() => onQuickOrder && onQuickOrder(d, emoji)}
+                className="text-[11px] bg-amber-50 text-amber-800 font-bold px-2.5 py-1 rounded-full flex items-center gap-1 border border-amber-200 hover:bg-amber-100 hover:border-amber-300 active:scale-95 transition-all cursor-pointer shadow-sm"
+              >
+                {emoji} {d} <span className="text-[9px] text-amber-500 font-bold">TAP</span>
+              </button>
+            ) : (
+              <span
+                key={d}
+                className="text-[11px] bg-slate-100 text-slate-400 font-bold px-2.5 py-1 rounded-full flex items-center gap-1 border border-slate-200 line-through cursor-not-allowed"
+              >
+                {emoji} {d} <span className="text-[9px] no-underline">😔</span>
+              </span>
+            );
+          })}
         </div>
       )}
 
-      {/* Taste chips */}
+      {/* Taste chips — display only, not tappable */}
       {hasTastes && (
-        <div className="flex flex-wrap gap-1.5 mb-2">
+        <div className="flex flex-wrap gap-1.5 mb-1">
           {tastePrefs.slice(0, 4).map(t => (
-            <span key={t} className="text-[10px] bg-slate-100 text-slate-600 font-medium px-2 py-0.5 rounded-full">
+            <span key={t} className="text-[10px] bg-slate-100 text-slate-500 font-medium px-2 py-0.5 rounded-full">
               {t}
             </span>
           ))}
@@ -190,9 +218,13 @@ function PreferencesSummary({ prefs, location, drinkPrefs, tastePrefs, onEdit })
         </div>
       )}
 
+      {hasDrinks && (
+        <p className="text-[9px] text-slate-400 mt-1">Tap a drink chip to order instantly with your saved prefs</p>
+      )}
+
       {/* Item-level saved preferences */}
       {entries.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 mt-1">
           {entries.slice(0, 3).map(([key, val]) => {
             let detail = '';
             if (Array.isArray(val?.taste) && val.taste.length) detail = val.taste.join(', ');
@@ -529,28 +561,39 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
             How many sides?
           </label>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setSides('one')}
-              className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
-                sides === 'one' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
-              }`}
-            >
-              <span className="text-2xl">🍞</span>
-              One side
-              <span className="text-[10px] opacity-70 font-normal">1 slice</span>
-            </button>
-            <button
-              onClick={() => setSides('both')}
-              className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
-                sides === 'both' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
-              }`}
-            >
-              <span className="text-2xl">🍞🍞</span>
-              Both sides
-              <span className="text-[10px] opacity-70 font-normal">2 slices, sandwich</span>
-            </button>
-          </div>
+          {(() => {
+            const isPB = (item.item_name || '').toLowerCase().includes('peanut butter') || (item.item_name || '').toLowerCase().includes('pb');
+            const spreadName = isPB ? 'PB' : 'Jam';
+            const oneSideGrams = isPB ? '20g' : '15g';
+            const bothSidesGrams = isPB ? '40g' : '30g';
+            const oneSideCals = isPB ? 268 : 190;
+            const bothSidesCals = isPB ? 386 : 230;
+
+            return (
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSides('one')}
+                  className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
+                    sides === 'one' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
+                  }`}
+                >
+                  <span className="text-2xl">🍞</span>
+                  One Side
+                  <span className="text-[10px] opacity-75 font-normal">{oneSideGrams} {spreadName} ({oneSideCals} kcal)</span>
+                </button>
+                <button
+                  onClick={() => setSides('both')}
+                  className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
+                    sides === 'both' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
+                  }`}
+                >
+                  <span className="text-2xl">🥪</span>
+                  Both Sides
+                  <span className="text-[10px] opacity-75 font-normal">{bothSidesGrams} {spreadName} ({bothSidesCals} kcal)</span>
+                </button>
+              </div>
+            );
+          })()}
         </div>
 
         {/* 3. Remember toggle */}
@@ -575,7 +618,10 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
           disabled={!selectedBread}
           className="w-full h-12 bg-brand text-white rounded-2xl font-bold text-sm shadow-lg shadow-brand/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-40"
         >
-          Add to order ✓
+          Add to order ({(() => {
+            const isPB = (item.item_name || '').toLowerCase().includes('peanut butter') || (item.item_name || '').toLowerCase().includes('pb');
+            return sides === 'both' ? (isPB ? 386 : 230) : (isPB ? 268 : 190);
+          })()} kcal) ✓
         </button>
       </motion.div>
     </motion.div>
@@ -689,6 +735,17 @@ function BeverageCustomSheet({ item, savedPref, onConfirm, onClose }) {
 }
 
 // ── Order Confirmation Sheet ───────────────────────────────────────────────────
+function getCartItemCalories(item, qty, customNote) {
+  if (item.sides_option) {
+    const isBothSides = /both\s*side/i.test(customNote || '');
+    const isPB = (item.item_name || '').toLowerCase().includes('peanut butter') || (item.item_name || '').toLowerCase().includes('pb');
+    const spreadCal = isPB ? 118 : 40;
+    const multiplier = isBothSides ? 2 : 1;
+    return qty * (150 + (spreadCal * multiplier));
+  }
+  return qty * (item.calories_per_serving || 0);
+}
+
 function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, savedLocation, onRemoveItem, onUpdateQty, itemPrefs, queueAhead }) {
   // Auto-fill saved location (Zomato style) — unless "Ask Every Time"
   const autoFill = savedLocation && savedLocation !== 'Ask Every Time' ? savedLocation : '';
@@ -700,6 +757,11 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
     .filter(([, qty]) => qty > 0)
     .map(([id, qty]) => ({ item: items.find((i) => i.id === id), qty, customNote: customizations[id] || '' }))
     .filter((x) => x.item);
+
+  const totalCalories = cartItems.reduce((sum, { item, qty, customNote }) => {
+    return sum + getCartItemCalories(item, qty, customNote);
+  }, 0);
+  const totalCount = cartItems.reduce((sum, x) => sum + x.qty, 0);
 
   return (
     <motion.div
@@ -814,7 +876,7 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
         </div>
 
         {/* Extra note */}
-        <div className="mb-5">
+        <div className="mb-4">
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
             Anything else? (optional)
           </label>
@@ -824,6 +886,18 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
+        </div>
+
+        {/* Total Calories & Servings Summary */}
+        <div className="mb-5 flex items-center justify-between text-xs text-slate-500 bg-slate-50 rounded-xl p-3 border border-slate-100 font-medium">
+          <div>
+            Total Servings: <span className="font-bold text-slate-700">{totalCount}</span>
+          </div>
+          {totalCalories > 0 && (
+            <div>
+              Total Energy: <span className="font-bold text-slate-700">🔥 {totalCalories} kcal</span>
+            </div>
+          )}
         </div>
 
         <button
@@ -868,6 +942,9 @@ export default function Cafeteria() {
   const [customLoc,  setCustomLoc]  = useState('');
   const [customBusy, setCustomBusy] = useState(false);
   const [queueAhead, setQueueAhead] = useState(0);
+
+  // ── Quick Order from preference chip ────────────────────────────────────────
+  const [openCartOnConfirm, setOpenCartOnConfirm] = useState(false);
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
   const hasInCart = cartCount > 0;
@@ -993,6 +1070,11 @@ export default function Cafeteria() {
     if (instruction) setCustomizations((c) => ({ ...c, [item.id]: instruction }));
     if (pref) saveItemPref(item.item_name, pref);
     setBeverageTarget(null);
+    if (openCartOnConfirm) {
+      api.queueCount().then(d => setQueueAhead((d?.pending || 0) + (d?.in_progress || 0))).catch(() => {});
+      setShowSheet(true);
+      setOpenCartOnConfirm(false);
+    }
   }
 
   function handleJamConfirm({ instruction, pref, breadType }) {
@@ -1081,6 +1163,34 @@ export default function Cafeteria() {
     }
   }
 
+  // ── Quick order directly from preference chip ────────────────────────────────
+  function handleQuickOrder(drinkName, emoji) {
+    const dn = drinkName.toLowerCase();
+    const item = items.find(i => (i.item_name || '').toLowerCase().includes(dn) || (i.display_name || '').toLowerCase().includes(dn));
+    if (!item) return;
+
+    const key = item.item_name.toLowerCase();
+    const saved = itemPrefs[key];
+
+    let appliedTastes = [];
+    if (saved?.taste && saved.taste.length > 0) {
+      appliedTastes = saved.taste;
+    } else if (userTastePrefs && userTastePrefs.length > 0) {
+      const validTastes = getTastesForItem(item.item_name) || [];
+      appliedTastes = userTastePrefs.filter(t => validTastes.includes(t));
+    }
+
+    if (appliedTastes.length > 0) {
+      setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 }));
+      setCustomizations((c) => ({ ...c, [item.id]: appliedTastes.join(', ') }));
+      api.queueCount().then(d => setQueueAhead((d?.pending || 0) + (d?.in_progress || 0))).catch(() => {});
+      setShowSheet(true);
+    } else {
+      setOpenCartOnConfirm(true);
+      setBeverageTarget(item);
+    }
+  }
+
   // ── Custom AI request ────────────────────────────────────────────────────────
   async function submitCustom(e) {
     e?.preventDefault();
@@ -1137,14 +1247,18 @@ export default function Cafeteria() {
         <p className="text-slate-500 text-sm mt-1">What can we get you today?</p>
       </div>
 
-      {/* ── Preferences Summary ── */}
+      {/* ── Preferences Summary (Quick Order chips) ── */}
       <PreferencesSummary
         prefs={itemPrefs}
         location={savedLocation}
         drinkPrefs={userDrinkPrefs}
         tastePrefs={userTastePrefs}
+        items={items}
         onEdit={() => navigate('/settings')}
+        onQuickOrder={handleQuickOrder}
       />
+
+
 
       {/* ── Meal Booking Card ── */}
       <MealCard />
@@ -1183,8 +1297,14 @@ export default function Cafeteria() {
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
             {grouped[cat].map((item) => {
-              const effectiveStock = item.stock_servings ?? item.stock_today;
-              const isOut = effectiveStock !== null && effectiveStock !== undefined && effectiveStock <= 0;
+              // stock_today = 0  → Office Boy marked it OUT for today (always OOS)
+              // stock_today = null → OB manages as unlimited/available (e.g. Water)
+              // stock_servings = 0 → servings exhausted
+              const stockToday    = item.stock_today;
+              const stockServings = item.stock_servings;
+              const obMarkedOut   = stockToday !== null && stockToday !== undefined && stockToday <= 0;
+              const servingsOut   = stockServings !== null && stockServings !== undefined && stockServings <= 0;
+              const isOut = obMarkedOut || servingsOut;
               const hasBreadDep = Array.isArray(item.dependencies) && item.dependencies.some(d => d.toLowerCase() === 'bread');
               return (
                 <ItemChip
@@ -1370,7 +1490,7 @@ export default function Cafeteria() {
             item={beverageTarget}
             savedPref={itemPrefs[beverageTarget.item_name?.toLowerCase()]}
             onConfirm={handleBeverageConfirm}
-            onClose={() => setBeverageTarget(null)}
+            onClose={() => { setBeverageTarget(null); setOpenCartOnConfirm(false); }}
           />
         )}
       </AnimatePresence>

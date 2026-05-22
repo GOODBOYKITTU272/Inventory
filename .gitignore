@@ -5,9 +5,18 @@ dist/
 .env.*.local
 *.log
 .DS_Store
+.claude/
+.minimax/
+scratch/
+supabase/.temp/
 playwright-report/
 test-results/
 coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/tests/*.spec.js
+frontend/tests/test-credentials.json
+frontend/tests/screenshots/
 
 # leftover from initial rtk clone attempt
 rtk-template/

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { fileCompletion, visionCompletion } from '../lib/openai.js';
 import { postBillToTeams } from '../lib/teams.js';
+import { mapProductToCafeteria } from '../lib/stockHelper.js';
 
 const router = Router();
 
@@ -358,40 +359,55 @@ async function saveBill({ parsed, fileUrl }) {
     }
 
     // 4. Upsert into cafeteria_items (for quick ordering on frontend)
-    // Internal supplies (cleaning, stationery, other) are NOT orderable by employees
-    const isOrderable = ['beverage', 'food', 'snack'].includes(cafeCat);
-    const displayName = generateDisplayName(itemName);
-    const servings = calculateServings(qty, item.unit);
+    const { cafeteriaItemName, servings, isOrderable, category: mappedCat } = mapProductToCafeteria(itemName, qty, item.unit);
+    const displayName = generateDisplayName(cafeteriaItemName);
 
     const { data: existingCafe } = await supabaseAdmin
       .from('cafeteria_items')
       .select('id, stock_today, stock_servings')
-      .ilike('item_name', itemName)
+      .ilike('item_name', cafeteriaItemName)
       .maybeSingle();
 
     if (existingCafe) {
       // Add to existing stock
       const newStock = (existingCafe.stock_today || 0) + qty;
-      const newServings = (existingCafe.stock_servings || 0) + servings;
-      const update = { stock_today: newStock, stock_servings: newServings, available: true, orderable: isOrderable };
-      if (!existingCafe.display_name) update.display_name = displayName;
+      const newServings = (servings === null) ? null : ((existingCafe.stock_servings || 0) + servings);
+
+      const updateData = {
+        stock_today: newStock,
+        stock_servings: newServings,
+        available: true
+      };
+
+      if (cafeteriaItemName === 'Bread' || cafeteriaItemName === 'MDRN AT SHK BRD400G') {
+        updateData.orderable = false;
+      } else {
+        updateData.orderable = isOrderable;
+      }
+
+      if (!existingCafe.display_name) {
+        updateData.display_name = (cafeteriaItemName === 'Bread') ? 'Milk Bread' :
+                                 (cafeteriaItemName === 'MDRN AT SHK BRD400G' ? 'Atta Bread' : displayName);
+      }
+
       await supabaseAdmin
         .from('cafeteria_items')
-        .update(update)
+        .update(updateData)
         .eq('id', existingCafe.id);
     } else {
       // Create new cafeteria item
+      const isBread = cafeteriaItemName === 'Bread' || cafeteriaItemName === 'MDRN AT SHK BRD400G';
       await supabaseAdmin
         .from('cafeteria_items')
         .insert({
-          item_name: itemName,
-          display_name: displayName,
+          item_name: cafeteriaItemName,
+          display_name: isBread ? (cafeteriaItemName === 'Bread' ? 'Milk Bread' : 'Atta Bread') : displayName,
           emoji: emoji,
-          category: cafeCat,
+          category: mappedCat || cafeCat || 'other',
           available: true,
           stock_today: qty,
           stock_servings: servings,
-          orderable: isOrderable,
+          orderable: isBread ? false : isOrderable,
         });
     }
   }

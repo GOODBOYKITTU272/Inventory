@@ -122,131 +122,10 @@ router.post('/', async (req, res, next) => {
       const category = ITEM_CATEGORY[quick_item.toLowerCase()] || 'other';
 
       // ── Stock check & decrement ───────────────────────────────────
-      const { data: itemRow } = await supabaseAdmin
-        .from('cafeteria_items')
-        .select('id, stock_today, stock_servings, dependencies, sides_option, serving_grams')
-        .ilike('item_name', quick_item)
-        .maybeSingle();
-
-      // Use stock_servings (cups/slices) if available, otherwise stock_today (units/boxes)
-      const effectiveStock = itemRow?.stock_servings ?? itemRow?.stock_today;
-      if (itemRow && effectiveStock !== null && effectiveStock !== undefined) {
-        if (effectiveStock < qty) {
-          // Load user tone for personalized OOS message
-          let userTone = 'Friendly';
-          try {
-            const { data: toneRow } = await supabaseAdmin
-              .from('employee_cafeteria_preferences')
-              .select('notification_tone')
-              .eq('user_id', req.user.id)
-              .maybeSingle();
-            if (toneRow?.notification_tone) userTone = toneRow.notification_tone;
-          } catch (_) {}
-
-          const oosMessages = {
-            Friendly: [`Oops, ${quick_item} is all gone for today! 😊`, `This one's finished, try tomorrow! 🌈`],
-            Funny: [`Sorry beta, ${quick_item} khatam ho gaya 🥺`, `Aaj ki ${quick_item} quota over hai bestie 💅`],
-            'Mom Mode': [`Beta, ${quick_item} aaj khatam ho gaya 🥺💝`, `Aur nahi hai beta, doosra le lo na 🫂`],
-            Professional: [`${quick_item} is currently out of stock.`, `${quick_item} unavailable for today.`],
-            Minimal: [`${quick_item} out of stock.`],
-            boyfriend: [`Hey babe, ${quick_item} is all gone 🥺💕`, `Sorry cutie, no more ${quick_item} today 💖`],
-            girlfriend: [`Hey handsome, ${quick_item} khatam ho gaya 🥺💕`, `Sorry raja, ${quick_item} nahi bacha 💖`],
-            gen_z: [`Bruh ${quick_item} said byebye 💀`, `${quick_item} sold out fr fr 🫠`],
-          };
-          const msgs = oosMessages[userTone] || oosMessages.Friendly;
-          return res.status(400).json({ error: msgs[Math.floor(Math.random() * msgs.length)] });
-        }
-        // Decrement stock — prefer stock_servings, also decrement stock_today for box-level items
-        const update = {};
-        if (itemRow.stock_servings !== null && itemRow.stock_servings !== undefined) {
-          update.stock_servings = itemRow.stock_servings - qty;
-        }
-        if (itemRow.stock_today !== null && itemRow.stock_today !== undefined) {
-          // Only decrement stock_today if there are NO stock_servings (i.e., 1:1 items like water)
-          if (itemRow.stock_servings === null || itemRow.stock_servings === undefined) {
-            update.stock_today = itemRow.stock_today - qty;
-          }
-        }
-        if (Object.keys(update).length > 0) {
-          await supabaseAdmin.from('cafeteria_items').update(update).eq('id', itemRow.id);
-        }
-      }
-
-      // ── Dependency check (e.g., Jam needs Bread) ───────────────────
-      const deps = itemRow?.dependencies;
-      const isBothSides = /both\s*side/i.test(quick_instruction);
-      const sidesMultiplier = (itemRow?.sides_option && isBothSides) ? 2 : 1;
-
-      if (Array.isArray(deps) && deps.length > 0) {
-        // Load user's tone preference for personalized message
-        let userTone = 'Friendly';
-        try {
-          const { data: prefRow } = await supabaseAdmin
-            .from('employee_cafeteria_preferences')
-            .select('notification_tone')
-            .eq('user_id', req.user.id)
-            .maybeSingle();
-          if (prefRow?.notification_tone) userTone = prefRow.notification_tone;
-        } catch (_) { /* use default tone */ }
-
-        for (const depName of deps) {
-          // If user chose a specific bread type, use that instead of generic dependency
-          const lookupName = (depName.toLowerCase() === 'bread' && quick_bread_type) ? quick_bread_type : depName;
-
-          const { data: depItem } = await supabaseAdmin
-            .from('cafeteria_items')
-            .select('id, stock_today, stock_servings, display_name, item_name, serving_grams, category')
-            .ilike('item_name', lookupName)
-            .maybeSingle();
-
-          if (!depItem) continue; // dependency item doesn't exist in menu, skip check
-
-          const depStock = depItem.stock_today;
-          const depServings = depItem.stock_servings;
-          // For bread: deduct slices (1 slice per side × qty)
-          // For spreads: deduct grams (serving_grams per side × qty)
-          const gramsBased = depItem.serving_grams && depItem.serving_grams > 0;
-          const neededServings = gramsBased
-            ? qty * sidesMultiplier * depItem.serving_grams  // grams: 20g × 2 sides × 1 qty = 40g
-            : qty * sidesMultiplier;                         // slices: 1 × 2 sides × 1 qty = 2
-
-          // Check servings first, then raw stock
-          if (depServings !== null && depServings < neededServings) {
-            const displayDep = depItem.display_name || depItem.frontend_name || depItem.item_name;
-            return res.status(400).json({ error: getDependencyMessage(userTone, quick_item, displayDep) });
-          }
-          if (depStock !== null && depStock <= 0) {
-            const displayDep = depItem.display_name || depItem.frontend_name || depItem.item_name;
-            return res.status(400).json({ error: getDependencyMessage(userTone, quick_item, displayDep) });
-          }
-
-          // Decrement dependency stock
-          const depUpdate = {};
-          if (depStock !== null && !gramsBased) depUpdate.stock_today = depStock - (qty * sidesMultiplier);
-          if (depServings !== null) depUpdate.stock_servings = depServings - neededServings;
-          if (Object.keys(depUpdate).length > 0) {
-            await supabaseAdmin.from('cafeteria_items').update(depUpdate).eq('id', depItem.id);
-          }
-        }
-      }
-
-      // Also decrement servings on the main item if tracked
-      if (itemRow?.stock_servings !== null && itemRow?.stock_servings !== undefined) {
-        // For gram-based items (spreads): deduct serving_grams per side
-        const mainGramBased = itemRow.serving_grams && itemRow.serving_grams > 0;
-        const mainServingsUsed = mainGramBased
-          ? qty * sidesMultiplier * itemRow.serving_grams
-          : qty * sidesMultiplier;
-        const newServings = (itemRow.stock_servings || 0) - mainServingsUsed;
-        await supabaseAdmin
-          .from('cafeteria_items')
-          .update({ stock_servings: newServings })
-          .eq('id', itemRow.id);
-
-        // Stock alert if running low
-        if (newServings <= 3 && newServings >= 0) {
-          postStockAlertToTeams({ ...itemRow, stock_servings: newServings }).catch(() => {});
-        }
+      try {
+        await deductStockForRequest(req.user, quick_item, qty, quick_instruction, quick_bread_type);
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
       }
 
       const breadPart = quick_bread_type ? ` [bread:${quick_bread_type}]` : '';
@@ -292,6 +171,23 @@ router.post('/', async (req, res, next) => {
       });
     }
 
+    // Deduct stock for AI-parsed item
+    if (parsed.item) {
+      try {
+        const qty = parseInt(parsed.quantity, 10) || 1;
+        const breadTypeMatch = raw_text.match(/\[bread:(.+?)\]/) || raw_text.match(/\b(atta|milk|wheat|brown)\b/i);
+        let breadType = '';
+        if (breadTypeMatch) {
+          const bt = breadTypeMatch[1] ? breadTypeMatch[1].toLowerCase() : breadTypeMatch[0].toLowerCase();
+          if (bt.includes('atta') || bt.includes('wheat')) breadType = 'MDRN AT SHK BRD400G';
+          else if (bt.includes('milk') || bt.includes('white') || bt.includes('brown') || bt.includes('bread')) breadType = 'Bread';
+        }
+        await deductStockForRequest(req.user, parsed.item, qty, parsed.instruction || '', breadType);
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from('requests')
       .insert({
@@ -328,13 +224,15 @@ router.get('/queue-count', async (req, res, next) => {
     const { count: pending, error: e1 } = await supabaseAdmin
       .from('requests')
       .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending');
+      .eq('status', 'pending')
+      .eq('category', 'beverage');
     if (e1) throw e1;
 
     const { count: in_progress, error: e2 } = await supabaseAdmin
       .from('requests')
       .select('*', { count: 'exact', head: true })
-      .eq('status', 'in_progress');
+      .eq('status', 'in_progress')
+      .eq('category', 'beverage');
     if (e2) throw e2;
 
     res.json({ pending: pending || 0, in_progress: in_progress || 0 });
@@ -484,57 +382,8 @@ router.patch(
       }
 
       // ── Restore stock on staff cancel ─────────────────────────────────────
-      if (status === 'cancelled' && data?.parsed_item) {
-        const cancelQty = parseInt(data.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
-        const isBoth = /both\s*side/i.test(data.instruction || '');
-        const sidesM = isBoth ? 2 : 1;
-
-        const { data: itemRow } = await supabaseAdmin
-          .from('cafeteria_items')
-          .select('id, stock_today, stock_servings, dependencies, sides_option, serving_grams')
-          .ilike('item_name', data.parsed_item)
-          .maybeSingle();
-
-        if (itemRow) {
-          const gramsBased = itemRow.serving_grams && itemRow.serving_grams > 0;
-          const restoreAmount = gramsBased
-            ? cancelQty * sidesM * itemRow.serving_grams
-            : cancelQty * sidesM;
-          const restore = {};
-          if (itemRow.stock_today !== null && !gramsBased) restore.stock_today = (itemRow.stock_today || 0) + cancelQty;
-          if (itemRow.stock_servings !== null) restore.stock_servings = (itemRow.stock_servings || 0) + restoreAmount;
-          if (Object.keys(restore).length > 0) {
-            await supabaseAdmin.from('cafeteria_items').update(restore).eq('id', itemRow.id);
-          }
-        }
-
-        // Restore dependency stock (e.g., Bread when Jam cancelled)
-        // Parse specific bread type from raw_text: "1x Mix Fruit Jam [bread:MRBWL MLK BREAD]"
-        const staffBreadMatch = data.raw_text?.match(/\[bread:(.+?)\]/);
-        const staffBreadType = staffBreadMatch ? staffBreadMatch[1] : null;
-
-        if (itemRow && Array.isArray(itemRow.dependencies) && itemRow.dependencies.length > 0) {
-          for (const depName of itemRow.dependencies) {
-            const lookupName = (depName.toLowerCase() === 'bread' && staffBreadType) ? staffBreadType : depName;
-            const { data: depItem } = await supabaseAdmin
-              .from('cafeteria_items')
-              .select('id, stock_today, stock_servings, serving_grams')
-              .ilike('item_name', lookupName)
-              .maybeSingle();
-            if (depItem) {
-              const depRestore = {};
-              const gramsBased = depItem.serving_grams && depItem.serving_grams > 0;
-              const restoreAmount = gramsBased
-                ? cancelQty * sidesM * depItem.serving_grams   // grams: qty × sides × grams_per_serving
-                : cancelQty * sidesM;                          // slices/units
-              if (depItem.stock_today !== null && !gramsBased) depRestore.stock_today = (depItem.stock_today || 0) + restoreAmount;
-              if (depItem.stock_servings !== null) depRestore.stock_servings = (depItem.stock_servings || 0) + restoreAmount;
-              if (Object.keys(depRestore).length > 0) {
-                await supabaseAdmin.from('cafeteria_items').update(depRestore).eq('id', depItem.id);
-              }
-            }
-          }
-        }
+      if (status === 'cancelled' && data) {
+        await restoreStockForRequest(data);
       }
 
       // ── Push notification to the employee who placed the order ──────────────
@@ -651,58 +500,7 @@ router.post('/:id/cancel', async (req, res, next) => {
     }
 
     // ── Restore stock on cancel ──────────────────────────────────────
-    if (order.parsed_item) {
-      const cancelQty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
-      const isBoth = /both\s*side/i.test(order.instruction || '');
-      const sidesM = isBoth ? 2 : 1;
-
-      const { data: itemRow } = await supabaseAdmin
-        .from('cafeteria_items')
-        .select('id, stock_today, stock_servings, dependencies, sides_option, serving_grams')
-        .ilike('item_name', order.parsed_item)
-        .maybeSingle();
-
-      if (itemRow) {
-        const gramsBased = itemRow.serving_grams && itemRow.serving_grams > 0;
-        const restoreAmount = gramsBased
-          ? cancelQty * sidesM * itemRow.serving_grams
-          : cancelQty * sidesM;
-        const restore = {};
-        if (itemRow.stock_today !== null && !gramsBased) restore.stock_today = (itemRow.stock_today || 0) + cancelQty;
-        if (itemRow.stock_servings !== null) restore.stock_servings = (itemRow.stock_servings || 0) + restoreAmount;
-        if (Object.keys(restore).length > 0) {
-          await supabaseAdmin.from('cafeteria_items').update(restore).eq('id', itemRow.id);
-        }
-      }
-
-      // Restore dependency stock (e.g., Bread when Jam cancelled)
-      // Parse specific bread type from raw_text: "1x Mix Fruit Jam to RK Cabin [bread:MRBWL MLK BREAD]"
-      const breadMatch = order.raw_text?.match(/\[bread:(.+?)\]/);
-      const cancelBreadType = breadMatch ? breadMatch[1] : null;
-
-      if (itemRow && Array.isArray(itemRow.dependencies) && itemRow.dependencies.length > 0) {
-        for (const depName of itemRow.dependencies) {
-          const lookupName = (depName.toLowerCase() === 'bread' && cancelBreadType) ? cancelBreadType : depName;
-          const { data: depItem } = await supabaseAdmin
-            .from('cafeteria_items')
-            .select('id, stock_today, stock_servings, serving_grams')
-            .ilike('item_name', lookupName)
-            .maybeSingle();
-          if (depItem) {
-            const depRestore = {};
-            const depGramsBased = depItem.serving_grams && depItem.serving_grams > 0;
-            const depRestoreAmount = depGramsBased
-              ? cancelQty * sidesM * depItem.serving_grams
-              : cancelQty * sidesM;
-            if (depItem.stock_today !== null && !depGramsBased) depRestore.stock_today = (depItem.stock_today || 0) + cancelQty;
-            if (depItem.stock_servings !== null) depRestore.stock_servings = (depItem.stock_servings || 0) + depRestoreAmount;
-            if (Object.keys(depRestore).length > 0) {
-              await supabaseAdmin.from('cafeteria_items').update(depRestore).eq('id', depItem.id);
-            }
-          }
-        }
-      }
-    }
+    await restoreStockForRequest(order);
 
     res.json(data);
   } catch (e) {
@@ -737,5 +535,233 @@ router.post(
     }
   }
 );
+
+// Helper functions for stock depletion, restoration, and tone-aware notifications
+function isBeverageUsingStirrer(itemName) {
+  const nameLower = (itemName || '').toLowerCase();
+  if (nameLower.includes('water')) return false;
+  return nameLower.includes('tea') ||
+         nameLower.includes('coffee') ||
+         nameLower.includes('latte') ||
+         nameLower.includes('cappuccino') ||
+         nameLower.includes('espresso') ||
+         nameLower.includes('chocolate') ||
+         nameLower.includes('badam') ||
+         nameLower.includes('chai') ||
+         nameLower.includes('macchiato');
+}
+
+async function getUserTone(userId) {
+  try {
+    const { data: toneRow } = await supabaseAdmin
+      .from('employee_cafeteria_preferences')
+      .select('notification_tone')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (toneRow?.notification_tone) return toneRow.notification_tone;
+  } catch (_) {}
+  return 'Friendly';
+}
+
+function getOOSMessage(userTone, itemName) {
+  const oosMessages = {
+    Friendly: [`Oops, ${itemName} is all gone for today! 😊`, `This one's finished, try tomorrow! 🌈`],
+    Funny: [`Sorry beta, ${itemName} khatam ho gaya 🥺`, `Aaj ki ${itemName} quota over hai bestie 💅`],
+    'Mom Mode': [`Beta, ${itemName} aaj khatam ho gaya 🥺💝`, `Aur nahi hai beta, doosra le lo na 🫂`],
+    Professional: [`${itemName} is currently out of stock.`, `${itemName} unavailable for today.`],
+    Minimal: [`${itemName} out of stock.`],
+    boyfriend: [`Hey babe, ${itemName} is all gone 🥺💕`, `Sorry cutie, no more ${itemName} today 💖`],
+    girlfriend: [`Hey handsome, ${itemName} khatam ho gaya 🥺💕`, `Sorry raja, ${itemName} nahi bacha 💖`],
+    gen_z: [`Bruh ${itemName} said byebye 💀`, `${itemName} sold out fr fr 🫠`],
+  };
+  const msgs = oosMessages[userTone] || oosMessages.Friendly;
+  return msgs[Math.floor(Math.random() * msgs.length)];
+}
+
+async function deductStockForRequest(user, itemName, qty, instruction, breadType) {
+  const nameLower = (itemName || '').toLowerCase();
+
+  // 1. Look up the main item
+  const { data: itemRow } = await supabaseAdmin
+    .from('cafeteria_items')
+    .select('id, item_name, stock_today, stock_servings, dependencies, sides_option, serving_grams')
+    .ilike('item_name', itemName)
+    .maybeSingle();
+
+  if (!itemRow) {
+    return;
+  }
+
+  // 2. Check if we need to deduct stirrers
+  const needsStirrers = isBeverageUsingStirrer(itemName);
+  let stirrerItem = null;
+  const stirrerNeeded = qty * 1.5;
+  if (needsStirrers) {
+    const { data: stir } = await supabaseAdmin
+      .from('cafeteria_items')
+      .select('id, stock_servings')
+      .ilike('item_name', 'Stirrers')
+      .maybeSingle();
+    stirrerItem = stir;
+    if (stirrerItem && stirrerItem.stock_servings !== null && stirrerItem.stock_servings < stirrerNeeded) {
+      throw new Error(`Sorry, not enough stirrers left to prepare your beverage.`);
+    }
+  }
+
+  // 3. Determine sides multiplier and needed main servings
+  const isBothSides = /both\s*side/i.test(instruction);
+  const sidesMultiplier = (itemRow.sides_option && isBothSides) ? 2 : 1;
+  const neededForMain = (itemRow.stock_servings !== null) ? (qty * sidesMultiplier) : qty;
+
+  const effectiveStock = itemRow.stock_servings ?? itemRow.stock_today;
+  if (effectiveStock !== null && effectiveStock !== undefined && effectiveStock < neededForMain) {
+    const userTone = await getUserTone(user.id);
+    const msgs = getOOSMessage(userTone, itemName);
+    throw new Error(msgs);
+  }
+
+  // 4. Check dependencies (like bread)
+  const deps = itemRow.dependencies;
+  const depUpdates = [];
+  if (Array.isArray(deps) && deps.length > 0) {
+    for (const depName of deps) {
+      const lookupName = (depName.toLowerCase() === 'bread' && breadType) ? breadType : depName;
+      const { data: depItem } = await supabaseAdmin
+        .from('cafeteria_items')
+        .select('id, item_name, stock_today, stock_servings')
+        .ilike('item_name', lookupName)
+        .maybeSingle();
+
+      if (!depItem) continue;
+
+      const isBread = depItem.item_name.toLowerCase().includes('bread') || depItem.item_name === 'Bread' || depItem.item_name === 'MDRN AT SHK BRD400G';
+      const neededDepServings = isBread ? qty * 2 : qty * sidesMultiplier;
+
+      const depStock = depItem.stock_today;
+      const depServings = depItem.stock_servings;
+
+      if (depServings !== null && depServings < neededDepServings) {
+        const userTone = await getUserTone(user.id);
+        const displayDep = depItem.display_name || depItem.item_name;
+        throw new Error(getDependencyMessage(userTone, itemName, displayDep));
+      }
+      if (depStock !== null && depServings === null && depStock < neededDepServings) {
+        const userTone = await getUserTone(user.id);
+        const displayDep = depItem.display_name || depItem.item_name;
+        throw new Error(getDependencyMessage(userTone, itemName, displayDep));
+      }
+
+      const depUpdate = { id: depItem.id, fields: {} };
+      if (depServings !== null) {
+        depUpdate.fields.stock_servings = depServings - neededDepServings;
+      } else if (depStock !== null) {
+        depUpdate.fields.stock_today = depStock - neededDepServings;
+      }
+      depUpdates.push(depUpdate);
+    }
+  }
+
+  // 5. Apply all updates
+  const mainUpdate = {};
+  if (itemRow.stock_servings !== null) {
+    mainUpdate.stock_servings = itemRow.stock_servings - neededForMain;
+  } else if (itemRow.stock_today !== null) {
+    mainUpdate.stock_today = itemRow.stock_today - neededForMain;
+  }
+  if (Object.keys(mainUpdate).length > 0) {
+    await supabaseAdmin.from('cafeteria_items').update(mainUpdate).eq('id', itemRow.id);
+    const alertServings = mainUpdate.stock_servings ?? mainUpdate.stock_today;
+    if (alertServings !== null && alertServings <= 3 && alertServings >= 0) {
+      postStockAlertToTeams({ ...itemRow, stock_servings: alertServings }).catch(() => {});
+    }
+  }
+
+  for (const dep of depUpdates) {
+    await supabaseAdmin.from('cafeteria_items').update(dep.fields).eq('id', dep.id);
+  }
+
+  if (needsStirrers && stirrerItem && stirrerItem.stock_servings !== null) {
+    await supabaseAdmin
+      .from('cafeteria_items')
+      .update({ stock_servings: stirrerItem.stock_servings - stirrerNeeded })
+      .eq('id', stirrerItem.id);
+  }
+}
+
+async function restoreStockForRequest(order) {
+  if (!order || !order.parsed_item) return;
+
+  const itemName = order.parsed_item;
+  const rawQty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+  const isBoth = /both\s*side/i.test(order.instruction || '');
+  const sidesM = isBoth ? 2 : 1;
+
+  const { data: itemRow } = await supabaseAdmin
+    .from('cafeteria_items')
+    .select('id, item_name, stock_today, stock_servings, dependencies, sides_option')
+    .ilike('item_name', itemName)
+    .maybeSingle();
+
+  if (!itemRow) return;
+
+  // 1. Restore stirrers
+  if (isBeverageUsingStirrer(itemName)) {
+    const { data: stirItem } = await supabaseAdmin
+      .from('cafeteria_items')
+      .select('id, stock_servings')
+      .ilike('item_name', 'Stirrers')
+      .maybeSingle();
+    if (stirItem && stirItem.stock_servings !== null) {
+      await supabaseAdmin
+        .from('cafeteria_items')
+        .update({ stock_servings: (stirItem.stock_servings || 0) + (rawQty * 1.5) })
+        .eq('id', stirItem.id);
+    }
+  }
+
+  // 2. Restore main item servings/stock
+  const neededForMain = (itemRow.stock_servings !== null) ? (rawQty * sidesM) : rawQty;
+  const restoreMain = {};
+  if (itemRow.stock_servings !== null) {
+    restoreMain.stock_servings = (itemRow.stock_servings || 0) + neededForMain;
+  } else if (itemRow.stock_today !== null) {
+    restoreMain.stock_today = (itemRow.stock_today || 0) + neededForMain;
+  }
+  if (Object.keys(restoreMain).length > 0) {
+    await supabaseAdmin.from('cafeteria_items').update(restoreMain).eq('id', itemRow.id);
+  }
+
+  // 3. Restore dependencies
+  const staffBreadMatch = order.raw_text?.match(/\[bread:(.+?)\]/);
+  const breadType = staffBreadMatch ? staffBreadMatch[1] : null;
+  const deps = itemRow.dependencies;
+
+  if (Array.isArray(deps) && deps.length > 0) {
+    for (const depName of deps) {
+      const lookupName = (depName.toLowerCase() === 'bread' && breadType) ? breadType : depName;
+      const { data: depItem } = await supabaseAdmin
+        .from('cafeteria_items')
+        .select('id, item_name, stock_today, stock_servings')
+        .ilike('item_name', lookupName)
+        .maybeSingle();
+
+      if (!depItem) continue;
+
+      const isBread = depItem.item_name.toLowerCase().includes('bread') || depItem.item_name === 'Bread' || depItem.item_name === 'MDRN AT SHK BRD400G';
+      const neededDepServings = isBread ? rawQty * 2 : rawQty * sidesM;
+
+      const restoreDep = {};
+      if (depItem.stock_servings !== null) {
+        restoreDep.stock_servings = (depItem.stock_servings || 0) + neededDepServings;
+      } else if (depItem.stock_today !== null) {
+        restoreDep.stock_today = (depItem.stock_today || 0) + neededDepServings;
+      }
+
+      if (Object.keys(restoreDep).length > 0) {
+        await supabaseAdmin.from('cafeteria_items').update(restoreDep).eq('id', depItem.id);
+      }
+    }
+  }
+}
 
 export default router;
