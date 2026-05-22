@@ -41,8 +41,8 @@ router.patch('/items/:id', requireRole('office_boy', 'facility_manager', 'leader
   try {
     const isLeadership = ['leadership'].includes(req.user.role);
     // Non-leadership can only update stock fields
-    const stockOnly = ['stock_today', 'stock_note'];
-    const fullAllowed = ['item_name', 'category', 'emoji', 'description', 'available', 'orderable', 'tags', 'sort_order', 'stock_today', 'stock_note'];
+    const stockOnly = ['stock_today', 'stock_note', 'stock_servings'];
+    const fullAllowed = ['item_name', 'display_name', 'category', 'emoji', 'description', 'available', 'orderable', 'tags', 'sort_order', 'stock_today', 'stock_note', 'stock_servings', 'servings_per_unit', 'unit_label', 'pack_weight', 'supplier', 'sides_option', 'dependencies'];
     const allowed = isLeadership ? fullAllowed : stockOnly;
     const update = Object.fromEntries(
       Object.entries(req.body).filter(([k]) => allowed.includes(k))

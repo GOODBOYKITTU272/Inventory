@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, MapPin, Send, ChevronRight, X, Clock,
-  Plus, Minus, CheckCircle, Zap, Check,
+  Plus, Minus, CheckCircle, Zap, Check, Trash2, Timer,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { supabase } from '../lib/supabase.js';
@@ -25,7 +25,7 @@ function getISTGreeting() {
 }
 
 const CATEGORY_EMOJI = {
-  beverage: '☕', food: '🥪', snack: '🍪',
+  beverage: '☕', refreshment: '💧', food: '🥪', snack: '🍪',
   meal: '🍱', stationery: '📎', cleaning: '🧹', other: '📦',
 };
 
@@ -94,6 +94,58 @@ const STAGE_INFO = {
 const BREAD_ITEMS = ['bread + peanut butter', 'bread + jam'];
 const isBreadItem = (name) => BREAD_ITEMS.includes((name || '').toLowerCase());
 
+// ── Preferences Summary Card ──────────────────────────────────────────────────
+function PreferencesSummary({ prefs, location, onEdit }) {
+  const entries = Object.entries(prefs || {});
+  const hasSomething = location || entries.length > 0;
+
+  if (!hasSomething) {
+    return (
+      <button onClick={onEdit}
+        className="w-full p-4 rounded-2xl border-2 border-dashed border-brand/30 bg-brand/5 text-left hover:border-brand/50 transition-all"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">👋</span>
+          <div>
+            <div className="font-bold text-slate-800 text-sm">Set your preferences!</div>
+            <div className="text-xs text-slate-400">Save location & drink prefs for faster ordering</div>
+          </div>
+          <ChevronRight size={16} className="text-brand ml-auto shrink-0" />
+        </div>
+      </button>
+    );
+  }
+
+  const PREF_ICONS = { location: '📍', coffee: '☕', tea: '🍵', jam: '🍓', 'peanut butter': '🥜', bread: '🍞' };
+  const prefItems = [];
+  if (location) prefItems.push({ label: `Location: ${location}`, icon: '📍' });
+  for (const [key, val] of entries) {
+    const icon = Object.entries(PREF_ICONS).find(([k]) => key.toLowerCase().includes(k))?.[1] || '⚙️';
+    const detail = val.note || val.sides ? `${val.sides === 'both' ? 'Both sides' : 'One side'}${val.bread_type ? `, ${val.bread_type}` : ''}` : val.toast ? `${val.slices} slice${val.slices > 1 ? 's' : ''}, ${val.toast}` : JSON.stringify(val);
+    if (typeof detail === 'string' && detail.length < 80) {
+      prefItems.push({ label: `${key}: ${detail}`, icon });
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+          <MapPin size={12} /> Your Preferences
+        </h3>
+        <button onClick={onEdit} className="text-[11px] font-bold text-brand hover:underline">Edit →</button>
+      </div>
+      <div className="space-y-1">
+        {prefItems.slice(0, 4).map((p, i) => (
+          <div key={i} className="text-xs text-slate-600 flex items-center gap-1.5">
+            <span>{p.icon}</span> {p.label}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Active Order Banner ────────────────────────────────────────────────────────
 function ActiveOrderBanner({ order, onPress }) {
   const stage = STAGE_INFO[order.live_status] || STAGE_INFO.placed;
@@ -120,8 +172,21 @@ function ActiveOrderBanner({ order, onPress }) {
 }
 
 // ── Item Chip ──────────────────────────────────────────────────────────────────
-function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone }) {
+function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, breadAvailable }) {
   const inCart = qty > 0;
+  const blockedByBread = needsBread && !breadAvailable;
+
+  if (blockedByBread) {
+    return (
+      <div className="relative rounded-2xl border-2 border-amber-100 bg-amber-50/60 p-3 flex flex-col gap-2 opacity-70">
+        <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
+        <div className="text-center">
+          <div className="text-xs font-bold text-slate-500 leading-tight">{item.display_name || item.item_name}</div>
+          <div className="text-[10px] text-amber-600 font-bold mt-1">🍞 Needs bread</div>
+        </div>
+      </div>
+    );
+  }
 
   if (outOfStock) {
     const msg = getOosMessage(tone, item.item_name);
@@ -294,14 +359,32 @@ function BreadCustomSheet({ item, savedPref, onConfirm, onClose }) {
   );
 }
 
-// ── Jam Customization Sheet (one side / both sides) ──────────────────────────
-function JamCustomSheet({ item, savedPref, onConfirm, onClose }) {
+// ── Jam/PB Customization Sheet (bread picker + sides) ────────────────────────
+function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
+  const availableBreads = (breadItems || []).filter(b => {
+    const servings = b.stock_servings ?? b.stock_today;
+    return servings === null || servings > 0;
+  });
+  const [selectedBread, setSelectedBread] = useState(
+    savedPref?.bread_type
+      ? availableBreads.find(b => b.item_name === savedPref.bread_type)?.id || availableBreads[0]?.id || ''
+      : availableBreads[0]?.id || ''
+  );
   const [sides, setSides] = useState(savedPref?.sides || 'one');
   const [remember, setRemember] = useState(false);
 
+  const chosenBread = availableBreads.find(b => b.id === selectedBread);
+
   function confirm() {
-    const instruction = sides === 'both' ? 'both sides jam' : 'one side jam';
-    onConfirm({ instruction, pref: remember ? { sides } : null });
+    const breadName = chosenBread?.item_name || '';
+    const breadDisplay = chosenBread?.display_name || breadName;
+    const sidesLabel = sides === 'both' ? 'both sides' : 'one side';
+    const instruction = `${sidesLabel}, ${breadDisplay}`;
+    onConfirm({
+      instruction,
+      breadType: breadName,
+      pref: remember ? { sides, bread_type: breadName } : null,
+    });
   }
 
   return (
@@ -317,23 +400,62 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose }) {
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl"
+        className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-5">
           <div>
             <div className="text-xl">{item.emoji || '🍓'}</div>
             <h2 className="font-extrabold text-slate-900">{item.display_name || item.item_name}</h2>
-            <p className="text-xs text-slate-400">How do you want your jam?</p>
+            <p className="text-xs text-slate-400">Choose your bread & style</p>
           </div>
           <button onClick={onClose} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200">
             <X size={15} />
           </button>
         </div>
 
+        {/* 1. Bread type picker */}
         <div className="mb-5">
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-            Jam on bread
+            🍞 Choose bread
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {(breadItems || []).map((bread) => {
+              const servings = bread.stock_servings ?? bread.stock_today;
+              const isOut = servings !== null && servings <= 0;
+              const slicesLeft = servings !== null ? servings : null;
+              return (
+                <button
+                  key={bread.id}
+                  disabled={isOut}
+                  onClick={() => !isOut && setSelectedBread(bread.id)}
+                  className={`py-3 px-2 rounded-2xl border-2 text-xs font-bold transition-all flex flex-col items-center gap-1 ${
+                    isOut
+                      ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
+                      : selectedBread === bread.id
+                        ? 'bg-brand text-white border-brand'
+                        : 'border-slate-200 text-slate-600 hover:border-brand/30'
+                  }`}
+                >
+                  <span className="text-lg">{bread.emoji || '🍞'}</span>
+                  <span className="leading-tight text-center">{bread.display_name || bread.item_name}</span>
+                  {isOut ? (
+                    <span className="text-[9px] font-normal opacity-70">Out of stock</span>
+                  ) : slicesLeft !== null ? (
+                    <span className={`text-[9px] font-normal ${selectedBread === bread.id ? 'opacity-80' : 'text-amber-600'}`}>
+                      {slicesLeft} slices left
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 2. Sides picker */}
+        <div className="mb-5">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+            How many sides?
           </label>
           <div className="flex gap-3">
             <button
@@ -344,7 +466,7 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose }) {
             >
               <span className="text-2xl">🍞</span>
               One side
-              <span className="text-[10px] opacity-70 font-normal">1 slice, jam on top</span>
+              <span className="text-[10px] opacity-70 font-normal">1 slice</span>
             </button>
             <button
               onClick={() => setSides('both')}
@@ -354,11 +476,12 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose }) {
             >
               <span className="text-2xl">🍞🍞</span>
               Both sides
-              <span className="text-[10px] opacity-70 font-normal">2 slices, sandwich style</span>
+              <span className="text-[10px] opacity-70 font-normal">2 slices, sandwich</span>
             </button>
           </div>
         </div>
 
+        {/* 3. Remember toggle */}
         <button
           onClick={() => setRemember((v) => !v)}
           className={`w-full flex items-center justify-between p-3 rounded-2xl border-2 mb-5 transition-all ${
@@ -367,7 +490,7 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose }) {
         >
           <div className="text-left">
             <div className="text-sm font-semibold text-slate-800">Remember my choice</div>
-            <div className="text-xs text-slate-400">Pre-fill next time I order {item.display_name || item.item_name}</div>
+            <div className="text-xs text-slate-400">Pre-fill next time</div>
           </div>
           <div className={`rounded-full relative flex items-center transition-colors ml-3 shrink-0 ${remember ? 'bg-brand' : 'bg-slate-200'}`}
                style={{ height: 22, width: 40 }}>
@@ -377,7 +500,8 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose }) {
 
         <button
           onClick={confirm}
-          className="w-full h-12 bg-brand text-white rounded-2xl font-bold text-sm shadow-lg shadow-brand/20 hover:scale-[1.01] active:scale-[0.99] transition-all"
+          disabled={!selectedBread}
+          className="w-full h-12 bg-brand text-white rounded-2xl font-bold text-sm shadow-lg shadow-brand/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-40"
         >
           Add to order ✓
         </button>
@@ -387,7 +511,7 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose }) {
 }
 
 // ── Order Confirmation Sheet ───────────────────────────────────────────────────
-function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, savedLocation }) {
+function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, savedLocation, onRemoveItem, onUpdateQty, itemPrefs, queueAhead }) {
   // Auto-fill saved location (Zomato style) — unless "Ask Every Time"
   const autoFill = savedLocation && savedLocation !== 'Ask Every Time' ? savedLocation : '';
   const [location, setLocation] = useState(autoFill);
@@ -424,20 +548,51 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
 
         {/* Items */}
         <div className="space-y-2 mb-5">
-          {cartItems.map(({ item, qty, customNote }) => (
-            <div key={item.id} className="flex items-start justify-between py-2 border-b border-slate-50 gap-2">
-              <div className="flex items-start gap-2 min-w-0">
-                <span className="text-lg shrink-0">{item.emoji || '☕'}</span>
-                <div className="min-w-0">
-                  <div className="font-medium text-slate-800 text-sm">{item.item_name}</div>
-                  {customNote && (
-                    <div className="text-[11px] text-slate-400 mt-0.5 italic">{customNote}</div>
-                  )}
+          {cartItems.map(({ item, qty, customNote }) => {
+            const prefKey = item.item_name?.toLowerCase();
+            const savedPref = itemPrefs?.[prefKey];
+            const prefNote = savedPref?.note || savedPref?.sides ? `${savedPref.sides === 'both' ? 'Both sides' : 'One side'}` : null;
+            return (
+              <div key={item.id} className="flex items-start justify-between py-2 border-b border-slate-50 gap-2">
+                <div className="flex items-start gap-2 min-w-0">
+                  <span className="text-lg shrink-0">{item.emoji || '☕'}</span>
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-800 text-sm">{item.display_name || item.item_name}</div>
+                    {customNote && (
+                      <div className="text-[11px] text-slate-400 mt-0.5 italic">{customNote}</div>
+                    )}
+                    {prefNote && !customNote && (
+                      <div className="text-[10px] text-brand/60 mt-0.5">Your pref: {prefNote}</div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => onUpdateQty?.(item.id, -1)}
+                    className="h-6 w-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-rose-50 hover:text-rose-500 transition-all">
+                    <Minus size={10} />
+                  </button>
+                  <span className="font-bold text-brand text-sm w-4 text-center">{qty}</span>
+                  <button onClick={() => onUpdateQty?.(item.id, 1)}
+                    className="h-6 w-6 rounded-full bg-brand text-white flex items-center justify-center hover:bg-brand/80 transition-all">
+                    <Plus size={10} />
+                  </button>
+                  <button onClick={() => onRemoveItem?.(item.id)}
+                    className="h-6 w-6 rounded-full bg-rose-50 flex items-center justify-center text-rose-400 hover:bg-rose-100 hover:text-rose-600 transition-all ml-1">
+                    <Trash2 size={10} />
+                  </button>
                 </div>
               </div>
-              <span className="font-bold text-brand text-sm shrink-0">×{qty}</span>
-            </div>
-          ))}
+            );
+          })}
+        </div>
+
+        {/* ETA */}
+        <div className="flex items-center gap-2 mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+          <Timer size={14} className="text-emerald-600 shrink-0" />
+          <span className="text-xs text-emerald-700 font-medium">
+            Est. delivery: ~{queueAhead >= 3 ? '3' : queueAhead >= 1 ? '2' : '1'} min
+            {queueAhead > 0 && <span className="text-emerald-500"> ({queueAhead} order{queueAhead > 1 ? 's' : ''} ahead)</span>}
+          </span>
         </div>
 
         {/* Location — auto-filled from preferences (Zomato style) */}
@@ -534,9 +689,22 @@ export default function Cafeteria() {
   const [customText, setCustomText] = useState('');
   const [customLoc,  setCustomLoc]  = useState('');
   const [customBusy, setCustomBusy] = useState(false);
+  const [queueAhead, setQueueAhead] = useState(0);
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
   const hasInCart = cartCount > 0;
+
+  // Compute bread availability for dependency checks
+  const breadItems = items.filter(i => {
+    const name = (i.item_name || '').toLowerCase();
+    const tags = Array.isArray(i.tags) ? i.tags.map(t => t.toLowerCase()) : [];
+    return (name.includes('bread') || name.includes('brd') || tags.includes('bread'))
+      && !Array.isArray(i.dependencies);  // exclude items that DEPEND on bread (like Jam)
+  });
+  const anyBreadInStock = breadItems.some(b => {
+    const servings = b.stock_servings ?? b.stock_today;
+    return servings === null || servings > 0;
+  });
 
   const load = useCallback(async () => {
     try {
@@ -626,13 +794,32 @@ export default function Cafeteria() {
     setCustomTarget(null);
   }
 
-  function handleJamConfirm({ instruction, pref }) {
+  function handleJamConfirm({ instruction, pref, breadType }) {
     const item = jamTarget;
     if (!item) return;
     setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 }));
-    setCustomizations((c) => ({ ...c, [item.id]: instruction }));
+    // Store instruction + breadType together for placeOrder
+    setCustomizations((c) => ({ ...c, [item.id]: instruction, [`${item.id}__bread`]: breadType || '' }));
     if (pref) saveItemPref(item.item_name, pref);
     setJamTarget(null);
+  }
+
+  // Delete item from cart entirely (for OrderSheet trash button)
+  function deleteFromCart(id) {
+    setCart((c) => { const n = { ...c }; delete n[id]; return n; });
+    setCustomizations((cc) => { const nc = { ...cc }; delete nc[id]; delete nc[`${id}__bread`]; return nc; });
+  }
+
+  // Update qty from OrderSheet +/- buttons
+  function updateCartQty(id, delta) {
+    setCart((c) => {
+      const newQty = (c[id] || 0) + delta;
+      if (newQty <= 0) {
+        deleteFromCart(id);
+        return c;
+      }
+      return { ...c, [id]: newQty };
+    });
   }
 
   function removeFromCart(id) {
@@ -655,11 +842,13 @@ export default function Cafeteria() {
       let lastReq = null;
       for (const { item, qty, customNote } of cartItems) {
         const instruction = [customNote, note].filter(Boolean).join('. ');
+        const breadType = customizations[`${item.id}__bread`] || '';
         const r = await api.quickOrder({
           quick_item:        item.item_name,
           quick_location:    location,
           quick_quantity:    qty,
           quick_instruction: instruction,
+          quick_bread_type:  breadType,
         });
         lastReq = r?.request;
       }
@@ -667,6 +856,13 @@ export default function Cafeteria() {
       setCustomizations({});
       setShowSheet(false);
       setSuccessMsg('Order placed! 🚀');
+      // Remember location for next time
+      if (location && session) {
+        setSavedLocation(location);
+        supabase.from('employee_cafeteria_preferences')
+          .upsert({ user_id: session.user.id, preferred_location: location }, { onConflict: 'user_id' })
+          .catch(() => {});
+      }
       setTimeout(() => {
         setSuccessMsg('');
         if (lastReq?.id) navigate(`/track/${lastReq.id}`);
@@ -714,9 +910,9 @@ export default function Cafeteria() {
     return acc;
   }, {});
 
-  const catOrder  = ['beverage', 'food', 'snack', 'meal', 'stationery', 'cleaning', 'other'];
+  const catOrder  = ['beverage', 'refreshment', 'food', 'snack', 'meal', 'stationery', 'cleaning', 'other'];
   const catLabels = {
-    beverage: 'Drinks', food: 'Food', snack: 'Snacks', meal: 'Meals',
+    beverage: 'Drinks', refreshment: 'Refreshments', food: 'Food', snack: 'Snacks', meal: 'Meals',
     stationery: 'Stationery', cleaning: 'Cleaning', other: 'Other',
   };
   const sortedGroups = catOrder.filter((c) => grouped[c]?.length);
@@ -738,6 +934,13 @@ export default function Cafeteria() {
         </h1>
         <p className="text-slate-500 text-sm mt-1">What can we get you today?</p>
       </div>
+
+      {/* ── Preferences Summary ── */}
+      <PreferencesSummary
+        prefs={itemPrefs}
+        location={savedLocation}
+        onEdit={() => navigate('/settings')}
+      />
 
       {/* ── Meal Booking Card ── */}
       <MealCard />
@@ -777,6 +980,7 @@ export default function Cafeteria() {
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
             {grouped[cat].map((item) => {
               const isOut = item.stock_today !== null && item.stock_today !== undefined && item.stock_today <= 0;
+              const hasBreadDep = Array.isArray(item.dependencies) && item.dependencies.some(d => d.toLowerCase() === 'bread');
               return (
                 <ItemChip
                   key={item.id}
@@ -786,6 +990,8 @@ export default function Cafeteria() {
                   onAdd={() => handleAdd(item)}
                   onRemove={() => removeFromCart(item.id)}
                   tone={tone}
+                  needsBread={hasBreadDep}
+                  breadAvailable={anyBreadInStock}
                 />
               );
             })}
@@ -911,7 +1117,10 @@ export default function Cafeteria() {
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-w-sm px-4"
           >
             <button
-              onClick={() => setShowSheet(true)}
+              onClick={() => {
+                setShowSheet(true);
+                api.queueCount().then(d => setQueueAhead((d?.pending || 0) + (d?.in_progress || 0))).catch(() => {});
+              }}
               className="w-full h-14 bg-brand text-white rounded-2xl font-bold text-sm shadow-2xl shadow-brand/40 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-between px-5"
             >
               <span className="bg-white/20 rounded-full h-7 w-7 flex items-center justify-center font-extrabold text-sm">
@@ -944,6 +1153,7 @@ export default function Cafeteria() {
             savedPref={itemPrefs[jamTarget.item_name?.toLowerCase()]}
             onConfirm={handleJamConfirm}
             onClose={() => setJamTarget(null)}
+            breadItems={breadItems}
           />
         )}
       </AnimatePresence>
@@ -955,10 +1165,14 @@ export default function Cafeteria() {
             cart={cart}
             customizations={customizations}
             items={items}
-            onClose={() => setShowSheet(false)}
+            onClose={() => { setShowSheet(false); if (Object.keys(cart).length === 0) setCart({}); }}
             onConfirm={placeOrder}
             busy={orderBusy}
             savedLocation={savedLocation}
+            onRemoveItem={deleteFromCart}
+            onUpdateQty={updateCartQty}
+            itemPrefs={itemPrefs}
+            queueAhead={queueAhead}
           />
         )}
       </AnimatePresence>

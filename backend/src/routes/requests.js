@@ -106,7 +106,7 @@ const createSchema = z.object({
 router.post('/', async (req, res, next) => {
   try {
     // ── Quick order (cafeteria tap — no AI needed) ───────────────
-    const { quick_item, quick_location, quick_quantity = 1, quick_instruction = '' } = req.body;
+    const { quick_item, quick_location, quick_quantity = 1, quick_instruction = '', quick_bread_type = '' } = req.body;
     if (quick_item) {
       const qty = parseInt(quick_quantity, 10) || 1;
       const firstName = req.user.preferred_name || (req.user.full_name || req.user.email || 'Someone').split(' ')[0];
@@ -166,10 +166,13 @@ router.post('/', async (req, res, next) => {
         } catch (_) { /* use default tone */ }
 
         for (const depName of deps) {
+          // If user chose a specific bread type, use that instead of generic dependency
+          const lookupName = (depName.toLowerCase() === 'bread' && quick_bread_type) ? quick_bread_type : depName;
+
           const { data: depItem } = await supabaseAdmin
             .from('cafeteria_items')
             .select('id, stock_today, stock_servings, display_name, item_name')
-            .ilike('item_name', depName)
+            .ilike('item_name', lookupName)
             .maybeSingle();
 
           if (!depItem) continue; // dependency item doesn't exist in menu, skip check
@@ -188,7 +191,7 @@ router.post('/', async (req, res, next) => {
             return res.status(400).json({ error: getDependencyMessage(userTone, quick_item, displayDep) });
           }
 
-          // Decrement dependency stock
+          // Decrement dependency stock (slices for bread)
           const depUpdate = {};
           if (depStock !== null) depUpdate.stock_today = depStock - (qty * sidesMultiplier);
           if (depServings !== null) depUpdate.stock_servings = depServings - neededServings;
@@ -213,10 +216,11 @@ router.post('/', async (req, res, next) => {
         }
       }
 
+      const breadPart = quick_bread_type ? ` [bread:${quick_bread_type}]` : '';
       const { data: qData, error: qErr } = await supabaseAdmin
         .from('requests')
         .insert({
-          raw_text:              `${qty}x ${quick_item}${locPart}`,
+          raw_text:              `${qty}x ${quick_item}${locPart}${breadPart}`,
           category,
           parsed_item:           quick_item,
           parsed_location:       quick_location || null,
@@ -435,12 +439,17 @@ router.patch(
         }
 
         // Restore dependency stock (e.g., Bread when Jam cancelled)
+        // Parse specific bread type from raw_text: "1x Mix Fruit Jam [bread:MRBWL MLK BREAD]"
+        const staffBreadMatch = data.raw_text?.match(/\[bread:(.+?)\]/);
+        const staffBreadType = staffBreadMatch ? staffBreadMatch[1] : null;
+
         if (itemRow && Array.isArray(itemRow.dependencies) && itemRow.dependencies.length > 0) {
           for (const depName of itemRow.dependencies) {
+            const lookupName = (depName.toLowerCase() === 'bread' && staffBreadType) ? staffBreadType : depName;
             const { data: depItem } = await supabaseAdmin
               .from('cafeteria_items')
               .select('id, stock_today, stock_servings')
-              .ilike('item_name', depName)
+              .ilike('item_name', lookupName)
               .maybeSingle();
             if (depItem) {
               const depRestore = {};
@@ -548,12 +557,17 @@ router.post('/:id/cancel', async (req, res, next) => {
       }
 
       // Restore dependency stock (e.g., Bread when Jam cancelled)
+      // Parse specific bread type from raw_text: "1x Mix Fruit Jam to RK Cabin [bread:MRBWL MLK BREAD]"
+      const breadMatch = order.raw_text?.match(/\[bread:(.+?)\]/);
+      const cancelBreadType = breadMatch ? breadMatch[1] : null;
+
       if (itemRow && Array.isArray(itemRow.dependencies) && itemRow.dependencies.length > 0) {
         for (const depName of itemRow.dependencies) {
+          const lookupName = (depName.toLowerCase() === 'bread' && cancelBreadType) ? cancelBreadType : depName;
           const { data: depItem } = await supabaseAdmin
             .from('cafeteria_items')
             .select('id, stock_today, stock_servings')
-            .ilike('item_name', depName)
+            .ilike('item_name', lookupName)
             .maybeSingle();
           if (depItem) {
             const depRestore = {};

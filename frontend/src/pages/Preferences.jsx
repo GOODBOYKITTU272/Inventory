@@ -38,7 +38,7 @@ export default function Preferences() {
       const { data } = await supabase
         .from('employee_cafeteria_preferences')
         .select('shift')
-        .eq('employee_id', profile.id)
+        .eq('user_id', profile.id)
         .maybeSingle();
       if (data?.shift) setShift(data.shift);
     } catch (e) {
@@ -52,7 +52,7 @@ export default function Preferences() {
     try {
       await supabase
         .from('employee_cafeteria_preferences')
-        .upsert({ employee_id: profile.id, shift: newShift }, { onConflict: 'employee_id' });
+        .upsert({ user_id: profile.id, shift: newShift }, { onConflict: 'user_id' });
     } catch (e) {
       console.error('Failed to save shift', e);
     } finally {
