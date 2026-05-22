@@ -164,34 +164,51 @@ function StepWelcome({ onNext }) {
   );
 }
 
-// Step 1 — Preferred name
+// Step 1 — Preferred name + Employee Code
 function StepName({ prefs, set, onNext, onBack }) {
   return (
     <div className="space-y-6 pb-28">
       <div className="text-center pt-4">
         <div className="text-5xl mb-3">👋</div>
-        <h2 className="text-2xl font-bold text-slate-900">What should we call you?</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Let's get to know you!</h2>
         <p className="text-slate-500 mt-2 text-sm">
           The office boy will see this name when your order arrives.
-          <br />Use your first name or a nickname — whatever feels right.
         </p>
       </div>
 
-      <div className="space-y-3">
-        <input
-          className="w-full border-2 border-slate-200 rounded-2xl px-4 py-4 text-lg font-semibold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none text-center"
-          placeholder="e.g. Naga, Rama, RK…"
-          value={prefs.displayName}
-          onChange={(e) => set('displayName', e.target.value)}
-          maxLength={30}
-          autoFocus
-        />
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1.5 block">Your Name</label>
+          <input
+            className="w-full border-2 border-slate-200 rounded-2xl px-4 py-4 text-lg font-semibold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none text-center"
+            placeholder="e.g. Naga, Rama, RK…"
+            value={prefs.displayName}
+            onChange={(e) => set('displayName', e.target.value)}
+            maxLength={30}
+            autoFocus
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1.5 block">Employee Code <span className="text-rose-400">*</span></label>
+          <input
+            className="w-full border-2 border-slate-200 rounded-2xl px-4 py-4 text-lg font-semibold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none text-center uppercase"
+            placeholder="e.g. AW001, EMP042…"
+            value={prefs.employeeCode || ''}
+            onChange={(e) => set('employeeCode', e.target.value.toUpperCase())}
+            maxLength={20}
+          />
+          <p className="text-center text-[10px] text-slate-400 mt-1">
+            This will appear on your meal receipts and order tickets.
+          </p>
+        </div>
+
         <p className="text-center text-xs text-slate-400">
-          Your order will say: <span className="font-bold text-slate-600">"{prefs.displayName || 'Your name'} needs 1x CCD Coffee to Balaji Cabin 🚀"</span>
+          Your order will say: <span className="font-bold text-slate-600">"{prefs.displayName || 'Your name'} ({prefs.employeeCode || 'CODE'}) needs 1x CCD Coffee 🚀"</span>
         </p>
       </div>
 
-      <NavBar step={1} onBack={onBack} onNext={onNext} nextDisabled={!prefs.displayName?.trim()} />
+      <NavBar step={1} onBack={onBack} onNext={onNext} nextDisabled={!prefs.displayName?.trim() || !prefs.employeeCode?.trim()} />
     </div>
   );
 }
@@ -617,6 +634,7 @@ export default function Onboarding({ onComplete }) {
 
   const [prefs,  setPrefs]  = useState({
     displayName: defaultName,
+    employeeCode: '',
     drinks: [],
     snacks: [],
     tastes: [],
@@ -676,11 +694,14 @@ export default function Onboarding({ onComplete }) {
   async function finish() {
     setSaving(true);
     try {
-      // Save preferred name back to profiles so backend uses it
-      if (prefs.displayName?.trim()) {
+      // Save preferred name + employee code back to profiles
+      const profileUpdate = {};
+      if (prefs.displayName?.trim()) profileUpdate.preferred_name = prefs.displayName.trim();
+      if (prefs.employeeCode?.trim()) profileUpdate.employee_code = prefs.employeeCode.trim().toUpperCase();
+      if (Object.keys(profileUpdate).length > 0) {
         await supabase
           .from('profiles')
-          .update({ preferred_name: prefs.displayName.trim() })
+          .update(profileUpdate)
           .eq('id', session.user.id);
       }
 

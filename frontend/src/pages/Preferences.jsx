@@ -24,13 +24,32 @@ export default function Preferences() {
   });
   const [shift, setShift] = useState('morning');
   const [shiftSaving, setShiftSaving] = useState(false);
+  const [employeeCode, setEmployeeCode] = useState('');
+  const [codeSaving, setCodeSaving] = useState(false);
 
   useEffect(() => {
     if (!profile?.id) return;
     loadPrefs();
     loadShift();
+    loadEmployeeCode();
     getPushStatus().then(setPushStatus).catch(() => setPushStatus('unsupported'));
   }, [profile?.id]);
+
+  async function loadEmployeeCode() {
+    try {
+      const { data } = await supabase.from('profiles').select('employee_code').eq('id', profile.id).maybeSingle();
+      if (data?.employee_code) setEmployeeCode(data.employee_code);
+    } catch (_) {}
+  }
+
+  async function saveEmployeeCode() {
+    if (!employeeCode.trim()) return;
+    setCodeSaving(true);
+    try {
+      await supabase.from('profiles').update({ employee_code: employeeCode.trim().toUpperCase() }).eq('id', profile.id);
+    } catch (_) {}
+    setCodeSaving(false);
+  }
 
   async function loadShift() {
     try {
@@ -141,23 +160,41 @@ export default function Preferences() {
       </div>
 
       {/* Profile info */}
-      <div className="card flex items-center gap-4">
-        <div className="h-12 w-12 rounded-full bg-brand text-white grid place-items-center font-bold text-lg shrink-0">
-          {(profile?.full_name || 'U').charAt(0).toUpperCase()}
-        </div>
-        <div className="min-w-0">
-          <div className="font-semibold text-slate-900 truncate">{profile?.full_name || '—'}</div>
-          <div className="text-xs text-slate-500 truncate">{profile?.email || '—'}</div>
-          <div className="text-xs text-brand font-medium capitalize mt-0.5">
-            {profile?.role?.replace('_', ' ') || '—'}
+      <div className="card space-y-4">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 rounded-full bg-brand text-white grid place-items-center font-bold text-lg shrink-0">
+            {(profile?.full_name || 'U').charAt(0).toUpperCase()}
           </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-slate-900 truncate">{profile?.full_name || '—'}</div>
+            <div className="text-xs text-slate-500 truncate">{profile?.email || '—'}</div>
+            <div className="text-xs text-brand font-medium capitalize mt-0.5">
+              {profile?.role?.replace('_', ' ') || '—'}
+            </div>
+          </div>
+          <button
+            className="ml-auto btn-secondary text-sm flex items-center gap-1 shrink-0"
+            onClick={() => supabase.auth.signOut()}
+          >
+            <LogOut size={14} /> Sign out
+          </button>
         </div>
-        <button
-          className="ml-auto btn-secondary text-sm flex items-center gap-1 shrink-0"
-          onClick={() => supabase.auth.signOut()}
-        >
-          <LogOut size={14} /> Sign out
-        </button>
+
+        {/* Employee Code */}
+        <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+          <div className="flex-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Employee Code</label>
+            <input
+              className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none uppercase"
+              placeholder="e.g. AW001"
+              value={employeeCode}
+              onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())}
+              onBlur={saveEmployeeCode}
+              maxLength={20}
+            />
+          </div>
+          {codeSaving && <Loader2 size={16} className="animate-spin text-brand mt-5" />}
+        </div>
       </div>
 
       {/* Shift Selection */}
