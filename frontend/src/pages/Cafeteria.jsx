@@ -281,12 +281,15 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, br
         )}
       </div>
 
-      {/* Low stock badge */}
-      {item.stock_today !== null && item.stock_today !== undefined && item.stock_today > 0 && item.stock_today <= 5 && (
-        <div className="absolute top-1.5 right-1.5 bg-amber-100 text-amber-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">
-          {(LOW_STOCK_BY_TONE[tone] || LOW_STOCK_BY_TONE.Friendly)(item.stock_today)}
-        </div>
-      )}
+      {/* Low stock badge — use servings if available, otherwise stock_today */}
+      {(() => {
+        const s = item.stock_servings ?? item.stock_today;
+        return s !== null && s !== undefined && s > 0 && s <= 5 ? (
+          <div className="absolute top-1.5 right-1.5 bg-amber-100 text-amber-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">
+            {(LOW_STOCK_BY_TONE[tone] || LOW_STOCK_BY_TONE.Friendly)(s)}
+          </div>
+        ) : null;
+      })()}
 
       {inCart ? (
         <div className="flex items-center justify-center gap-2 mt-1">
@@ -1175,7 +1178,8 @@ export default function Cafeteria() {
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
             {grouped[cat].map((item) => {
-              const isOut = item.stock_today !== null && item.stock_today !== undefined && item.stock_today <= 0;
+              const effectiveStock = item.stock_servings ?? item.stock_today;
+              const isOut = effectiveStock !== null && effectiveStock !== undefined && effectiveStock <= 0;
               const hasBreadDep = Array.isArray(item.dependencies) && item.dependencies.some(d => d.toLowerCase() === 'bread');
               return (
                 <ItemChip

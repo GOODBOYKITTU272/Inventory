@@ -128,30 +128,48 @@ router.post('/', async (req, res, next) => {
         .ilike('item_name', quick_item)
         .maybeSingle();
 
-      if (itemRow && itemRow.stock_today !== null) {
-        if (itemRow.stock_today < qty) {
-          const oosMessages = [
-            `Sorry beta, ${quick_item} khatam ho gaya 🥺`,
-            `Aaj ki ${quick_item} quota over hai bestie 💅`,
-            `Unlucky yaar, ${quick_item} sold out 😭`,
-            `${quick_item} ka stock RIP ho gaya 🫠`,
-            `Beta too late, sab ${quick_item} kha/pi gaye 🤷‍♀️`,
-          ];
-          const lowMessages = [
-            `Arre yaar, sirf ${itemRow.stock_today} ${quick_item} bacha hai but you want ${qty} 😬`,
-            `Only ${itemRow.stock_today} left bestie, ${qty} nahi milega 🥲`,
-            `${quick_item} almost khatam — ${itemRow.stock_today} hi bacha, ${qty} chahiye? No can do 💀`,
-          ];
-          const msg = itemRow.stock_today === 0
-            ? oosMessages[Math.floor(Math.random() * oosMessages.length)]
-            : lowMessages[Math.floor(Math.random() * lowMessages.length)];
-          return res.status(400).json({ error: msg });
+      // Use stock_servings (cups/slices) if available, otherwise stock_today (units/boxes)
+      const effectiveStock = itemRow?.stock_servings ?? itemRow?.stock_today;
+      if (itemRow && effectiveStock !== null && effectiveStock !== undefined) {
+        if (effectiveStock < qty) {
+          // Load user tone for personalized OOS message
+          let userTone = 'Friendly';
+          try {
+            const { data: toneRow } = await supabaseAdmin
+              .from('employee_cafeteria_preferences')
+              .select('notification_tone')
+              .eq('user_id', req.user.id)
+              .maybeSingle();
+            if (toneRow?.notification_tone) userTone = toneRow.notification_tone;
+          } catch (_) {}
+
+          const oosMessages = {
+            Friendly: [`Oops, ${quick_item} is all gone for today! 😊`, `This one's finished, try tomorrow! 🌈`],
+            Funny: [`Sorry beta, ${quick_item} khatam ho gaya 🥺`, `Aaj ki ${quick_item} quota over hai bestie 💅`],
+            'Mom Mode': [`Beta, ${quick_item} aaj khatam ho gaya 🥺💝`, `Aur nahi hai beta, doosra le lo na 🫂`],
+            Professional: [`${quick_item} is currently out of stock.`, `${quick_item} unavailable for today.`],
+            Minimal: [`${quick_item} out of stock.`],
+            boyfriend: [`Hey babe, ${quick_item} is all gone 🥺💕`, `Sorry cutie, no more ${quick_item} today 💖`],
+            girlfriend: [`Hey handsome, ${quick_item} khatam ho gaya 🥺💕`, `Sorry raja, ${quick_item} nahi bacha 💖`],
+            gen_z: [`Bruh ${quick_item} said byebye 💀`, `${quick_item} sold out fr fr 🫠`],
+          };
+          const msgs = oosMessages[userTone] || oosMessages.Friendly;
+          return res.status(400).json({ error: msgs[Math.floor(Math.random() * msgs.length)] });
         }
-        // Decrement stock
-        await supabaseAdmin
-          .from('cafeteria_items')
-          .update({ stock_today: itemRow.stock_today - qty })
-          .eq('id', itemRow.id);
+        // Decrement stock — prefer stock_servings, also decrement stock_today for box-level items
+        const update = {};
+        if (itemRow.stock_servings !== null && itemRow.stock_servings !== undefined) {
+          update.stock_servings = itemRow.stock_servings - qty;
+        }
+        if (itemRow.stock_today !== null && itemRow.stock_today !== undefined) {
+          // Only decrement stock_today if there are NO stock_servings (i.e., 1:1 items like water)
+          if (itemRow.stock_servings === null || itemRow.stock_servings === undefined) {
+            update.stock_today = itemRow.stock_today - qty;
+          }
+        }
+        if (Object.keys(update).length > 0) {
+          await supabaseAdmin.from('cafeteria_items').update(update).eq('id', itemRow.id);
+        }
       }
 
       // ── Dependency check (e.g., Jam needs Bread) ───────────────────
