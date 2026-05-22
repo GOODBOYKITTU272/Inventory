@@ -1,14 +1,83 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase.js';
 
 const ALLOWED_DOMAIN = 'applywizz.ai';
 const HIDDEN_PASSWORD = 'Applywizz@2026';
 
+/* ── Animation Variants ── */
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  visible: (i = 0) => ({
+    opacity: 1, y: 0,
+    transition: { duration: 0.5, delay: i * 0.1, ease: [0.25, 0.46, 0.45, 0.94] },
+  }),
+};
+
+const stagger = {
+  visible: { transition: { staggerChildren: 0.08 } },
+};
+
+const pillPop = {
+  hidden: { opacity: 0, scale: 0.8 },
+  visible: (i) => ({
+    opacity: 1, scale: 1,
+    transition: { duration: 0.4, delay: 0.5 + i * 0.1, type: 'spring', stiffness: 200 },
+  }),
+};
+
+/* ── Floating decorative shapes ── */
+function FloatingElements() {
+  const items = [
+    { emoji: '☕', x: '12%', y: '18%', size: 'text-4xl', delay: 0 },
+    { emoji: '🍵', x: '85%', y: '14%', size: 'text-3xl', delay: 0.5 },
+    { emoji: '🥪', x: '8%',  y: '72%', size: 'text-3xl', delay: 1.0 },
+    { emoji: '🍪', x: '88%', y: '68%', size: 'text-2xl', delay: 1.5 },
+    { emoji: '🧃', x: '78%', y: '42%', size: 'text-2xl', delay: 0.8 },
+    { emoji: '🍌', x: '18%', y: '48%', size: 'text-2xl', delay: 1.2 },
+  ];
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+      {items.map((item, i) => (
+        <motion.span
+          key={i}
+          className={`absolute ${item.size} select-none`}
+          style={{ left: item.x, top: item.y }}
+          initial={{ opacity: 0, scale: 0 }}
+          animate={{
+            opacity: 0.12,
+            scale: 1,
+            y: [0, -10, 0, 10, 0],
+          }}
+          transition={{
+            opacity: { duration: 0.6, delay: item.delay },
+            scale: { duration: 0.6, delay: item.delay },
+            y: { duration: 6, repeat: Infinity, ease: 'easeInOut', delay: item.delay },
+          }}
+        >
+          {item.emoji}
+        </motion.span>
+      ))}
+    </div>
+  );
+}
+
+/* ── Glowing orb background ── */
+function GlowOrbs() {
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+      <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[#29FE29]/[0.04] blur-[100px]" />
+      <div className="absolute -bottom-48 -right-32 w-[500px] h-[500px] rounded-full bg-[#2C76FF]/[0.06] blur-[120px]" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full bg-[#FFDE59]/[0.03] blur-[80px]" />
+    </div>
+  );
+}
+
 export default function Login() {
   const navigate = useNavigate();
 
-  // Steps: 'email' → 'enroll' (new, QR) → 'verify' (enter code) → 'done'
   const [step,    setStep]    = useState('email');
   const [email,   setEmail]   = useState('');
   const [err,     setErr]     = useState('');
@@ -20,7 +89,6 @@ export default function Login() {
   const [challengeId, setChallengeId] = useState('');
   const [totpCode,    setTotpCode]    = useState('');
 
-  // Prevent double-submit
   const submitting = useRef(false);
 
   // ── Step 1: Enter email ──
@@ -41,7 +109,6 @@ export default function Login() {
     setBusy(true);
 
     try {
-      // Try sign in with hidden password
       let { error: signInErr } = await supabase.auth.signInWithPassword({
         email: trimmed,
         password: HIDDEN_PASSWORD,
@@ -51,7 +118,6 @@ export default function Login() {
         const msg = signInErr.message?.toLowerCase() || '';
 
         if (msg.includes('invalid login') || msg.includes('invalid email') || msg.includes('user not found') || msg.includes('invalid credentials')) {
-          // Account doesn't exist → create it
           console.log('[Login] Account not found, creating...');
           const { error: signUpErr } = await supabase.auth.signUp({
             email: trimmed,
@@ -66,7 +132,6 @@ export default function Login() {
             return;
           }
 
-          // Sign in right after signup
           const { error: postErr } = await supabase.auth.signInWithPassword({
             email: trimmed,
             password: HIDDEN_PASSWORD,
@@ -87,7 +152,6 @@ export default function Login() {
       }
 
       console.log('[Login] Signed in, checking MFA...');
-      // Signed in (AAL1) — now handle MFA
       await handleMfaAfterSignIn();
     } catch (ex) {
       setErr('Something went wrong: ' + (ex.message || ex));
@@ -96,7 +160,6 @@ export default function Login() {
     }
   }
 
-  // After password sign-in, check MFA enrollment
   async function handleMfaAfterSignIn() {
     try {
       const { data: factors, error: fErr } = await supabase.auth.mfa.listFactors();
@@ -113,7 +176,6 @@ export default function Login() {
       const unverified = factors?.totp?.find(f => f.status === 'unverified');
 
       if (totp) {
-        // Returning user — challenge existing TOTP
         console.log('[Login] Existing TOTP factor, creating challenge...');
         const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
           factorId: totp.id,
@@ -129,11 +191,9 @@ export default function Login() {
         setBusy(false);
         setStep('verify');
       } else {
-        // Clean up any unverified enrollments first
         if (unverified) {
           await supabase.auth.mfa.unenroll({ factorId: unverified.id }).catch(() => {});
         }
-        // New user — enroll TOTP
         console.log('[Login] No TOTP factor, enrolling...');
         await enrollNewTotp();
       }
@@ -144,7 +204,6 @@ export default function Login() {
     }
   }
 
-  // Enroll a new TOTP factor (show QR code)
   async function enrollNewTotp() {
     try {
       const { data, error } = await supabase.auth.mfa.enroll({
@@ -173,7 +232,6 @@ export default function Login() {
     }
   }
 
-  // Verify TOTP code (both enroll and returning user)
   async function submitCode(e) {
     e.preventDefault();
     setErr('');
@@ -188,7 +246,6 @@ export default function Login() {
     try {
       let cId = challengeId;
 
-      // Create challenge if needed (enrollment flow)
       if (!cId) {
         const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
           factorId,
@@ -211,12 +268,11 @@ export default function Login() {
       if (vErr) {
         setErr('Invalid code. Check Microsoft Authenticator and try again.');
         setTotpCode('');
-        setChallengeId(''); // Force new challenge on retry
+        setChallengeId('');
         setBusy(false);
         return;
       }
 
-      // MFA verified! Session is now AAL2.
       console.log('[Login] MFA verified! Navigating home...');
       setStep('done');
       navigate('/', { replace: true });
@@ -226,204 +282,313 @@ export default function Login() {
     }
   }
 
+  /* ═══════════════════════════════════════════════════════════════
+     RENDER
+     ═══════════════════════════════════════════════════════════════ */
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="min-h-screen bg-[#0B1D33] flex flex-col relative overflow-hidden"
+         style={{ fontFamily: "'Noto Sans', 'Inter', system-ui, sans-serif" }}>
 
-      <header className="px-6 sm:px-8 py-5 flex items-center">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-brand grid place-items-center">
-            <span className="text-white font-bold text-sm">A</span>
-          </div>
-          <span className="font-semibold text-slate-900 text-sm tracking-tight">
-            Applywizz Pantry
+      <GlowOrbs />
+      <FloatingElements />
+
+      {/* ── Header ── */}
+      <motion.header
+        className="relative z-10 px-6 sm:px-8 py-5 flex items-center justify-between"
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="flex items-center gap-3">
+          <img src="/logo.svg" alt="ApplyWizz" className="h-10 w-10 rounded-xl shadow-lg shadow-black/20" />
+          <span className="font-bold text-white/90 text-[15px] tracking-tight"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            APPLY WIZZ
+            <span className="block text-[10px] font-medium text-white/40 tracking-widest -mt-0.5">PANTRY</span>
           </span>
         </div>
-      </header>
+        <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-white/30 font-medium">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#29FE29] animate-pulse" />
+          Pantry Online
+        </div>
+      </motion.header>
 
-      <main className="flex-1 flex flex-col items-center justify-center px-6 text-center -mt-12">
+      {/* ── Main Content ── */}
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 text-center">
+        <AnimatePresence mode="wait">
 
-        {/* ─── STEP: Email ─── */}
-        {step === 'email' && (
-          <>
-            <div className="inline-flex items-center gap-1.5 bg-brand/8 text-brand text-xs font-semibold px-3 py-1 rounded-full mb-8 tracking-wide uppercase">
-              <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
-              Office pantry
-            </div>
+          {/* ═══ STEP: Email ═══ */}
+          {step === 'email' && (
+            <motion.div
+              key="email-step"
+              className="w-full max-w-md"
+              initial="hidden"
+              animate="visible"
+              exit={{ opacity: 0, y: -20, transition: { duration: 0.3 } }}
+              variants={stagger}
+            >
+              {/* Badge */}
+              <motion.div variants={fadeUp} custom={0}
+                className="inline-flex items-center gap-2 bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] text-[#29FE29] text-xs font-semibold px-4 py-1.5 rounded-full mb-8 tracking-wide uppercase"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#29FE29] animate-pulse" />
+                Office Pantry
+              </motion.div>
 
-            <h1 className="text-[2.5rem] sm:text-5xl font-bold text-slate-900 leading-[1.08] tracking-tight max-w-lg">
-              Your office fuel,{' '}
-              <span className="text-brand">beautifully</span> served.
-            </h1>
-
-            <p className="mt-4 text-slate-500 text-[15px] max-w-sm leading-relaxed">
-              Tea, coffee, snacks — ordered in seconds, tracked live to your desk.
-            </p>
-
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {[
-                { icon: '⚡', label: 'Instant orders' },
-                { icon: '📍', label: 'Live tracking' },
-                { icon: '🔔', label: 'Push alerts' },
-              ].map(({ icon, label }) => (
-                <span key={label} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 text-slate-600 text-xs font-medium px-3 py-1.5 rounded-full select-none">
-                  {icon} {label}
+              {/* Headline */}
+              <motion.h1 variants={fadeUp} custom={1}
+                className="text-[2.8rem] sm:text-[3.5rem] font-extrabold text-white leading-[1.05] tracking-tight"
+              >
+                Skip the queue.
+                <br />
+                <span className="relative inline-block">
+                  <span className="relative z-10">Not the</span>
+                </span>{' '}
+                <span className="relative inline-block">
+                  <span className="text-[#29FE29] relative z-10"
+                        style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>
+                    snack.
+                  </span>
+                  {/* Underline glow */}
+                  <span className="absolute -bottom-1 left-0 right-0 h-[3px] bg-[#29FE29]/40 rounded-full blur-[2px]" />
                 </span>
-              ))}
-            </div>
+              </motion.h1>
 
-            <form onSubmit={submitEmail} className="mt-10 w-full max-w-xs space-y-3 text-left">
-              <Label>Work email</Label>
-              <Input
-                type="email" required autoFocus autoComplete="email"
-                placeholder={`you@${ALLOWED_DOMAIN}`}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              {err && <Msg text={err} />}
-              <Btn busy={busy}>{busy ? 'Checking…' : 'Continue'}</Btn>
-              <p className="text-[11px] text-slate-400 text-center pt-1">
-                Sign in with your @applywizz.ai email + Microsoft Authenticator
-              </p>
-            </form>
-          </>
-        )}
+              {/* Subheadline */}
+              <motion.p variants={fadeUp} custom={2}
+                className="mt-5 text-white/50 text-[15px] sm:text-base max-w-sm mx-auto leading-relaxed"
+              >
+                One tap. Live tracking. Delivered to your desk.
+                <br className="hidden sm:block" />
+                {' '}The smartest pantry your office ever had.
+              </motion.p>
 
-        {/* ─── STEP: Enroll (first time — scan QR code) ─── */}
-        {step === 'enroll' && (
-          <div className="w-full max-w-sm space-y-5 text-center">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand/10 text-brand text-2xl mb-1">
-              📱
-            </div>
-            <h2 className="text-xl font-bold text-slate-900">Set up Microsoft Authenticator</h2>
-            <p className="text-sm text-slate-500 leading-relaxed">
-              Open <strong>Microsoft Authenticator</strong> on your phone<br />
-              Tap <strong>+</strong> → <strong>Other account</strong> → Scan this QR code
-            </p>
+              {/* Feature pills */}
+              <motion.div className="mt-7 flex flex-wrap justify-center gap-2.5"
+                initial="hidden" animate="visible"
+              >
+                {[
+                  { icon: '⚡', label: '5-sec ordering', color: '#FFDE59' },
+                  { icon: '📍', label: 'Live tracking',  color: '#2C76FF' },
+                  { icon: '🍱', label: 'Meal booking',   color: '#29FE29' },
+                ].map(({ icon, label, color }, i) => (
+                  <motion.span
+                    key={label}
+                    variants={pillPop}
+                    custom={i}
+                    className="inline-flex items-center gap-1.5 bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] text-white/70 text-xs font-medium px-3.5 py-2 rounded-full select-none hover:bg-white/[0.1] transition-colors"
+                  >
+                    <span>{icon}</span>
+                    <span>{label}</span>
+                    <span className="w-1 h-1 rounded-full" style={{ backgroundColor: color }} />
+                  </motion.span>
+                ))}
+              </motion.div>
 
-            {qrCode && (
-              <div className="flex justify-center">
-                <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 inline-block">
-                  <img src={qrCode} alt="QR Code" className="w-48 h-48" />
+              {/* Login Form */}
+              <motion.form
+                variants={fadeUp} custom={4}
+                onSubmit={submitEmail}
+                className="mt-10 w-full max-w-xs mx-auto space-y-3 text-left"
+              >
+                <label className="block text-[11px] font-semibold text-white/30 uppercase tracking-widest mb-1"
+                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                  Work email
+                </label>
+                <div className="relative">
+                  <input
+                    type="email" required autoFocus autoComplete="email"
+                    placeholder={`you@${ALLOWED_DOMAIN}`}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-white/[0.07] backdrop-blur-sm border border-white/[0.12] rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/25 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/30 focus:border-[#29FE29]/50 transition-all"
+                  />
                 </div>
+                {err && <Msg text={err} />}
+                <button type="submit" disabled={busy}
+                  className="w-full bg-[#29FE29] hover:bg-[#24E025] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                >
+                  {busy && <div className="w-4 h-4 rounded-full border-2 border-[#0B1D33]/30 border-t-[#0B1D33] animate-spin" />}
+                  {busy ? 'Checking…' : 'Continue →'}
+                </button>
+                <p className="text-[11px] text-white/20 text-center pt-1">
+                  Sign in with your @applywizz.ai email + Microsoft Authenticator
+                </p>
+              </motion.form>
+            </motion.div>
+          )}
+
+          {/* ═══ STEP: Enroll (first time — scan QR code) ═══ */}
+          {step === 'enroll' && (
+            <motion.div
+              key="enroll-step"
+              className="w-full max-w-sm space-y-5 text-center"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#2C76FF]/15 border border-[#2C76FF]/20 text-3xl mb-2">
+                📱
               </div>
-            )}
+              <h2 className="text-2xl font-bold text-white">
+                Set up Authenticator
+              </h2>
+              <p className="text-sm text-white/50 leading-relaxed">
+                Open <strong className="text-white/70">Microsoft Authenticator</strong> on your phone
+                <br />
+                Tap <strong className="text-white/70">+</strong> → <strong className="text-white/70">Other account</strong> → Scan this QR
+              </p>
 
-            <form onSubmit={submitCode} className="space-y-3 text-left">
-              <Label>Enter the 6-digit code from Authenticator</Label>
-              <Input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                required
-                autoFocus
-                autoComplete="one-time-code"
-                placeholder="000000"
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="text-center text-2xl tracking-[0.5em] font-mono"
-              />
-              {err && <Msg text={err} />}
-              <Btn busy={busy}>{busy ? 'Verifying…' : 'Verify & Continue'}</Btn>
-            </form>
+              {qrCode && (
+                <motion.div
+                  className="flex justify-center"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.4, delay: 0.2 }}
+                >
+                  <div className="bg-white rounded-2xl p-4 inline-block shadow-xl shadow-black/20">
+                    <img src={qrCode} alt="QR Code" className="w-48 h-48" />
+                  </div>
+                </motion.div>
+              )}
 
-            <button
-              onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }}
-              className="text-xs text-slate-400 hover:text-brand mt-2"
+              <form onSubmit={submitCode} className="space-y-3 text-left">
+                <label className="block text-[11px] font-semibold text-white/30 uppercase tracking-widest mb-1"
+                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                  Enter the 6-digit code
+                </label>
+                <input
+                  type="text" inputMode="numeric" pattern="[0-9]*"
+                  maxLength={6} required autoFocus autoComplete="one-time-code"
+                  placeholder="000000"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full bg-white/[0.07] backdrop-blur-sm border border-white/[0.12] rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.5em] font-mono text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/30 focus:border-[#29FE29]/50 transition-all"
+                />
+                {err && <Msg text={err} />}
+                <button type="submit" disabled={busy}
+                  className="w-full bg-[#29FE29] hover:bg-[#24E025] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                >
+                  {busy && <div className="w-4 h-4 rounded-full border-2 border-[#0B1D33]/30 border-t-[#0B1D33] animate-spin" />}
+                  {busy ? 'Verifying…' : 'Verify & Continue →'}
+                </button>
+              </form>
+
+              <button
+                onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }}
+                className="text-xs text-white/30 hover:text-[#29FE29] transition-colors mt-2"
+              >
+                ← Use a different email
+              </button>
+            </motion.div>
+          )}
+
+          {/* ═══ STEP: Verify (returning user — enter code) ═══ */}
+          {step === 'verify' && (
+            <motion.div
+              key="verify-step"
+              className="w-full max-w-sm space-y-5 text-center"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4 }}
             >
-              ← Use a different email
-            </button>
-          </div>
-        )}
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#29FE29]/10 border border-[#29FE29]/20 text-3xl mb-2">
+                🔐
+              </div>
+              <h2 className="text-2xl font-bold text-white">
+                Welcome back
+              </h2>
+              <p className="text-sm text-white/50 leading-relaxed">
+                Enter the 6-digit code from <strong className="text-white/70">Microsoft Authenticator</strong>
+                <br />
+                for <strong className="text-[#29FE29]/80">{email}</strong>
+              </p>
 
-        {/* ─── STEP: Verify (returning user — enter code) ─── */}
-        {step === 'verify' && (
-          <div className="w-full max-w-sm space-y-5 text-center">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand/10 text-brand text-2xl mb-1">
-              🔐
-            </div>
-            <h2 className="text-xl font-bold text-slate-900">Enter authenticator code</h2>
-            <p className="text-sm text-slate-500 leading-relaxed">
-              Open <strong>Microsoft Authenticator</strong> and enter the 6-digit code<br />
-              for <strong className="text-slate-800">{email}</strong>
-            </p>
+              <form onSubmit={submitCode} className="space-y-3 text-left">
+                <input
+                  type="text" inputMode="numeric" pattern="[0-9]*"
+                  maxLength={6} required autoFocus autoComplete="one-time-code"
+                  placeholder="000000"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full bg-white/[0.07] backdrop-blur-sm border border-white/[0.12] rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.5em] font-mono text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/30 focus:border-[#29FE29]/50 transition-all"
+                />
+                {err && <Msg text={err} />}
+                <button type="submit" disabled={busy}
+                  className="w-full bg-[#29FE29] hover:bg-[#24E025] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                >
+                  {busy && <div className="w-4 h-4 rounded-full border-2 border-[#0B1D33]/30 border-t-[#0B1D33] animate-spin" />}
+                  {busy ? 'Verifying…' : 'Sign in →'}
+                </button>
+              </form>
 
-            <form onSubmit={submitCode} className="space-y-3 text-left">
-              <Input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                required
-                autoFocus
-                autoComplete="one-time-code"
-                placeholder="000000"
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="text-center text-2xl tracking-[0.5em] font-mono"
-              />
-              {err && <Msg text={err} />}
-              <Btn busy={busy}>{busy ? 'Verifying…' : 'Sign in'}</Btn>
-            </form>
+              <button
+                onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }}
+                className="text-xs text-white/30 hover:text-[#29FE29] transition-colors mt-2"
+              >
+                ← Use a different email
+              </button>
+            </motion.div>
+          )}
 
-            <button
-              onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }}
-              className="text-xs text-slate-400 hover:text-brand mt-2"
+          {/* ═══ STEP: Done ═══ */}
+          {step === 'done' && (
+            <motion.div
+              key="done-step"
+              className="text-center space-y-4"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
             >
-              ← Use a different email
-            </button>
-          </div>
-        )}
+              <motion.div
+                className="w-16 h-16 mx-auto rounded-full bg-[#29FE29]/15 border-2 border-[#29FE29]/30 grid place-items-center"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+              >
+                <div className="w-6 h-6 rounded-full border-2 border-[#29FE29] border-t-transparent animate-spin" />
+              </motion.div>
+              <p className="text-sm text-white/50">Signing you in…</p>
+            </motion.div>
+          )}
 
-        {/* ─── STEP: Done ─── */}
-        {step === 'done' && (
-          <div className="text-center space-y-3">
-            <div className="w-8 h-8 mx-auto rounded-full border-2 border-brand border-t-transparent animate-spin" />
-            <p className="text-sm text-slate-500">Signing you in…</p>
-          </div>
-        )}
-
+        </AnimatePresence>
       </main>
 
-      <footer className="px-8 py-5 text-center">
-        <p className="text-[11px] text-slate-300">
-          Applywizz Pantry · Secured with Microsoft Authenticator
+      {/* ── Footer ── */}
+      <motion.footer
+        className="relative z-10 px-8 py-5 text-center"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1, duration: 0.5 }}
+      >
+        <p className="text-[11px] text-white/15">
+          Built with ❤️ for the people who build ApplyWizz
         </p>
-      </footer>
+      </motion.footer>
     </div>
   );
 }
 
-/* ── Shared UI pieces ── */
-
-function Label({ children }) {
-  return <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1">{children}</label>;
-}
-
-function Input({ className = '', ...props }) {
-  return (
-    <input
-      {...props}
-      className={`w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand transition-shadow ${className}`}
-    />
-  );
-}
-
-function Btn({ busy, children }) {
-  return (
-    <button type="submit" disabled={busy}
-      className="w-full bg-brand hover:bg-brand/90 active:scale-[0.98] text-white text-sm font-semibold py-3 rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2">
-      {busy && <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />}
-      {children}
-    </button>
-  );
-}
-
+/* ── Shared UI ── */
 function Msg({ text }) {
   const ok = text.startsWith('✅');
   return (
-    <div className={`text-xs px-4 py-2.5 rounded-xl border leading-relaxed ${
-      ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-100'
-    }`}>{text}</div>
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`text-xs px-4 py-2.5 rounded-xl border leading-relaxed backdrop-blur-sm ${
+        ok
+          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+          : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+      }`}
+    >
+      {text}
+    </motion.div>
   );
 }
