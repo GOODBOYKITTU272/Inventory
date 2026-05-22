@@ -124,7 +124,7 @@ router.post('/', async (req, res, next) => {
       // ── Stock check & decrement ───────────────────────────────────
       const { data: itemRow } = await supabaseAdmin
         .from('cafeteria_items')
-        .select('id, stock_today, stock_servings, dependencies, sides_option')
+        .select('id, stock_today, stock_servings, dependencies, sides_option, serving_grams')
         .ilike('item_name', quick_item)
         .maybeSingle();
 
@@ -195,7 +195,7 @@ router.post('/', async (req, res, next) => {
 
           const { data: depItem } = await supabaseAdmin
             .from('cafeteria_items')
-            .select('id, stock_today, stock_servings, display_name, item_name')
+            .select('id, stock_today, stock_servings, display_name, item_name, serving_grams, category')
             .ilike('item_name', lookupName)
             .maybeSingle();
 
@@ -203,21 +203,26 @@ router.post('/', async (req, res, next) => {
 
           const depStock = depItem.stock_today;
           const depServings = depItem.stock_servings;
-          const neededServings = qty * sidesMultiplier;
+          // For bread: deduct slices (1 slice per side × qty)
+          // For spreads: deduct grams (serving_grams per side × qty)
+          const gramsBased = depItem.serving_grams && depItem.serving_grams > 0;
+          const neededServings = gramsBased
+            ? qty * sidesMultiplier * depItem.serving_grams  // grams: 20g × 2 sides × 1 qty = 40g
+            : qty * sidesMultiplier;                         // slices: 1 × 2 sides × 1 qty = 2
 
           // Check servings first, then raw stock
           if (depServings !== null && depServings < neededServings) {
-            const displayDep = depItem.display_name || depItem.item_name;
+            const displayDep = depItem.display_name || depItem.frontend_name || depItem.item_name;
             return res.status(400).json({ error: getDependencyMessage(userTone, quick_item, displayDep) });
           }
           if (depStock !== null && depStock <= 0) {
-            const displayDep = depItem.display_name || depItem.item_name;
+            const displayDep = depItem.display_name || depItem.frontend_name || depItem.item_name;
             return res.status(400).json({ error: getDependencyMessage(userTone, quick_item, displayDep) });
           }
 
-          // Decrement dependency stock (slices for bread)
+          // Decrement dependency stock
           const depUpdate = {};
-          if (depStock !== null) depUpdate.stock_today = depStock - (qty * sidesMultiplier);
+          if (depStock !== null && !gramsBased) depUpdate.stock_today = depStock - (qty * sidesMultiplier);
           if (depServings !== null) depUpdate.stock_servings = depServings - neededServings;
           if (Object.keys(depUpdate).length > 0) {
             await supabaseAdmin.from('cafeteria_items').update(depUpdate).eq('id', depItem.id);
@@ -227,7 +232,11 @@ router.post('/', async (req, res, next) => {
 
       // Also decrement servings on the main item if tracked
       if (itemRow?.stock_servings !== null && itemRow?.stock_servings !== undefined) {
-        const mainServingsUsed = qty * sidesMultiplier;
+        // For gram-based items (spreads): deduct serving_grams per side
+        const mainGramBased = itemRow.serving_grams && itemRow.serving_grams > 0;
+        const mainServingsUsed = mainGramBased
+          ? qty * sidesMultiplier * itemRow.serving_grams
+          : qty * sidesMultiplier;
         const newServings = (itemRow.stock_servings || 0) - mainServingsUsed;
         await supabaseAdmin
           .from('cafeteria_items')
@@ -452,14 +461,21 @@ router.patch(
 
         const { data: itemRow } = await supabaseAdmin
           .from('cafeteria_items')
-          .select('id, stock_today, stock_servings, dependencies, sides_option')
+          .select('id, stock_today, stock_servings, dependencies, sides_option, serving_grams')
           .ilike('item_name', data.parsed_item)
           .maybeSingle();
 
-        if (itemRow && itemRow.stock_today !== null) {
-          const restore = { stock_today: itemRow.stock_today + cancelQty };
-          if (itemRow.stock_servings !== null) restore.stock_servings = (itemRow.stock_servings || 0) + (cancelQty * sidesM);
-          await supabaseAdmin.from('cafeteria_items').update(restore).eq('id', itemRow.id);
+        if (itemRow) {
+          const gramsBased = itemRow.serving_grams && itemRow.serving_grams > 0;
+          const restoreAmount = gramsBased
+            ? cancelQty * sidesM * itemRow.serving_grams
+            : cancelQty * sidesM;
+          const restore = {};
+          if (itemRow.stock_today !== null && !gramsBased) restore.stock_today = (itemRow.stock_today || 0) + cancelQty;
+          if (itemRow.stock_servings !== null) restore.stock_servings = (itemRow.stock_servings || 0) + restoreAmount;
+          if (Object.keys(restore).length > 0) {
+            await supabaseAdmin.from('cafeteria_items').update(restore).eq('id', itemRow.id);
+          }
         }
 
         // Restore dependency stock (e.g., Bread when Jam cancelled)
@@ -472,13 +488,17 @@ router.patch(
             const lookupName = (depName.toLowerCase() === 'bread' && staffBreadType) ? staffBreadType : depName;
             const { data: depItem } = await supabaseAdmin
               .from('cafeteria_items')
-              .select('id, stock_today, stock_servings')
+              .select('id, stock_today, stock_servings, serving_grams')
               .ilike('item_name', lookupName)
               .maybeSingle();
             if (depItem) {
               const depRestore = {};
-              if (depItem.stock_today !== null) depRestore.stock_today = (depItem.stock_today || 0) + (cancelQty * sidesM);
-              if (depItem.stock_servings !== null) depRestore.stock_servings = (depItem.stock_servings || 0) + (cancelQty * sidesM);
+              const gramsBased = depItem.serving_grams && depItem.serving_grams > 0;
+              const restoreAmount = gramsBased
+                ? cancelQty * sidesM * depItem.serving_grams   // grams: qty × sides × grams_per_serving
+                : cancelQty * sidesM;                          // slices/units
+              if (depItem.stock_today !== null && !gramsBased) depRestore.stock_today = (depItem.stock_today || 0) + restoreAmount;
+              if (depItem.stock_servings !== null) depRestore.stock_servings = (depItem.stock_servings || 0) + restoreAmount;
               if (Object.keys(depRestore).length > 0) {
                 await supabaseAdmin.from('cafeteria_items').update(depRestore).eq('id', depItem.id);
               }
@@ -570,14 +590,21 @@ router.post('/:id/cancel', async (req, res, next) => {
 
       const { data: itemRow } = await supabaseAdmin
         .from('cafeteria_items')
-        .select('id, stock_today, stock_servings, dependencies, sides_option')
+        .select('id, stock_today, stock_servings, dependencies, sides_option, serving_grams')
         .ilike('item_name', order.parsed_item)
         .maybeSingle();
 
-      if (itemRow && itemRow.stock_today !== null) {
-        const restore = { stock_today: itemRow.stock_today + cancelQty };
-        if (itemRow.stock_servings !== null) restore.stock_servings = (itemRow.stock_servings || 0) + (cancelQty * sidesM);
-        await supabaseAdmin.from('cafeteria_items').update(restore).eq('id', itemRow.id);
+      if (itemRow) {
+        const gramsBased = itemRow.serving_grams && itemRow.serving_grams > 0;
+        const restoreAmount = gramsBased
+          ? cancelQty * sidesM * itemRow.serving_grams
+          : cancelQty * sidesM;
+        const restore = {};
+        if (itemRow.stock_today !== null && !gramsBased) restore.stock_today = (itemRow.stock_today || 0) + cancelQty;
+        if (itemRow.stock_servings !== null) restore.stock_servings = (itemRow.stock_servings || 0) + restoreAmount;
+        if (Object.keys(restore).length > 0) {
+          await supabaseAdmin.from('cafeteria_items').update(restore).eq('id', itemRow.id);
+        }
       }
 
       // Restore dependency stock (e.g., Bread when Jam cancelled)
@@ -590,13 +617,17 @@ router.post('/:id/cancel', async (req, res, next) => {
           const lookupName = (depName.toLowerCase() === 'bread' && cancelBreadType) ? cancelBreadType : depName;
           const { data: depItem } = await supabaseAdmin
             .from('cafeteria_items')
-            .select('id, stock_today, stock_servings')
+            .select('id, stock_today, stock_servings, serving_grams')
             .ilike('item_name', lookupName)
             .maybeSingle();
           if (depItem) {
             const depRestore = {};
-            if (depItem.stock_today !== null) depRestore.stock_today = (depItem.stock_today || 0) + (cancelQty * sidesM);
-            if (depItem.stock_servings !== null) depRestore.stock_servings = (depItem.stock_servings || 0) + (cancelQty * sidesM);
+            const depGramsBased = depItem.serving_grams && depItem.serving_grams > 0;
+            const depRestoreAmount = depGramsBased
+              ? cancelQty * sidesM * depItem.serving_grams
+              : cancelQty * sidesM;
+            if (depItem.stock_today !== null && !depGramsBased) depRestore.stock_today = (depItem.stock_today || 0) + cancelQty;
+            if (depItem.stock_servings !== null) depRestore.stock_servings = (depItem.stock_servings || 0) + depRestoreAmount;
             if (Object.keys(depRestore).length > 0) {
               await supabaseAdmin.from('cafeteria_items').update(depRestore).eq('id', depItem.id);
             }

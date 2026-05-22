@@ -239,13 +239,17 @@ function ActiveOrderBanner({ order, onPress }) {
 function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, breadAvailable }) {
   const inCart = qty > 0;
   const blockedByBread = needsBread && !breadAvailable;
+  // Use frontend_name > display_name > item_name (cleanest name first)
+  const displayName = item.frontend_name || item.display_name || item.item_name;
+  const cal = item.calories_per_serving;
 
   if (blockedByBread) {
     return (
       <div className="relative rounded-2xl border-2 border-amber-100 bg-amber-50/60 p-3 flex flex-col gap-2 opacity-70">
         <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
         <div className="text-center">
-          <div className="text-xs font-bold text-slate-500 leading-tight">{item.display_name || item.item_name}</div>
+          <div className="text-xs font-bold text-slate-500 leading-tight">{displayName}</div>
+          {cal > 0 && <div className="text-[9px] text-slate-400 mt-0.5">🔥 {cal} cal</div>}
           <div className="text-[10px] text-amber-600 font-bold mt-1">🍞 Needs bread</div>
         </div>
       </div>
@@ -258,7 +262,7 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, br
       <div className="relative rounded-2xl border-2 border-rose-100 bg-rose-50/60 p-3 flex flex-col gap-2 opacity-70">
         <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
         <div className="text-center">
-          <div className="text-xs font-bold text-slate-500 leading-tight">{item.display_name || item.item_name}</div>
+          <div className="text-xs font-bold text-slate-500 leading-tight">{displayName}</div>
           <div className="text-[10px] text-rose-500 font-bold mt-1">{msg}</div>
         </div>
       </div>
@@ -275,7 +279,8 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, br
     >
       <div className="text-2xl text-center">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
       <div className="text-center">
-        <div className="text-xs font-bold text-slate-700 leading-tight">{item.display_name || item.item_name}</div>
+        <div className="text-xs font-bold text-slate-700 leading-tight">{displayName}</div>
+        {cal > 0 && <div className="text-[9px] text-slate-400 mt-0.5">🔥 {cal} cal</div>}
         {item.description && (
           <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{item.description}</div>
         )}
