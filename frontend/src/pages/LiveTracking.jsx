@@ -38,6 +38,14 @@ const STAGES = [
     ring:    'ring-amber-400',
   },
   {
+    id:      'ready_for_pickup',
+    emoji:   '🏃',
+    label:   'Ready for Pickup!',
+    sub:     'Come collect from the pantry counter 📣',
+    color:   'bg-teal-50 text-teal-600',
+    ring:    'ring-teal-400',
+  },
+  {
     id:      'on_the_way',
     emoji:   '🛵',
     label:   'On the Way',

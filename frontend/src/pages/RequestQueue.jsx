@@ -3,17 +3,19 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 
 const STATUS_LABEL = {
-  pending:     'Pending',
-  in_progress: 'In progress',
-  done:        'Done',
-  cancelled:   'Cancelled',
+  pending:          'Pending',
+  in_progress:      'In progress',
+  done:             'Done',
+  cancelled:        'Cancelled',
+  ready_for_pickup: 'Ready for Pickup',
 };
 
 const STATUS_TONE = {
-  pending:     'bg-amber-100 text-amber-800',
-  in_progress: 'bg-blue-100 text-blue-800',
-  done:        'bg-emerald-100 text-emerald-800',
-  cancelled:   'bg-slate-100 text-slate-600',
+  pending:          'bg-amber-100 text-amber-800',
+  in_progress:      'bg-blue-100 text-blue-800',
+  done:             'bg-emerald-100 text-emerald-800',
+  cancelled:        'bg-slate-100 text-slate-600',
+  ready_for_pickup: 'bg-teal-100 text-teal-800',
 };
 
 function timeAgo(ts) {
@@ -24,7 +26,20 @@ function timeAgo(ts) {
   return `${Math.floor(sec / 86400)}d ago`;
 }
 
-
+function DeliveryBadge({ mode }) {
+  if (!mode || mode === 'get_it_here') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+        🛵 DELIVER
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">
+      🏃 SELF PICK
+    </span>
+  );
+}
 
 export default function RequestQueue() {
   const { profile } = useAuth();
@@ -100,8 +115,6 @@ export default function RequestQueue() {
         </div>
       </div>
 
-
-
       {err && <div className="text-sm text-rose-700 bg-rose-50 p-3 rounded-md">{err}</div>}
 
       {rows.length === 0 ? (
@@ -110,70 +123,118 @@ export default function RequestQueue() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {rows.map((r) => (
-            <div key={r.id} className="card">
-              <div className="flex items-center justify-between mb-2">
-                <span className={`pill ${STATUS_TONE[r.status]}`}>{STATUS_LABEL[r.status]}</span>
-                <span className="text-xs text-slate-400">{timeAgo(r.created_at)}</span>
-              </div>
-              <div className="text-base font-semibold text-slate-900">
-                {r.parsed_item || 'Request'}
-                {r.parsed_location && <span className="text-slate-500 font-normal"> · {r.parsed_location}</span>}
-              </div>
-              <div className="text-sm text-slate-600 mt-1">{r.instruction}</div>
-              <div className="text-xs text-slate-400 mt-2">
-                From: <span className="text-slate-600">{r.submitter_name || r.parsed_employee_name || '—'}</span>
-              </div>
+          {rows.map((r) => {
+            const isSelfPickup = r.delivery_mode === 'self_pickup';
+            const displayStatus = r.live_status === 'ready_for_pickup' ? 'ready_for_pickup'
+              : r.status;
 
-              {isStaff && r.status !== 'done' && r.status !== 'cancelled' && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {r.status === 'pending' && (
-                    <button
-                      className="btn-primary text-xs px-3 py-1.5"
-                      disabled={busy[r.id]}
-                      onClick={() => setStatus(r.id, 'in_progress', 'accepted')}
-                    >
-                      Accept
-                    </button>
-                  )}
-                  {r.status === 'in_progress' && r.live_status === 'accepted' && (
-                    <button
-                      className="btn-primary text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-700"
-                      disabled={busy[r.id]}
-                      onClick={() => setStatus(r.id, 'in_progress', 'preparing')}
-                    >
-                      Preparing
-                    </button>
-                  )}
-                  {r.status === 'in_progress' && r.live_status === 'preparing' && (
-                    <button
-                      className="btn-primary text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700"
-                      disabled={busy[r.id]}
-                      onClick={() => setStatus(r.id, 'in_progress', 'on_the_way')}
-                    >
-                      On the Way
-                    </button>
-                  )}
-                  {(r.status === 'in_progress') && (
-                    <button
-                      className="btn-primary text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700"
-                      disabled={busy[r.id]}
-                      onClick={() => setStatus(r.id, 'done', 'done')}
-                    >
-                      Mark Done
-                    </button>
-                  )}
-                  <button
-                    className="btn-secondary text-xs px-3 py-1.5"
-                    disabled={busy[r.id]}
-                    onClick={() => setStatus(r.id, 'cancelled', 'cancelled')}
-                  >
-                    Cancel
-                  </button>
+            return (
+              <div key={r.id} className="card">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`pill ${STATUS_TONE[displayStatus] || STATUS_TONE[r.status]}`}>
+                      {STATUS_LABEL[displayStatus] || STATUS_LABEL[r.status]}
+                    </span>
+                    <DeliveryBadge mode={r.delivery_mode} />
+                  </div>
+                  <span className="text-xs text-slate-400">{timeAgo(r.created_at)}</span>
                 </div>
-              )}
-            </div>
-          ))}
+
+                <div className="text-base font-semibold text-slate-900">
+                  {r.parsed_item || 'Request'}
+                  {!isSelfPickup && r.parsed_location && (
+                    <span className="text-slate-500 font-normal"> · {r.parsed_location}</span>
+                  )}
+                  {isSelfPickup && (
+                    <span className="text-teal-500 font-normal text-sm"> · Pantry Counter</span>
+                  )}
+                </div>
+                <div className="text-sm text-slate-600 mt-1">{r.instruction}</div>
+                <div className="text-xs text-slate-400 mt-2">
+                  From: <span className="text-slate-600">{r.submitter_name || r.parsed_employee_name || '—'}</span>
+                </div>
+
+                {isStaff && r.status !== 'done' && r.status !== 'cancelled' && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+
+                    {/* Accept pending */}
+                    {r.status === 'pending' && (
+                      <button
+                        className="btn-primary text-xs px-3 py-1.5"
+                        disabled={busy[r.id]}
+                        onClick={() => setStatus(r.id, 'in_progress', 'accepted')}
+                      >
+                        Accept
+                      </button>
+                    )}
+
+                    {/* Preparing */}
+                    {r.status === 'in_progress' && r.live_status === 'accepted' && (
+                      <button
+                        className="btn-primary text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-700"
+                        disabled={busy[r.id]}
+                        onClick={() => setStatus(r.id, 'in_progress', 'preparing')}
+                      >
+                        Preparing
+                      </button>
+                    )}
+
+                    {/* On the way (only for delivery orders) OR Mark as Ready (for self-pickup) */}
+                    {r.status === 'in_progress' && r.live_status === 'preparing' && (
+                      isSelfPickup ? (
+                        <button
+                          className="btn-primary text-xs px-3 py-1.5 bg-teal-600 hover:bg-teal-700"
+                          disabled={busy[r.id]}
+                          onClick={() => setStatus(r.id, 'in_progress', 'ready_for_pickup')}
+                        >
+                          ✅ Mark as Ready
+                        </button>
+                      ) : (
+                        <button
+                          className="btn-primary text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700"
+                          disabled={busy[r.id]}
+                          onClick={() => setStatus(r.id, 'in_progress', 'on_the_way')}
+                        >
+                          On the Way
+                        </button>
+                      )
+                    )}
+
+                    {/* Mark as Collected (self-pickup after ready) */}
+                    {r.status === 'in_progress' && r.live_status === 'ready_for_pickup' && (
+                      <button
+                        className="btn-primary text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700"
+                        disabled={busy[r.id]}
+                        onClick={() => setStatus(r.id, 'done', 'done')}
+                      >
+                        ✓ Mark as Collected
+                      </button>
+                    )}
+
+                    {/* Mark Done (delivery orders) */}
+                    {r.status === 'in_progress' && !isSelfPickup && r.live_status === 'on_the_way' && (
+                      <button
+                        className="btn-primary text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700"
+                        disabled={busy[r.id]}
+                        onClick={() => setStatus(r.id, 'done', 'done')}
+                      >
+                        Mark Done
+                      </button>
+                    )}
+
+                    {/* Cancel always available */}
+                    <button
+                      className="btn-secondary text-xs px-3 py-1.5"
+                      disabled={busy[r.id]}
+                      onClick={() => setStatus(r.id, 'cancelled', 'cancelled')}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

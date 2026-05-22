@@ -129,17 +129,20 @@ router.post('/', async (req, res, next) => {
       }
 
       const breadPart = quick_bread_type ? ` [bread:${quick_bread_type}]` : '';
+      const deliveryMode = ['get_it_here', 'self_pickup'].includes(req.body.delivery_mode)
+        ? req.body.delivery_mode : 'get_it_here';
       const { data: qData, error: qErr } = await supabaseAdmin
         .from('requests')
         .insert({
           raw_text:              `${qty}x ${quick_item}${locPart}${breadPart}`,
           category,
           parsed_item:           quick_item,
-          parsed_location:       quick_location || null,
+          parsed_location:       deliveryMode === 'self_pickup' ? null : (quick_location || null),
           instruction,
           submitted_by:          req.user.id,
           live_status:           'confirming',
           status:                'confirming',
+          delivery_mode:         deliveryMode,
         })
         .select()
         .single();
@@ -358,6 +361,7 @@ router.patch(
       if (live_status === 'accepted')    update.accepted_at = new Date().toISOString();
       if (live_status === 'preparing')   update.started_at = new Date().toISOString();
       if (live_status === 'on_the_way')  update.on_the_way_at = new Date().toISOString();
+      if (live_status === 'ready_for_pickup') update.started_at = update.started_at || new Date().toISOString();
       if (status === 'done') {
         update.fulfilled_by = req.user.id;
         update.fulfilled_at = new Date().toISOString();
@@ -426,11 +430,12 @@ router.patch(
         const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
         const PUSH_MESSAGES = {
-          accepted:   { title: '✅ Order Accepted!',      body: `${item} has been accepted and is being prepared.` },
-          preparing:  { title: '☕ Being Prepared!',       body: `${item} is being made right now.` },
-          on_the_way: { title: '🛵 On the Way!',           body: `${item} is heading to you now!` },
-          done:       { title: '🎉 Delivered!',            body: pick(DELIVERY_QUOTES[userTone] || DELIVERY_QUOTES.Friendly) },
-          cancelled:  { title: '❌ Order Cancelled',       body: `${item} was cancelled. You can place a new order anytime.` },
+          accepted:          { title: '✅ Order Accepted!',       body: `${item} has been accepted and is being prepared.` },
+          preparing:         { title: '☕ Being Prepared!',        body: `${item} is being made right now.` },
+          on_the_way:        { title: '🛵 On the Way!',            body: `${item} is heading to you now!` },
+          ready_for_pickup:  { title: '🏃 Ready for Pickup!',     body: `${item} is ready at the pantry counter. Come grab it! 🎉` },
+          done:              { title: '🎉 Delivered!',             body: pick(DELIVERY_QUOTES[userTone] || DELIVERY_QUOTES.Friendly) },
+          cancelled:         { title: '❌ Order Cancelled',        body: `${item} was cancelled. You can place a new order anytime.` },
         };
 
         const msg = PUSH_MESSAGES[effectiveStatus];

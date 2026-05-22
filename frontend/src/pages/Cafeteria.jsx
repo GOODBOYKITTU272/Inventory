@@ -746,11 +746,14 @@ function getCartItemCalories(item, qty, customNote) {
   return qty * (item.calories_per_serving || 0);
 }
 
-function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, savedLocation, onRemoveItem, onUpdateQty, itemPrefs, queueAhead }) {
-  // Auto-fill saved location (Zomato style) — unless "Ask Every Time"
-  const autoFill = savedLocation && savedLocation !== 'Ask Every Time' ? savedLocation : '';
+function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, savedLocation, onRemoveItem, onUpdateQty, itemPrefs, queueAhead, selfPickupDay, deliveryMode, onDeliveryModeChange }) {
+  // On leave days → force self-pickup
+  const effectiveMode = selfPickupDay?.is_self_pickup_day ? 'self_pickup' : deliveryMode;
+
+  // Auto-fill saved location (Zomato style) — unless "Ask Every Time" or self-pickup
+  const autoFill = (effectiveMode !== 'self_pickup' && savedLocation && savedLocation !== 'Ask Every Time') ? savedLocation : '';
   const [location, setLocation] = useState(autoFill);
-  const [showLocationPicker, setShowLocationPicker] = useState(!autoFill);
+  const [showLocationPicker, setShowLocationPicker] = useState(!autoFill && effectiveMode !== 'self_pickup');
   const [note,     setNote]     = useState('');
 
   const cartItems = Object.entries(cart)
@@ -826,6 +829,43 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
           })}
         </div>
 
+        {/* Delivery Mode Toggle */}
+        <div className="mb-4">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+            🚚 Delivery mode
+          </label>
+          {selfPickupDay?.is_self_pickup_day ? (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-orange-50 border border-orange-200">
+              <span className="text-base">🏃</span>
+              <span className="text-xs font-bold text-orange-700">
+                Self-pickup only — {selfPickupDay.message}
+              </span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {[{ value: 'get_it_here', label: '🛵 Get it here', sub: 'Office boy delivers' },
+                { value: 'self_pickup', label: '🏃 I\'ll pick it up', sub: 'Collect from pantry' }].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onDeliveryModeChange?.(opt.value)}
+                  className={`flex flex-col items-center p-3 rounded-xl border-2 font-semibold text-xs transition-all ${
+                    effectiveMode === opt.value
+                      ? 'bg-brand text-white border-brand shadow-md shadow-brand/20'
+                      : 'bg-white text-slate-600 border-slate-100 hover:border-brand/30'
+                  }`}
+                >
+                  <span className="text-base mb-0.5">{opt.label.split(' ')[0]}</span>
+                  <span>{opt.label.split(' ').slice(1).join(' ')}</span>
+                  <span className={`text-[10px] mt-0.5 font-normal ${
+                    effectiveMode === opt.value ? 'text-white/70' : 'text-slate-400'
+                  }`}>{opt.sub}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* ETA */}
         <div className="flex items-center gap-2 mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
           <Timer size={14} className="text-emerald-600 shrink-0" />
@@ -835,7 +875,8 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
           </span>
         </div>
 
-        {/* Location — auto-filled from preferences (Zomato style) */}
+        {/* Location — hidden for self-pickup orders */}
+        {effectiveMode !== 'self_pickup' && (
         <div className="mb-4">
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
             Deliver to <span className="text-rose-400">*</span>
@@ -874,6 +915,7 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
             </div>
           )}
         </div>
+        )}{/* end self-pickup hide */}
 
         {/* Extra note */}
         <div className="mb-4">
@@ -901,8 +943,8 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
         </div>
 
         <button
-          disabled={!location || busy}
-          onClick={() => onConfirm({ location, note, cartItems })}
+          disabled={effectiveMode !== 'self_pickup' && !location || busy}
+          onClick={() => onConfirm({ location: effectiveMode === 'self_pickup' ? 'Pantry Counter' : location, note, cartItems, delivery_mode: effectiveMode })}
           className="w-full h-12 bg-brand text-white rounded-2xl font-bold text-sm shadow-lg shadow-brand/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
         >
           {busy
@@ -927,6 +969,8 @@ export default function Cafeteria() {
   const [cart,         setCart]         = useState({});     // { [id]: qty }
   const [customizations, setCustomizations] = useState({}); // { [id]: 'instruction text' }
   const [itemPrefs,    setItemPrefs]    = useState({});     // { [item_name_lower]: { slices, toast } }
+  const [deliveryMode, setDeliveryMode] = useState('get_it_here'); // 'get_it_here' | 'self_pickup'
+  const [selfPickupDay, setSelfPickupDay] = useState(null); // null or { is_self_pickup_day, ob_name, message }
   const [customTarget, setCustomTarget] = useState(null);   // item being customized
   const [showSheet,    setShowSheet]    = useState(false);
   const [loading,      setLoading]      = useState(true);
@@ -965,11 +1009,13 @@ export default function Cafeteria() {
 
   const load = useCallback(async () => {
     try {
-      const [itemsData, requestsData] = await Promise.all([
+      const [itemsData, requestsData, pickupStatus] = await Promise.all([
         api.cafeteriaItems(),
         api.listRequests(),
+        api.selfPickupStatus().catch(() => ({ is_self_pickup_day: false })),
       ]);
       setItems(itemsData || []);
+      setSelfPickupDay(pickupStatus);
 
       const active = (requestsData || []).filter(
         (r) => ['confirming', 'pending', 'in_progress'].includes(r.status)
@@ -1120,7 +1166,8 @@ export default function Cafeteria() {
   }
 
   // ── Place order ─────────────────────────────────────────────────────────────
-  async function placeOrder({ location, note, cartItems }) {
+  async function handleConfirmOrder({ location, note, cartItems, delivery_mode }) {
+    setShowSheet(false);
     setOrderBusy(true);
     setErrorMsg('');
     try {
@@ -1130,10 +1177,11 @@ export default function Cafeteria() {
         const breadType = customizations[`${item.id}__bread`] || '';
         const r = await api.quickOrder({
           quick_item:        item.item_name,
-          quick_location:    location,
+          quick_location:    delivery_mode === 'self_pickup' ? null : location,
           quick_quantity:    qty,
           quick_instruction: instruction,
           quick_bread_type:  breadType,
+          delivery_mode:     delivery_mode,
         });
         lastReq = r?.request;
       }
@@ -1249,7 +1297,20 @@ export default function Cafeteria() {
         <p className="text-slate-500 text-sm mt-1">What can we get you today?</p>
       </div>
 
-      {/* ── Preferences Summary (Quick Order chips) ── */}
+      {/* ── Self-Pickup Day Banner ── */}
+      {selfPickupDay?.is_self_pickup_day && (
+        <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4 flex items-start gap-3">
+          <span className="text-2xl shrink-0">🏖</span>
+          <div>
+            <div className="font-extrabold text-orange-800 text-sm">
+              {selfPickupDay.ob_name || 'Office Boy'} is on leave today
+            </div>
+            <div className="text-xs text-orange-600 mt-0.5">
+              All orders are self-pickup from pantry. Prep times still apply!
+            </div>
+          </div>
+        </div>
+      )}
       <PreferencesSummary
         prefs={itemPrefs}
         location={savedLocation}
@@ -1505,13 +1566,16 @@ export default function Cafeteria() {
             customizations={customizations}
             items={items}
             onClose={() => { setShowSheet(false); if (Object.keys(cart).length === 0) setCart({}); }}
-            onConfirm={placeOrder}
+            onConfirm={handleConfirmOrder}
             busy={orderBusy}
             savedLocation={savedLocation}
             onRemoveItem={deleteFromCart}
             onUpdateQty={updateCartQty}
             itemPrefs={itemPrefs}
             queueAhead={queueAhead}
+            selfPickupDay={selfPickupDay}
+            deliveryMode={selfPickupDay?.is_self_pickup_day ? 'self_pickup' : deliveryMode}
+            onDeliveryModeChange={setDeliveryMode}
           />
         )}
       </AnimatePresence>

@@ -111,3 +111,18 @@ export async function postStockAlertToTeams(item) {
 
 // ── Backward compat — keep old name working ──────────────────────────────────
 export const postRequestToTeams = postOrderToTeams;
+
+// ── OB Leave Alert ─────────────────────────────────────────────────────────────────
+export async function postLeaveAlertToTeams({ ob_name, leave_date, leave_type, half_day_slot, reason }) {
+  const dateLabel = new Date(leave_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const slotLabel = leave_type === 'full_day' ? 'Full Day' : `Half Day — ${half_day_slot === 'morning' ? 'Morning (9am–1pm)' : 'Afternoon (1pm–5pm)'}`;
+  return postToPA({
+    event_type:    'ob_leave_alert',
+    ob_name,
+    leave_date:    dateLabel,
+    leave_type:    slotLabel,
+    reason:        reason || 'Not specified',
+    message:       `${ob_name} is on leave — Cafeteria switches to Self-Pickup mode for that slot`,
+    time:          istNow(),
+  });
+}

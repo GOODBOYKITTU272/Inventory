@@ -70,10 +70,14 @@ export const api = {
   updateBillStatus: (id, body) => request(`/api/bills/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // Cafeteria
-  cafeteriaItems:  ()     => request('/api/cafeteria/items'),
-  quickOrder:      (body) => request('/api/requests', { method: 'POST', body: JSON.stringify(body) }),
-  addCafeteriaItem:(body) => request('/api/cafeteria/items', { method: 'POST', body: JSON.stringify(body) }),
+  cafeteriaItems:    ()     => request('/api/cafeteria/items'),
+  quickOrder:        (body) => request('/api/requests', { method: 'POST', body: JSON.stringify(body) }),
+  addCafeteriaItem:  (body) => request('/api/cafeteria/items', { method: 'POST', body: JSON.stringify(body) }),
   updateCafeteriaItem: (id, body) => request(`/api/cafeteria/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  selfPickupStatus:  ()     => request('/api/cafeteria/self-pickup-status'),
+  applyOBLeave:      (body) => request('/api/cafeteria/ob-leave', { method: 'POST', body: JSON.stringify(body) }),
+  listOBLeave:       ()     => request('/api/cafeteria/ob-leave'),
+  cancelOBLeave:     (id)   => request(`/api/cafeteria/ob-leave/${id}`, { method: 'DELETE' }),
 
   // Meals
   mealOptions:    (date)    => request(`/api/meals/options?date=${date}`),

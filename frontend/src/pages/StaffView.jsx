@@ -7,6 +7,179 @@ const CATEGORY_EMOJI = {
   meal: '🍱', stationery: '📎', cleaning: '🧹', other: '📦',
 };
 
+// ── OB Leave Form ─────────────────────────────────────────────────────────────
+function OBLeaveSection({ userId }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [leaveDate,    setLeaveDate]    = useState(todayStr);
+  const [leaveType,    setLeaveType]    = useState('full_day');
+  const [halfSlot,     setHalfSlot]     = useState('morning');
+  const [reason,       setReason]       = useState('');
+  const [busy,         setBusy]         = useState(false);
+  const [success,      setSuccess]      = useState('');
+  const [err,          setErr]          = useState('');
+  const [leaves,       setLeaves]       = useState([]);
+
+  useEffect(() => {
+    api.listOBLeave().then(setLeaves).catch(() => {});
+  }, []);
+
+  async function apply(e) {
+    e.preventDefault();
+    setBusy(true); setErr(''); setSuccess('');
+    try {
+      await api.applyOBLeave({
+        leave_date:    leaveDate,
+        leave_type:    leaveType,
+        half_day_slot: leaveType === 'half_day' ? halfSlot : undefined,
+        reason:        reason || undefined,
+      });
+      const slotLabel = leaveType === 'full_day' ? 'Full Day'
+        : `Half Day — ${halfSlot === 'morning' ? 'Morning (9am–1pm)' : 'Afternoon (1pm–5pm)'}`;
+      setSuccess(`✅ Leave applied for ${new Date(leaveDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} (${slotLabel}). Leadership notified.`);
+      setReason('');
+      api.listOBLeave().then(setLeaves).catch(() => {});
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelLeave(id) {
+    if (!confirm('Cancel this leave?')) return;
+    try {
+      await api.cancelOBLeave(id);
+      setLeaves(l => l.filter(x => x.id !== id));
+    } catch (e) { alert(e.message); }
+  }
+
+  return (
+    <div className="card space-y-4">
+      <div>
+        <h2 className="font-bold text-slate-900 flex items-center gap-2">🏖 Apply Leave</h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Cafeteria switches to self-pickup mode automatically for that slot.
+        </p>
+      </div>
+
+      <form onSubmit={apply} className="space-y-3">
+        {/* Date */}
+        <div>
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Date</label>
+          <input
+            type="date"
+            value={leaveDate}
+            min={todayStr}
+            onChange={e => setLeaveDate(e.target.value)}
+            className="w-full border-2 border-slate-100 rounded-xl px-3 py-2 text-sm focus:border-brand focus:outline-none"
+          />
+        </div>
+
+        {/* Duration */}
+        <div>
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Duration</label>
+          <div className="grid grid-cols-2 gap-2">
+            {[{ v: 'full_day', l: '🌞 Full Day' }, { v: 'half_day', l: '🌤 Half Day' }].map(opt => (
+              <button
+                key={opt.v}
+                type="button"
+                onClick={() => setLeaveType(opt.v)}
+                className={`py-2 rounded-xl border-2 font-semibold text-sm transition-all ${
+                  leaveType === opt.v
+                    ? 'bg-brand text-white border-brand'
+                    : 'bg-white text-slate-600 border-slate-100 hover:border-brand/30'
+                }`}
+              >
+                {opt.l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Half day slot */}
+        {leaveType === 'half_day' && (
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Slot</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[{ v: 'morning', l: '🌅 Morning (9am–1pm)' }, { v: 'afternoon', l: '🌇 Afternoon (1pm–5pm)' }].map(opt => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setHalfSlot(opt.v)}
+                  className={`py-2 rounded-xl border-2 font-semibold text-xs transition-all ${
+                    halfSlot === opt.v
+                      ? 'bg-orange-500 text-white border-orange-500'
+                      : 'bg-white text-slate-600 border-slate-100 hover:border-orange-200'
+                  }`}
+                >
+                  {opt.l}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Reason */}
+        <div>
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Reason (optional)</label>
+          <input
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="e.g. Personal work, medical appointment…"
+            className="w-full border-2 border-slate-100 rounded-xl px-3 py-2 text-sm focus:border-brand focus:outline-none"
+          />
+        </div>
+
+        {/* Warning */}
+        <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-xs text-orange-700">
+          ⚠️ This will auto-switch cafeteria to <strong>Self-Pickup mode</strong> for that slot.
+          Leadership will be notified on Teams.
+        </div>
+
+        {err && <div className="text-xs text-rose-600 font-medium">{err}</div>}
+        {success && <div className="text-xs text-emerald-700 font-medium">{success}</div>}
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="w-full h-10 bg-brand text-white rounded-xl font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"
+        >
+          {busy ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Applying…</> : '🏖 Apply Leave & Notify'}
+        </button>
+      </form>
+
+      {/* Leave history */}
+      {leaves.length > 0 && (
+        <div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Recent Leaves</div>
+          <div className="space-y-2">
+            {leaves.slice(0, 5).map(l => (
+              <div key={l.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">
+                    {new Date(l.leave_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                    {' — '}{l.leave_type === 'full_day' ? 'Full Day' : `Half Day (${l.half_day_slot})`}
+                  </div>
+                  {l.reason && <div className="text-[10px] text-slate-400">{l.reason}</div>}
+                </div>
+                {l.leave_date >= new Date().toISOString().slice(0, 10) && (
+                  <button
+                    onClick={() => cancelLeave(l.id)}
+                    className="text-[10px] text-rose-500 font-bold hover:underline px-2"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function StaffView() {
   const { profile } = useAuth();
   const isStaff = ['office_boy', 'facility_manager', 'leadership'].includes(profile?.role);
@@ -84,6 +257,11 @@ export default function StaffView() {
 
   return (
     <div className="space-y-6">
+      {/* ── OB Leave Section ── */}
+      {profile?.role === 'office_boy' && (
+        <OBLeaveSection userId={profile.id} />
+      )}
+
       {/* ── Today's Cafeteria Stock (office boy controls) ── */}
       {isStaff && cafItems.length > 0 && (
         <div className="card space-y-4">
