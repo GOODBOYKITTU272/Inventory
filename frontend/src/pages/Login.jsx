@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase.js';
@@ -6,74 +6,11 @@ import { supabase } from '../lib/supabase.js';
 const ALLOWED_DOMAIN = 'applywizz.ai';
 const HIDDEN_PASSWORD = 'Applywizz@2026';
 
-/* ── Animation Variants ── */
-const fadeUp = {
-  hidden: { opacity: 0, y: 24 },
-  visible: (i = 0) => ({
-    opacity: 1, y: 0,
-    transition: { duration: 0.5, delay: i * 0.1, ease: [0.25, 0.46, 0.45, 0.94] },
-  }),
-};
-
-const stagger = {
-  visible: { transition: { staggerChildren: 0.08 } },
-};
-
-const pillPop = {
-  hidden: { opacity: 0, scale: 0.8 },
-  visible: (i) => ({
-    opacity: 1, scale: 1,
-    transition: { duration: 0.4, delay: 0.5 + i * 0.1, type: 'spring', stiffness: 200 },
-  }),
-};
-
-/* ── Floating decorative shapes ── */
-function FloatingElements() {
-  const items = [
-    { emoji: '☕', x: '12%', y: '18%', size: 'text-4xl', delay: 0 },
-    { emoji: '🍵', x: '85%', y: '14%', size: 'text-3xl', delay: 0.5 },
-    { emoji: '🥪', x: '8%',  y: '72%', size: 'text-3xl', delay: 1.0 },
-    { emoji: '🍪', x: '88%', y: '68%', size: 'text-2xl', delay: 1.5 },
-    { emoji: '🧃', x: '78%', y: '42%', size: 'text-2xl', delay: 0.8 },
-    { emoji: '🍌', x: '18%', y: '48%', size: 'text-2xl', delay: 1.2 },
-  ];
-
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-      {items.map((item, i) => (
-        <motion.span
-          key={i}
-          className={`absolute ${item.size} select-none`}
-          style={{ left: item.x, top: item.y }}
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{
-            opacity: 0.12,
-            scale: 1,
-            y: [0, -10, 0, 10, 0],
-          }}
-          transition={{
-            opacity: { duration: 0.6, delay: item.delay },
-            scale: { duration: 0.6, delay: item.delay },
-            y: { duration: 6, repeat: Infinity, ease: 'easeInOut', delay: item.delay },
-          }}
-        >
-          {item.emoji}
-        </motion.span>
-      ))}
-    </div>
-  );
-}
-
-/* ── Glowing orb background ── */
-function GlowOrbs() {
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-      <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[#29FE29]/[0.04] blur-[100px]" />
-      <div className="absolute -bottom-48 -right-32 w-[500px] h-[500px] rounded-full bg-[#2C76FF]/[0.06] blur-[120px]" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full bg-[#FFDE59]/[0.03] blur-[80px]" />
-    </div>
-  );
-}
+/* ── Simple fade-up animation ── */
+const fade = (delay = 0) => ({
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.5, delay, ease: 'easeOut' } },
+});
 
 export default function Login() {
   const navigate = useNavigate();
@@ -91,7 +28,7 @@ export default function Login() {
 
   const submitting = useRef(false);
 
-  // ── Step 1: Enter email ──
+  // ── Auth Logic (unchanged) ──────────────────────────────────
   async function submitEmail(e) {
     e.preventDefault();
     if (submitting.current) return;
@@ -282,49 +219,51 @@ export default function Login() {
     }
   }
 
-  /* ═══════════════════════════════════════════════════════════════
-     RENDER
-     ═══════════════════════════════════════════════════════════════ */
+  // ── RENDER ──────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#0B1D33] flex flex-col relative overflow-hidden"
-         style={{ fontFamily: "'Noto Sans', 'Inter', system-ui, sans-serif" }}>
-
-      <GlowOrbs />
-      <FloatingElements />
+    <div
+      className="min-h-[100dvh] flex flex-col relative overflow-hidden"
+      style={{
+        fontFamily: "'Noto Sans', 'Inter', system-ui, sans-serif",
+        background: 'linear-gradient(160deg, #0B1D33 0%, #0a1628 50%, #091220 100%)',
+      }}
+    >
+      {/* ── Ambient glow orbs ── */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+        <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full opacity-[0.07]"
+             style={{ background: 'radial-gradient(circle, #29FE29, transparent 70%)' }} />
+        <div className="absolute -bottom-60 -right-40 w-[600px] h-[600px] rounded-full opacity-[0.05]"
+             style={{ background: 'radial-gradient(circle, #2C76FF, transparent 70%)' }} />
+      </div>
 
       {/* ── Header ── */}
       <motion.header
-        className="relative z-10 px-6 sm:px-8 py-5 flex items-center justify-between"
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
+        className="relative z-10 px-5 sm:px-8 py-4 sm:py-5 flex items-center justify-between shrink-0"
+        {...fade(0)}
       >
-        <div className="flex items-center">
-          <img src="/logo.png" alt="ApplyWizz" className="h-9 object-contain" />
-        </div>
-        <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-white/30 font-medium">
+        <img src="/logo.png" alt="ApplyWizz" className="h-8 sm:h-9 object-contain" />
+        <div className="flex items-center gap-1.5 text-[11px] text-white/30 font-medium">
           <span className="w-1.5 h-1.5 rounded-full bg-[#29FE29] animate-pulse" />
-          Pantry Online
+          <span className="hidden sm:inline">Pantry Online</span>
         </div>
       </motion.header>
 
-      {/* ── Main Content ── */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 text-center">
+      {/* ── Main ── */}
+      <main className="relative z-10 flex-1 flex items-center justify-center px-5 sm:px-8 py-4">
         <AnimatePresence mode="wait">
 
           {/* ═══ STEP: Email ═══ */}
           {step === 'email' && (
             <motion.div
-              key="email-step"
-              className="w-full max-w-md"
-              initial="hidden"
-              animate="visible"
-              exit={{ opacity: 0, y: -20, transition: { duration: 0.3 } }}
-              variants={stagger}
+              key="email"
+              className="w-full max-w-[420px] text-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
             >
               {/* Badge */}
-              <motion.div variants={fadeUp} custom={0}
-                className="inline-flex items-center gap-2 bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] text-[#29FE29] text-xs font-semibold px-4 py-1.5 rounded-full mb-8 tracking-wide uppercase"
+              <motion.div {...fade(0.1)}
+                className="inline-flex items-center gap-2 bg-white/[0.06] border border-white/[0.08] text-[#29FE29] text-[11px] font-semibold px-4 py-1.5 rounded-full mb-6 sm:mb-8 tracking-wide uppercase"
                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-[#29FE29] animate-pulse" />
@@ -332,223 +271,157 @@ export default function Login() {
               </motion.div>
 
               {/* Headline */}
-              <motion.h1 variants={fadeUp} custom={1}
-                className="text-[2.8rem] sm:text-[3.5rem] font-extrabold text-white leading-[1.05] tracking-tight"
+              <motion.h1 {...fade(0.2)}
+                className="text-4xl sm:text-5xl lg:text-[3.5rem] font-extrabold text-white leading-[1.08] tracking-tight"
               >
                 Skip the queue.
                 <br />
-                <span className="relative inline-block">
-                  <span className="relative z-10">Not the</span>
-                </span>{' '}
-                <span className="relative inline-block">
-                  <span className="text-[#29FE29] relative z-10"
-                        style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>
-                    snack.
-                  </span>
-                  {/* Underline glow */}
-                  <span className="absolute -bottom-1 left-0 right-0 h-[3px] bg-[#29FE29]/40 rounded-full blur-[2px]" />
+                Not the{' '}
+                <span className="text-[#29FE29] inline-block"
+                      style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>
+                  snack.
                 </span>
               </motion.h1>
 
               {/* Subheadline */}
-              <motion.p variants={fadeUp} custom={2}
-                className="mt-5 text-white/50 text-[15px] sm:text-base max-w-sm mx-auto leading-relaxed"
+              <motion.p {...fade(0.3)}
+                className="mt-4 sm:mt-5 text-white/45 text-sm sm:text-[15px] max-w-xs sm:max-w-sm mx-auto leading-relaxed"
               >
                 One tap. Live tracking. Delivered to your desk.
-                <br className="hidden sm:block" />
                 {' '}The smartest pantry your office ever had.
               </motion.p>
 
               {/* Feature pills */}
-              <motion.div className="mt-7 flex flex-wrap justify-center gap-2.5"
-                initial="hidden" animate="visible"
-              >
+              <motion.div {...fade(0.4)} className="mt-5 sm:mt-7 flex flex-wrap justify-center gap-2">
                 {[
                   { icon: '⚡', label: '5-sec ordering', color: '#FFDE59' },
                   { icon: '📍', label: 'Live tracking',  color: '#2C76FF' },
                   { icon: '🍱', label: 'Meal booking',   color: '#29FE29' },
-                ].map(({ icon, label, color }, i) => (
-                  <motion.span
-                    key={label}
-                    variants={pillPop}
-                    custom={i}
-                    className="inline-flex items-center gap-1.5 bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] text-white/70 text-xs font-medium px-3.5 py-2 rounded-full select-none hover:bg-white/[0.1] transition-colors"
+                ].map(({ icon, label, color }) => (
+                  <span key={label}
+                    className="inline-flex items-center gap-1.5 bg-white/[0.05] border border-white/[0.08] text-white/60 text-[11px] font-medium px-3 py-1.5 rounded-full select-none"
                   >
                     <span>{icon}</span>
                     <span>{label}</span>
                     <span className="w-1 h-1 rounded-full" style={{ backgroundColor: color }} />
-                  </motion.span>
+                  </span>
                 ))}
               </motion.div>
 
               {/* Login Form */}
-              <motion.form
-                variants={fadeUp} custom={4}
+              <motion.form {...fade(0.5)}
                 onSubmit={submitEmail}
-                className="mt-10 w-full max-w-xs mx-auto space-y-3 text-left"
+                className="mt-8 sm:mt-10 w-full max-w-xs mx-auto space-y-3 text-left"
               >
-                <label className="block text-[11px] font-semibold text-white/30 uppercase tracking-widest mb-1"
+                <label className="block text-[11px] font-semibold text-white/25 uppercase tracking-widest mb-1"
                        style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                   Work email
                 </label>
-                <div className="relative">
-                  <input
-                    type="email" required autoFocus autoComplete="email"
-                    placeholder={`you@${ALLOWED_DOMAIN}`}
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-white/[0.07] backdrop-blur-sm border border-white/[0.12] rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/25 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/30 focus:border-[#29FE29]/50 transition-all"
-                  />
-                </div>
+                <input
+                  type="email" required autoFocus autoComplete="email"
+                  placeholder={`you@${ALLOWED_DOMAIN}`}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-white/[0.06] border border-white/[0.1] rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/25 focus:border-[#29FE29]/40 transition-all"
+                />
                 {err && <Msg text={err} />}
                 <button type="submit" disabled={busy}
-                  className="w-full bg-[#29FE29] hover:bg-[#24E025] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
+                  className="w-full bg-[#29FE29] hover:bg-[#22e622] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
                   style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                 >
-                  {busy && <div className="w-4 h-4 rounded-full border-2 border-[#0B1D33]/30 border-t-[#0B1D33] animate-spin" />}
+                  {busy && <Spinner dark />}
                   {busy ? 'Checking…' : 'Continue →'}
                 </button>
-                <p className="text-[11px] text-white/20 text-center pt-1">
+                <p className="text-[11px] text-white/15 text-center pt-1">
                   Sign in with your @applywizz.ai email + Microsoft Authenticator
                 </p>
               </motion.form>
             </motion.div>
           )}
 
-          {/* ═══ STEP: Enroll (first time — scan QR code) ═══ */}
+          {/* ═══ STEP: Enroll (first time QR) ═══ */}
           {step === 'enroll' && (
             <motion.div
-              key="enroll-step"
-              className="w-full max-w-sm space-y-5 text-center"
-              initial={{ opacity: 0, y: 20 }}
+              key="enroll"
+              className="w-full max-w-sm text-center space-y-4"
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
             >
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#2C76FF]/15 border border-[#2C76FF]/20 text-3xl mb-2">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-[#2C76FF]/15 border border-[#2C76FF]/20 grid place-items-center text-2xl">
                 📱
               </div>
-              <h2 className="text-2xl font-bold text-white">
-                Set up Authenticator
-              </h2>
-              <p className="text-sm text-white/50 leading-relaxed">
+              <h2 className="text-xl sm:text-2xl font-bold text-white">Set up Authenticator</h2>
+              <p className="text-sm text-white/45 leading-relaxed">
                 Open <strong className="text-white/70">Microsoft Authenticator</strong> on your phone
                 <br />
                 Tap <strong className="text-white/70">+</strong> → <strong className="text-white/70">Other account</strong> → Scan this QR
               </p>
 
               {qrCode && (
-                <motion.div
-                  className="flex justify-center"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.4, delay: 0.2 }}
-                >
-                  <div className="bg-white rounded-2xl p-4 inline-block shadow-xl shadow-black/20">
-                    <img src={qrCode} alt="QR Code" className="w-48 h-48" />
+                <div className="flex justify-center py-2">
+                  <div className="bg-white rounded-2xl p-4 inline-block shadow-xl shadow-black/30">
+                    <img src={qrCode} alt="QR Code" className="w-44 h-44 sm:w-48 sm:h-48" />
                   </div>
-                </motion.div>
+                </div>
               )}
 
               <form onSubmit={submitCode} className="space-y-3 text-left">
-                <label className="block text-[11px] font-semibold text-white/30 uppercase tracking-widest mb-1"
+                <label className="block text-[11px] font-semibold text-white/25 uppercase tracking-widest mb-1"
                        style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                   Enter the 6-digit code
                 </label>
-                <input
-                  type="text" inputMode="numeric" pattern="[0-9]*"
-                  maxLength={6} required autoFocus autoComplete="one-time-code"
-                  placeholder="000000"
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  className="w-full bg-white/[0.07] backdrop-blur-sm border border-white/[0.12] rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.5em] font-mono text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/30 focus:border-[#29FE29]/50 transition-all"
-                />
+                <CodeInput value={totpCode} onChange={setTotpCode} />
                 {err && <Msg text={err} />}
-                <button type="submit" disabled={busy}
-                  className="w-full bg-[#29FE29] hover:bg-[#24E025] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
-                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-                >
-                  {busy && <div className="w-4 h-4 rounded-full border-2 border-[#0B1D33]/30 border-t-[#0B1D33] animate-spin" />}
-                  {busy ? 'Verifying…' : 'Verify & Continue →'}
-                </button>
+                <GreenBtn busy={busy}>{busy ? 'Verifying…' : 'Verify & Continue →'}</GreenBtn>
               </form>
 
-              <button
-                onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }}
-                className="text-xs text-white/30 hover:text-[#29FE29] transition-colors mt-2"
-              >
-                ← Use a different email
-              </button>
+              <BackBtn onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }} />
             </motion.div>
           )}
 
-          {/* ═══ STEP: Verify (returning user — enter code) ═══ */}
+          {/* ═══ STEP: Verify (returning user) ═══ */}
           {step === 'verify' && (
             <motion.div
-              key="verify-step"
-              className="w-full max-w-sm space-y-5 text-center"
-              initial={{ opacity: 0, y: 20 }}
+              key="verify"
+              className="w-full max-w-sm text-center space-y-4"
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
             >
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#29FE29]/10 border border-[#29FE29]/20 text-3xl mb-2">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-[#29FE29]/10 border border-[#29FE29]/20 grid place-items-center text-2xl">
                 🔐
               </div>
-              <h2 className="text-2xl font-bold text-white">
-                Welcome back
-              </h2>
-              <p className="text-sm text-white/50 leading-relaxed">
+              <h2 className="text-xl sm:text-2xl font-bold text-white">Welcome back</h2>
+              <p className="text-sm text-white/45 leading-relaxed">
                 Enter the 6-digit code from <strong className="text-white/70">Microsoft Authenticator</strong>
                 <br />
-                for <strong className="text-[#29FE29]/80">{email}</strong>
+                for <strong className="text-[#29FE29]">{email}</strong>
               </p>
 
               <form onSubmit={submitCode} className="space-y-3 text-left">
-                <input
-                  type="text" inputMode="numeric" pattern="[0-9]*"
-                  maxLength={6} required autoFocus autoComplete="one-time-code"
-                  placeholder="000000"
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  className="w-full bg-white/[0.07] backdrop-blur-sm border border-white/[0.12] rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.5em] font-mono text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/30 focus:border-[#29FE29]/50 transition-all"
-                />
+                <CodeInput value={totpCode} onChange={setTotpCode} />
                 {err && <Msg text={err} />}
-                <button type="submit" disabled={busy}
-                  className="w-full bg-[#29FE29] hover:bg-[#24E025] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
-                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-                >
-                  {busy && <div className="w-4 h-4 rounded-full border-2 border-[#0B1D33]/30 border-t-[#0B1D33] animate-spin" />}
-                  {busy ? 'Verifying…' : 'Sign in →'}
-                </button>
+                <GreenBtn busy={busy}>{busy ? 'Verifying…' : 'Sign in →'}</GreenBtn>
               </form>
 
-              <button
-                onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }}
-                className="text-xs text-white/30 hover:text-[#29FE29] transition-colors mt-2"
-              >
-                ← Use a different email
-              </button>
+              <BackBtn onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }} />
             </motion.div>
           )}
 
           {/* ═══ STEP: Done ═══ */}
           {step === 'done' && (
             <motion.div
-              key="done-step"
-              className="text-center space-y-4"
-              initial={{ opacity: 0, scale: 0.9 }}
+              key="done"
+              className="text-center space-y-3"
+              initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4 }}
+              transition={{ duration: 0.3 }}
             >
-              <motion.div
-                className="w-16 h-16 mx-auto rounded-full bg-[#29FE29]/15 border-2 border-[#29FE29]/30 grid place-items-center"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
-              >
-                <div className="w-6 h-6 rounded-full border-2 border-[#29FE29] border-t-transparent animate-spin" />
-              </motion.div>
-              <p className="text-sm text-white/50">Signing you in…</p>
+              <div className="w-12 h-12 mx-auto rounded-full border-2 border-[#29FE29] border-t-transparent animate-spin" />
+              <p className="text-sm text-white/40">Signing you in…</p>
             </motion.div>
           )}
 
@@ -556,34 +429,65 @@ export default function Login() {
       </main>
 
       {/* ── Footer ── */}
-      <motion.footer
-        className="relative z-10 px-8 py-5 text-center"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1, duration: 0.5 }}
-      >
-        <p className="text-[11px] text-white/15">
+      <footer className="relative z-10 px-5 py-4 text-center shrink-0">
+        <p className="text-[11px] text-white/10">
           Built with ❤️ for the people who build ApplyWizz
         </p>
-      </motion.footer>
+      </footer>
     </div>
   );
 }
 
-/* ── Shared UI ── */
+/* ═══ Shared Components ═══ */
+
+function CodeInput({ value, onChange }) {
+  return (
+    <input
+      type="text" inputMode="numeric" pattern="[0-9]*"
+      maxLength={6} required autoFocus autoComplete="one-time-code"
+      placeholder="000000"
+      value={value}
+      onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
+      className="w-full bg-white/[0.06] border border-white/[0.1] rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.5em] font-mono text-white placeholder-white/15 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/25 focus:border-[#29FE29]/40 transition-all"
+    />
+  );
+}
+
+function GreenBtn({ busy, children }) {
+  return (
+    <button type="submit" disabled={busy}
+      className="w-full bg-[#29FE29] hover:bg-[#22e622] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
+      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+    >
+      {busy && <Spinner dark />}
+      {children}
+    </button>
+  );
+}
+
+function Spinner({ dark }) {
+  const c = dark ? 'border-[#0B1D33]/30 border-t-[#0B1D33]' : 'border-white/30 border-t-white';
+  return <div className={`w-4 h-4 rounded-full border-2 ${c} animate-spin`} />;
+}
+
+function BackBtn({ onClick }) {
+  return (
+    <button onClick={onClick}
+      className="text-xs text-white/25 hover:text-[#29FE29] transition-colors mt-2">
+      ← Use a different email
+    </button>
+  );
+}
+
 function Msg({ text }) {
   const ok = text.startsWith('✅');
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={`text-xs px-4 py-2.5 rounded-xl border leading-relaxed backdrop-blur-sm ${
-        ok
-          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-          : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-      }`}
-    >
+    <div className={`text-xs px-4 py-2.5 rounded-xl border leading-relaxed ${
+      ok
+        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+        : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+    }`}>
       {text}
-    </motion.div>
+    </div>
   );
 }
