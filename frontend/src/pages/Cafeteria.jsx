@@ -953,8 +953,10 @@ export default function Cafeteria() {
   const breadItems = items.filter(i => {
     const name = (i.item_name || '').toLowerCase();
     const tags = Array.isArray(i.tags) ? i.tags.map(t => t.toLowerCase()) : [];
+    // Exclude items that DEPEND on bread (like Jam, PB) — those have 'bread' in their dependencies
+    const dependsOnBread = Array.isArray(i.dependencies) && i.dependencies.some(d => d.toLowerCase() === 'bread');
     return (name.includes('bread') || name.includes('brd') || tags.includes('bread'))
-      && !Array.isArray(i.dependencies);  // exclude items that DEPEND on bread (like Jam)
+      && !dependsOnBread;
   });
   const anyBreadInStock = breadItems.some(b => {
     const servings = b.stock_servings ?? b.stock_today;

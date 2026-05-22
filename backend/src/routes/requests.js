@@ -595,7 +595,8 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
   // 2. Check if we need to deduct stirrers
   const needsStirrers = isBeverageUsingStirrer(itemName);
   let stirrerItem = null;
-  const stirrerNeeded = qty * 1.5;
+  // Round to integer: column is INTEGER type. 1 beverage = Math.round(1.5) = 2 stirrers.
+  const stirrerNeeded = Math.round(qty * 1.5);
   if (needsStirrers) {
     const { data: stir } = await supabaseAdmin
       .from('cafeteria_items')
@@ -712,9 +713,10 @@ async function restoreStockForRequest(order) {
       .ilike('item_name', 'Stirrers')
       .maybeSingle();
     if (stirItem && stirItem.stock_servings !== null) {
+      // Use Math.round to match deduction: integer column can't store floats
       await supabaseAdmin
         .from('cafeteria_items')
-        .update({ stock_servings: (stirItem.stock_servings || 0) + (rawQty * 1.5) })
+        .update({ stock_servings: (stirItem.stock_servings || 0) + Math.round(rawQty * 1.5) })
         .eq('id', stirItem.id);
     }
   }

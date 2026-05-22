@@ -198,7 +198,7 @@ async function findDuplicate(parsed) {
 
   const { data, error } = await supabaseAdmin
     .from('bill_uploads')
-    .select('id, vendor_name, invoice_number, grand_total')
+    .select('id, vendor_name, invoice_number, grand_total, created_at')
     .eq('invoice_number', invoiceNum)
     .limit(1)
     .maybeSingle();
@@ -208,7 +208,7 @@ async function findDuplicate(parsed) {
     if (error.code === 'PGRST116') {
       const { data: first } = await supabaseAdmin
         .from('bill_uploads')
-        .select('id, vendor_name, invoice_number, grand_total')
+        .select('id, vendor_name, invoice_number, grand_total, created_at')
         .eq('invoice_number', invoiceNum)
         .limit(1)
         .single();
@@ -469,6 +469,18 @@ router.post('/', (req, res) => {
 
       const duplicate = await findDuplicate(parsed);
       if (duplicate) {
+        // If the bill was uploaded within the last 15 minutes, this is a Telegram
+        // webhook retry (e.g. after a server restart) — NOT a user intentionally
+        // re-uploading the same bill. Silently skip so no false roast is sent.
+        const ageMs = duplicate.created_at
+          ? Date.now() - new Date(duplicate.created_at).getTime()
+          : Infinity;
+        const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+        if (ageMs < FIFTEEN_MINUTES_MS) {
+          console.log('[Telegram] Suppressing duplicate roast — likely Telegram retry within 15 min for invoice', duplicate.invoice_number);
+          return; // silent skip
+        }
+        // Bill is older — user is intentionally re-uploading. Show the roast.
         const roast = DUPLICATE_MESSAGES[Math.floor(Math.random() * DUPLICATE_MESSAGES.length)];
         await sendTelegramMessage(
           chatId,
