@@ -299,13 +299,8 @@ export default function Login() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex items-center gap-3">
-          <img src="/logo.svg" alt="ApplyWizz" className="h-10 w-10 rounded-xl shadow-lg shadow-black/20" />
-          <span className="font-bold text-white/90 text-[15px] tracking-tight"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-            APPLY WIZZ
-            <span className="block text-[10px] font-medium text-white/40 tracking-widest -mt-0.5">PANTRY</span>
-          </span>
+        <div className="flex items-center">
+          <img src="/logo.png" alt="ApplyWizz" className="h-9 object-contain" />
         </div>
         <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-white/30 font-medium">
           <span className="w-1.5 h-1.5 rounded-full bg-[#29FE29] animate-pulse" />
