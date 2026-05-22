@@ -20,6 +20,7 @@ import AuditLogPage from './pages/AuditLog.jsx';
 import ConnectionsPage from './pages/Connections.jsx';
 import OnboardingPage from './pages/Onboarding.jsx';
 import MealBookingPage from './pages/MealBooking.jsx';
+import MealHistoryPage from './pages/MealHistory.jsx';
 import { useAuth } from './hooks/useAuth.js';
 
 function Protected({ children, allow }) {
@@ -151,7 +152,8 @@ export default function App() {
         {/* /request now renders the full cafeteria UI for all roles */}
         <Route path="/request"   element={<CafeteriaPage />} />
         <Route path="/track/:id" element={<LiveTrackingPage />} />
-        <Route path="/meals"    element={<MealBookingPage />} />
+        <Route path="/meals"         element={<MealBookingPage />} />
+        <Route path="/meal-history"  element={<MealHistoryPage />} />
         <Route path="/orders"   element={<OrderHistoryPage />} />
         <Route path="/settings"  element={<PreferencesPage />} />
         <Route

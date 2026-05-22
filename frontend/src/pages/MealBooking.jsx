@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronLeft, ChevronRight, Clock, CheckCircle2, XCircle, History } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 
 const CHOICE_UI = {
-  veg:     { emoji: '🥬', label: 'Veg',     bg: 'bg-emerald-100', text: 'text-emerald-700' },
-  non_veg: { emoji: '🍗', label: 'Non-Veg', bg: 'bg-red-100',     text: 'text-red-700' },
-  egg:     { emoji: '🥚', label: 'Egg',     bg: 'bg-amber-100',   text: 'text-amber-700' },
-  skip:    { emoji: '🚫', label: 'Skip',    bg: 'bg-slate-100',   text: 'text-slate-500' },
+  veg:     { emoji: '🥬', label: 'Veg',     bg: 'bg-emerald-50',  border: 'border-emerald-200', text: 'text-emerald-700', ring: 'ring-emerald-400', badge: 'bg-emerald-100 text-emerald-700' },
+  non_veg: { emoji: '🍗', label: 'Non-Veg', bg: 'bg-red-50',      border: 'border-red-200',     text: 'text-red-700',     ring: 'ring-red-400',     badge: 'bg-red-100 text-red-700' },
+  egg:     { emoji: '🥚', label: 'Egg',     bg: 'bg-amber-50',    border: 'border-amber-200',   text: 'text-amber-700',   ring: 'ring-amber-400',   badge: 'bg-amber-100 text-amber-700' },
+  skip:    { emoji: '🚫', label: 'Skip',    bg: 'bg-slate-50',    border: 'border-slate-200',   text: 'text-slate-500',   ring: 'ring-slate-400',   badge: 'bg-slate-100 text-slate-500' },
 };
 
 const DAY_OPTIONS = {
@@ -27,17 +28,145 @@ const MONTH_NAMES = [
 function getMonthStr(year, month) {
   return `${year}-${String(month + 1).padStart(2, '0')}`;
 }
-
 function getDaysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate();
 }
-
 function getFirstDayOfWeek(year, month) {
-  return new Date(year, month, 1).getDay(); // 0=Sun
+  return new Date(year, month, 1).getDay();
 }
+
+// ── Toast notification ────────────────────────────────────────────────────────
+function Toast({ message, type, onDismiss }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  const isError = type === 'error';
+  return (
+    <motion.div
+      initial={{ y: -60, opacity: 0, scale: 0.95 }}
+      animate={{ y: 0, opacity: 1, scale: 1 }}
+      exit={{ y: -60, opacity: 0, scale: 0.95 }}
+      className="fixed top-4 left-4 right-4 z-[100] flex justify-center pointer-events-none"
+    >
+      <div className={`pointer-events-auto max-w-sm w-full rounded-2xl shadow-2xl border-2 p-4 flex items-center gap-3 backdrop-blur-sm ${
+        isError
+          ? 'bg-rose-50/95 border-rose-200 shadow-rose-100/50'
+          : 'bg-emerald-50/95 border-emerald-200 shadow-emerald-100/50'
+      }`}>
+        <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${
+          isError ? 'bg-rose-100' : 'bg-emerald-100'
+        }`}>
+          {isError
+            ? <XCircle size={20} className="text-rose-600" />
+            : <CheckCircle2 size={20} className="text-emerald-600" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className={`font-bold text-sm ${isError ? 'text-rose-800' : 'text-emerald-800'}`}>
+            {isError ? 'Oops!' : 'Done!'}
+          </div>
+          <div className={`text-xs leading-snug ${isError ? 'text-rose-600' : 'text-emerald-600'}`}>
+            {message}
+          </div>
+        </div>
+        <button onClick={onDismiss} className={`text-xs font-bold px-2 py-1 rounded-lg transition-all ${
+          isError ? 'text-rose-400 hover:bg-rose-100' : 'text-emerald-400 hover:bg-emerald-100'
+        }`}>✕</button>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Confirmation bottom sheet ─────────────────────────────────────────────────
+function ConfirmSheet({ dateStr, choice, existingChoice, busy, onConfirm, onClose }) {
+  const ui = CHOICE_UI[choice];
+  const existingUi = existingChoice ? CHOICE_UI[existingChoice] : null;
+  const isChange = existingChoice && existingChoice !== choice;
+  const dateLabel = new Date(dateStr + 'T00:00:00+05:30').toLocaleDateString('en-IN', {
+    weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata',
+  });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="text-center mb-6">
+          <div className="text-5xl mb-3">{ui.emoji}</div>
+          {isChange ? (
+            <>
+              <h2 className="font-extrabold text-slate-900 text-lg">Change your booking?</h2>
+              <div className="flex items-center justify-center gap-2 mt-3">
+                <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold ${existingUi.badge}`}>
+                  {existingUi.emoji} {existingUi.label}
+                </span>
+                <span className="text-slate-400 font-bold">→</span>
+                <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold ${ui.badge}`}>
+                  {ui.emoji} {ui.label}
+                </span>
+              </div>
+              <p className="text-sm text-slate-500 mt-2">{dateLabel}</p>
+            </>
+          ) : (
+            <>
+              <h2 className="font-extrabold text-slate-900 text-lg">
+                {choice === 'skip' ? 'Skip this day?' : `Book ${ui.label}?`}
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">{dateLabel}</p>
+            </>
+          )}
+        </div>
+
+        {/* Buttons */}
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="flex-1 py-3.5 rounded-2xl border-2 border-slate-200 font-bold text-sm text-slate-500 hover:bg-slate-50 transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className={`flex-1 py-3.5 rounded-2xl border-2 font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+              choice === 'skip'
+                ? 'bg-slate-600 border-slate-600 text-white hover:bg-slate-700'
+                : 'bg-brand border-brand text-white hover:bg-brand/90'
+            } ${busy ? 'opacity-50' : ''}`}
+          >
+            {busy ? (
+              <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <>
+                <CheckCircle2 size={16} />
+                {isChange ? 'Change' : 'Confirm'}
+              </>
+            )}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 
 export default function MealBooking() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const isManager = ['facility_manager', 'finance', 'leadership'].includes(profile?.role);
 
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -49,6 +178,12 @@ export default function MealBooking() {
   const [booking, setBooking] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Confirmation sheet state
+  const [confirmData, setConfirmData] = useState(null); // { dateStr, choice, existingChoice }
+
+  // Toast state
+  const [toast, setToast] = useState(null); // { message, type }
+
   const monthStr = getMonthStr(year, month);
 
   useEffect(() => {
@@ -59,7 +194,6 @@ export default function MealBooking() {
       .finally(() => setLoading(false));
   }, [monthStr]);
 
-  // Load summary for selected date (managers only)
   useEffect(() => {
     if (!selectedDate || !isManager) { setSummary(null); return; }
     api.mealSummary(selectedDate).then(setSummary).catch(() => setSummary(null));
@@ -78,7 +212,6 @@ export default function MealBooking() {
     return bookings.find(b => b.meal_date === dateStr);
   }
 
-  // Next working day calculation (mirrors backend logic)
   function getNextWorkingDay() {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     d.setDate(d.getDate() + 1);
@@ -87,38 +220,74 @@ export default function MealBooking() {
   }
   const nextWorkingDay = getNextWorkingDay();
 
-  async function quickBook(dateStr, choice) {
+  // Step 1: User taps a choice → show confirmation sheet
+  function requestBook(dateStr, choice) {
+    const existing = getBookingForDate(dateStr);
+    setConfirmData({ dateStr, choice, existingChoice: existing?.choice || null });
+  }
+
+  // Step 2: User confirms → call API
+  async function confirmBook() {
+    if (!confirmData) return;
+    const { dateStr, choice } = confirmData;
     setBooking(true);
     try {
-      await api.bookMeal({ date: dateStr, choice });
+      const result = await api.bookMeal({ date: dateStr, choice });
       const updated = await api.myMealBookings(monthStr);
       setBookings(updated);
+      setConfirmData(null);
+      setToast({ message: result.message || `${CHOICE_UI[choice]?.emoji} ${CHOICE_UI[choice]?.label} booked!`, type: 'success' });
       if (isManager && selectedDate === dateStr) {
         api.mealSummary(dateStr).then(setSummary).catch(() => {});
       }
     } catch (e) {
-      alert(e.message);
+      setConfirmData(null);
+      setToast({ message: e.message || 'Something went wrong', type: 'error' });
     } finally {
       setBooking(false);
     }
   }
 
-  // Build calendar grid
+  // Calendar grid
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfWeek(year, month);
-  // Shift to Monday start: Mon=0, Tue=1, ... Sun=6
   const startOffset = firstDay === 0 ? 6 : firstDay - 1;
-
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
+      </AnimatePresence>
+
+      {/* Confirmation Sheet */}
+      <AnimatePresence>
+        {confirmData && (
+          <ConfirmSheet
+            dateStr={confirmData.dateStr}
+            choice={confirmData.choice}
+            existingChoice={confirmData.existingChoice}
+            busy={booking}
+            onConfirm={confirmBook}
+            onClose={() => !booking && setConfirmData(null)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900">🍱 Meal Booking</h1>
           <p className="text-sm text-slate-500">Book your lunch for upcoming days</p>
         </div>
+        <button
+          onClick={() => navigate('/meal-history')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 transition-all"
+        >
+          <History size={14} />
+          History
+        </button>
       </div>
 
       {/* Legend */}
@@ -148,16 +317,13 @@ export default function MealBooking() {
 
       {/* Calendar Grid */}
       <div className="bg-white rounded-2xl border border-slate-100 p-4">
-        {/* Day headers */}
         <div className="grid grid-cols-5 gap-1 mb-2">
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => (
             <div key={d} className="text-center text-xs font-bold text-slate-400 py-1">{d}</div>
           ))}
         </div>
 
-        {/* Date cells — only show Mon–Fri */}
         <div className="grid grid-cols-5 gap-1">
-          {/* Empty cells for offset (Mon-based) */}
           {Array.from({ length: Math.min(startOffset, 4) }).map((_, i) => (
             <div key={`empty-${i}`} className="h-16" />
           ))}
@@ -166,8 +332,6 @@ export default function MealBooking() {
             const day = i + 1;
             const dateObj = new Date(year, month, day);
             const dow = dateObj.getDay();
-
-            // Skip weekends
             if (dow === 0 || dow === 6) return null;
 
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -221,7 +385,6 @@ export default function MealBooking() {
             <button onClick={() => setSelectedDate(null)} className="text-xs text-slate-400 hover:text-slate-600">✕ Close</button>
           </div>
 
-          {/* My booking */}
           {(() => {
             const b = getBookingForDate(selectedDate);
             const dateObj = new Date(selectedDate + 'T00:00:00+05:30');
@@ -233,15 +396,28 @@ export default function MealBooking() {
             // Past or today — view only
             if (isPast) {
               return (
-                <div className={`p-3 rounded-xl ${b ? `${CHOICE_UI[b.choice]?.bg} border` : 'bg-slate-50 border border-slate-200'}`}>
-                  <span className="text-sm font-semibold">
-                    {b ? `${CHOICE_UI[b.choice]?.emoji} ${CHOICE_UI[b.choice]?.label}` : '⚫ Not booked'}
-                  </span>
+                <div className={`p-4 rounded-xl flex items-center gap-3 ${b ? `${CHOICE_UI[b.choice]?.bg} border ${CHOICE_UI[b.choice]?.border}` : 'bg-slate-50 border border-slate-200'}`}>
+                  {b ? (
+                    <>
+                      <span className="text-2xl">{CHOICE_UI[b.choice]?.emoji}</span>
+                      <div>
+                        <span className="font-bold text-sm">{CHOICE_UI[b.choice]?.label}</span>
+                        {b.booked_at && <div className="text-[10px] text-slate-400 mt-0.5">
+                          Booked at {new Date(b.booked_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+                        </div>}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-2xl">⚫</span>
+                      <span className="text-sm font-semibold text-slate-500">Not booked</span>
+                    </>
+                  )}
                 </div>
               );
             }
 
-            // Future but NOT next working day — locked, no advance booking
+            // Future but NOT next working day — locked
             if (!isBookable) {
               return (
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-1">
@@ -257,10 +433,17 @@ export default function MealBooking() {
               );
             }
 
-            // Next working day — show booking options
+            // Next working day — show booking options with confirmation
             return (
               <div className="space-y-2">
-                <div className="text-xs text-brand font-bold uppercase tracking-wider">Your booking — Next working day</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-xs text-brand font-bold uppercase tracking-wider">Your booking — Next working day</div>
+                  {b && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${CHOICE_UI[b.choice]?.badge}`}>
+                      Current: {CHOICE_UI[b.choice]?.emoji} {CHOICE_UI[b.choice]?.label}
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   {dayOpts.map(opt => {
                     const ui = CHOICE_UI[opt];
@@ -269,21 +452,21 @@ export default function MealBooking() {
                       <button
                         key={opt}
                         disabled={booking}
-                        onClick={() => quickBook(selectedDate, opt)}
+                        onClick={() => requestBook(selectedDate, opt)}
                         className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
-                          ${selected ? `${ui.bg} border-current ${ui.text}` : 'bg-white border-slate-200 hover:border-slate-300'}
+                          ${selected ? `${ui.bg} border-current ${ui.text}` : `bg-white ${ui.border} hover:${ui.bg}`}
                           ${booking ? 'opacity-40' : ''}
                         `}
                       >
                         <span className="text-xl">{ui.emoji}</span>
                         <span>{ui.label}</span>
-                        {selected && <span>✅</span>}
+                        {selected && <span className="text-xs">✅</span>}
                       </button>
                     );
                   })}
                   <button
                     disabled={booking}
-                    onClick={() => quickBook(selectedDate, 'skip')}
+                    onClick={() => requestBook(selectedDate, 'skip')}
                     className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
                       ${b?.choice === 'skip' ? 'bg-slate-100 border-slate-400 text-slate-600' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-500'}
                       ${booking ? 'opacity-40' : ''}
@@ -291,7 +474,7 @@ export default function MealBooking() {
                   >
                     <span className="text-xl">🚫</span>
                     <span>Skip</span>
-                    {b?.choice === 'skip' && <span>✅</span>}
+                    {b?.choice === 'skip' && <span className="text-xs">✅</span>}
                   </button>
                 </div>
               </div>
@@ -305,18 +488,18 @@ export default function MealBooking() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-emerald-50 rounded-xl p-3 text-center">
                   <div className="text-2xl font-bold text-emerald-700">{summary.veg_count}</div>
-                  <div className="text-xs text-emerald-600">🥬 Veg · ₹{summary.cost?.veg || 0}</div>
+                  <div className="text-xs text-emerald-600">🥬 Veg</div>
                 </div>
                 {summary.non_veg_count > 0 && (
                   <div className="bg-red-50 rounded-xl p-3 text-center">
                     <div className="text-2xl font-bold text-red-700">{summary.non_veg_count}</div>
-                    <div className="text-xs text-red-600">🍗 Non-Veg · ₹{summary.cost?.non_veg || 0}</div>
+                    <div className="text-xs text-red-600">🍗 Non-Veg</div>
                   </div>
                 )}
                 {summary.egg_count > 0 && (
                   <div className="bg-amber-50 rounded-xl p-3 text-center">
                     <div className="text-2xl font-bold text-amber-700">{summary.egg_count}</div>
-                    <div className="text-xs text-amber-600">🥚 Egg · ₹{summary.cost?.egg || 0}</div>
+                    <div className="text-xs text-amber-600">🥚 Egg</div>
                   </div>
                 )}
                 <div className="bg-slate-50 rounded-xl p-3 text-center">
@@ -326,11 +509,11 @@ export default function MealBooking() {
               </div>
               <div className="flex items-center justify-between bg-brand/5 rounded-xl p-3">
                 <span className="font-bold text-sm text-slate-700">Total Meals: {summary.total_meals}</span>
-                <span className="font-bold text-sm text-brand">₹{summary.cost?.total || 0}</span>
+                <span className="font-bold text-sm text-brand">{summary.cost?.total || 0} INR</span>
               </div>
               {summary.not_booked > 0 && (
                 <div className="text-xs text-amber-600 font-semibold">
-                  ⚠️ {summary.not_booked} people haven't booked yet
+                  {summary.not_booked} people haven't booked yet
                 </div>
               )}
             </div>

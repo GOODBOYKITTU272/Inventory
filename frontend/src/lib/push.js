@@ -1,6 +1,7 @@
 // Push notification subscription helper
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 function urlBase64ToUint8Array(base64) {
   const pad = '='.repeat((4 - (base64.length % 4)) % 4);
@@ -36,7 +37,7 @@ export async function subscribeToPush(authToken) {
     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
   });
 
-  const res = await fetch('/api/push/subscribe', {
+  const res = await fetch(`${API_BASE}/api/push/subscribe`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
     body: JSON.stringify(sub),
@@ -51,7 +52,7 @@ export async function unsubscribeFromPush(authToken) {
   const sub = await reg.pushManager.getSubscription().catch(() => null);
   if (!sub) return;
   await sub.unsubscribe();
-  await fetch('/api/push/subscribe', {
+  await fetch(`${API_BASE}/api/push/subscribe`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
     body: JSON.stringify({ endpoint: sub.endpoint }),
