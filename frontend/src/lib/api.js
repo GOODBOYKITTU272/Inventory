@@ -81,6 +81,7 @@ export const api = {
   myMealBookings: (month)   => request(`/api/meals/my-bookings?month=${month}`),
   mealSummary:    (date)    => request(`/api/meals/summary?date=${date}`),
   mealSettings:   ()        => request('/api/meals/settings'),
+  rateMeal:       (date, body) => request(`/api/meals/${date}/rate`, { method: 'POST', body: JSON.stringify(body) }),
 
   listMonthlyExpenses: () => request('/api/reports/monthly-expenses'),
   addMonthlyExpense: (body) => request('/api/reports/monthly-expenses', { method: 'POST', body: JSON.stringify(body) }),

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Star, MapPin, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, ArrowRight } from 'lucide-react';
 
 const CANCEL_WINDOW_SEC = 30;
 
@@ -172,24 +172,30 @@ function RatingSheet({ requestId, onDone }) {
           <div className="text-5xl mb-3">🎉</div>
           <h2 className="text-2xl font-bold text-slate-900">Hope it hit the spot!</h2>
           <p className="text-slate-500 text-sm mt-1">
-            Rate your experience — it takes 5 seconds.
+            Rate your experience — 1 to 10
           </p>
         </div>
 
-        <div className="flex justify-center gap-3">
-          {[1, 2, 3, 4, 5].map((s) => (
+        <div className="grid grid-cols-5 gap-2">
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
             <button
-              key={s}
-              onClick={() => setRating(s)}
-              className="transition-transform active:scale-90 hover:scale-110"
+              key={n}
+              onClick={() => setRating(n)}
+              className={`h-11 rounded-xl font-bold text-sm transition-all active:scale-90 ${
+                n === rating
+                  ? 'bg-brand text-white scale-105 shadow-md shadow-brand/30'
+                  : n <= rating
+                    ? 'bg-brand/15 text-brand border border-brand/20'
+                    : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+              }`}
             >
-              <Star
-                size={40}
-                className={s <= rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}
-              />
+              {n}
             </button>
           ))}
         </div>
+        {rating > 0 && (
+          <div className="text-center text-sm font-bold text-brand">{rating}/10</div>
+        )}
 
         <textarea
           className="input min-h-[90px] bg-slate-50"
@@ -553,9 +559,7 @@ function OrderView({ req, onRate }) {
         <div className="card bg-emerald-50 border-0 text-center space-y-1">
           <div className="text-2xl">⭐</div>
           <div className="font-semibold text-emerald-800 text-sm">Thanks for the rating!</div>
-          <div className="text-xs text-emerald-600">
-            {'★'.repeat(req.rating || 0)}{'☆'.repeat(5 - (req.rating || 0))}
-          </div>
+          <div className="text-lg font-extrabold text-emerald-700">{req.rating || 0}/10</div>
           {req.feedback && (
             <div className="text-xs text-emerald-700 italic">&ldquo;{req.feedback}&rdquo;</div>
           )}

@@ -309,4 +309,59 @@ async function getSettings() {
   };
 }
 
+// ── POST /api/meals/:date/rate ───────────────────────────────────────────────
+// Rate a meal for a specific date (only today or yesterday allowed)
+router.post('/:date/rate', async (req, res, next) => {
+  try {
+    const { date } = req.params;
+    const { rating, feedback } = req.body;
+
+    if (!rating || rating < 1 || rating > 10) {
+      return res.status(400).json({ error: 'Rating must be between 1 and 10' });
+    }
+
+    // Only allow rating for today or yesterday (IST)
+    const now = getISTNow();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const mealDate = new Date(date + 'T00:00:00+05:30');
+    const mealDateClean = new Date(mealDate.getFullYear(), mealDate.getMonth(), mealDate.getDate());
+
+    if (mealDateClean < yesterday) {
+      return res.status(400).json({ error: 'Can only rate meals from today or yesterday' });
+    }
+    if (mealDateClean > today) {
+      return res.status(400).json({ error: 'Cannot rate a future meal' });
+    }
+
+    // Check booking exists and is not a skip
+    const { data: booking } = await supabaseAdmin
+      .from('meal_bookings')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .eq('meal_date', date)
+      .maybeSingle();
+
+    if (!booking) {
+      return res.status(404).json({ error: 'No meal booking found for this date' });
+    }
+    if (booking.choice === 'skip') {
+      return res.status(400).json({ error: 'Cannot rate a skipped meal' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('meal_bookings')
+      .update({ rating: parseInt(rating, 10), feedback: feedback || null })
+      .eq('user_id', req.user.id)
+      .eq('meal_date', date)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ ok: true, booking: data });
+  } catch (e) { next(e); }
+});
+
 export default router;
