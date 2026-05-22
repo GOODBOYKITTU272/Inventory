@@ -114,18 +114,67 @@ function formatReceipt(order) {
   return lines.join('\n');
 }
 
-// ── Send to Printer via TCP ──────────────────────────────────────────────────
-function printReceipt(order, retries = 1) {
-  return new Promise((resolve, reject) => {
-    const receipt = formatReceipt(order);
-    const orderId = (order.id || '').slice(0, 8);
+// ── Print an order receipt ────────────────────────────────────────────────────
+function printReceipt(order) {
+  const receipt = formatReceipt(order);
+  const orderId = (order.id || '').slice(0, 8);
+  return sendToPrinter(receipt, `order-#${orderId}`);
+}
 
-    console.log(`[print-agent] Printing order #${orderId} → ${PRINTER_IP}:${PRINTER_PORT}`);
+// ── Meal Receipt Format ──────────────────────────────────────────────────────
+function formatMealReceipt(booking, profile) {
+  const choiceLabel = { veg: 'VEG', non_veg: 'NON-VEG', egg: 'EGG', skip: 'SKIP' };
+  const choiceEmoji = { veg: '[V]', non_veg: '[NV]', egg: '[E]', skip: '[S]' };
+  const name = profile?.preferred_name || profile?.full_name || 'Employee';
+  const code = profile?.employee_code || '--';
+  const mealDate = new Date(booking.meal_date + 'T00:00:00+05:30');
+  const dateStr = mealDate.toLocaleDateString('en-IN', {
+    weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
+
+  const lines = [
+    CMD.INIT,
+    CMD.CENTER,
+    CMD.BOLD_ON,
+    CMD.DOUBLE_ON,
+    'MEAL BOOKING',
+    CMD.DOUBLE_OFF,
+    CMD.BOLD_OFF,
+    CMD.FEED,
+    LINE,
+    CMD.LEFT,
+    `Date     ${dateStr}`,
+    DASH,
+    CMD.BOLD_ON,
+    `${choiceEmoji[booking.choice] || ''} ${choiceLabel[booking.choice] || booking.choice}`,
+    CMD.BOLD_OFF,
+    DASH,
+    `Name     ${name}`,
+    `Code     ${code}`,
+    DASH,
+    CMD.CENTER,
+    `Booked at ${new Date(booking.booked_at || Date.now()).toLocaleTimeString('en-IN', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+    })}`,
+    LINE,
+    CMD.FEED,
+    CMD.FEED,
+    CMD.PARTIAL_CUT,
+  ];
+
+  return lines.join('\n');
+}
+
+// ── Send any content to printer ──────────────────────────────────────────────
+function sendToPrinter(content, label, retries = 1) {
+  return new Promise((resolve, reject) => {
+    console.log(`[print-agent] Printing ${label} → ${PRINTER_IP}:${PRINTER_PORT}`);
 
     const socket = net.createConnection(PRINTER_PORT, PRINTER_IP, () => {
-      socket.write(receipt, 'binary', () => {
+      socket.write(content, 'binary', () => {
         socket.end();
-        console.log(`[print-agent] ✅ Printed order #${orderId}`);
+        console.log(`[print-agent] ✅ Printed ${label}`);
         resolve();
       });
     });
@@ -134,21 +183,20 @@ function printReceipt(order, retries = 1) {
 
     socket.on('timeout', () => {
       socket.destroy();
-      const err = new Error('Printer connection timeout');
       if (retries > 0) {
-        console.log(`[print-agent] ⏱ Timeout, retrying in 2s...`);
-        setTimeout(() => printReceipt(order, retries - 1).then(resolve).catch(reject), 2000);
+        console.log(`[print-agent] ⏱ Timeout, retrying ${label} in 2s...`);
+        setTimeout(() => sendToPrinter(content, label, retries - 1).then(resolve).catch(reject), 2000);
       } else {
-        reject(err);
+        reject(new Error('Printer connection timeout'));
       }
     });
 
     socket.on('error', (err) => {
       if (retries > 0) {
-        console.log(`[print-agent] ⚠ Error: ${err.message}, retrying in 2s...`);
-        setTimeout(() => printReceipt(order, retries - 1).then(resolve).catch(reject), 2000);
+        console.log(`[print-agent] ⚠ Error: ${err.message}, retrying ${label} in 2s...`);
+        setTimeout(() => sendToPrinter(content, label, retries - 1).then(resolve).catch(reject), 2000);
       } else {
-        console.error(`[print-agent] ❌ Print failed for #${orderId}:`, err.message);
+        console.error(`[print-agent] ❌ Print failed for ${label}:`, err.message);
         reject(err);
       }
     });
@@ -157,10 +205,11 @@ function printReceipt(order, retries = 1) {
 
 // ── Supabase Realtime Subscription ───────────────────────────────────────────
 function startListening() {
-  console.log('[print-agent] Subscribing to order confirmations...');
+  console.log('[print-agent] Subscribing to order confirmations + meal bookings...');
 
   const channel = supabase
-    .channel('print-orders')
+    .channel('print-all')
+    // ── Order confirmations ──
     .on(
       'postgres_changes',
       {
@@ -182,6 +231,39 @@ function startListening() {
           } catch (err) {
             console.error(`[print-agent] Failed to print after retries:`, err.message);
           }
+        }
+      }
+    )
+    // ── Meal bookings (INSERT or UPDATE) ──
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'meal_bookings',
+      },
+      async (payload) => {
+        const booking = payload.new;
+        if (!booking || booking.choice === 'skip') return; // Don't print skips
+
+        console.log(`[print-agent] 🍱 Meal booked: ${booking.choice} for ${booking.meal_date}`);
+
+        // Fetch employee profile for name + code
+        let profile = null;
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('full_name, preferred_name, employee_code')
+            .eq('id', booking.user_id)
+            .maybeSingle();
+          profile = data;
+        } catch (_) {}
+
+        try {
+          const receipt = formatMealReceipt(booking, profile);
+          await sendToPrinter(receipt, `meal-${booking.meal_date}-${(booking.user_id || '').slice(0, 6)}`);
+        } catch (err) {
+          console.error(`[print-agent] Failed to print meal receipt:`, err.message);
         }
       }
     )

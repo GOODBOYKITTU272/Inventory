@@ -512,6 +512,28 @@ function OrderView({ req, onRate }) {
         )}
       </motion.div>
 
+      {/* Delivery time badge */}
+      {isDone && req.fulfilled_at && req.created_at && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="card bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-100 text-center py-4"
+        >
+          <div className="text-3xl mb-1">⚡</div>
+          <div className="text-sm text-emerald-700 font-bold">
+            Delivered in {(() => {
+              const mins = Math.round((new Date(req.fulfilled_at) - new Date(req.created_at)) / 60000);
+              return mins <= 1 ? 'under a minute' : `${mins} minutes`;
+            })()}
+          </div>
+          <div className="text-[10px] text-emerald-500 mt-1">
+            {new Date(req.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+            {' → '}
+            {new Date(req.fulfilled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+          </div>
+        </motion.div>
+      )}
+
       {/* Stage timeline */}
       {!isCancelled && (
         <div className="card space-y-5">

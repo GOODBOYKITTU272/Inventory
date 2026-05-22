@@ -542,11 +542,45 @@ router.patch(
         const effectiveStatus = update.live_status || live_status || status;
         const item = data.parsed_item || data.raw_text || 'your order';
 
+        // Calculate delivery time for done status
+        let deliveryTime = '';
+        if (effectiveStatus === 'done' && data.created_at) {
+          const mins = Math.round((Date.now() - new Date(data.created_at).getTime()) / 60000);
+          deliveryTime = mins <= 1 ? 'in under a minute' : `in ${mins} min`;
+        }
+
+        // Load user tone for witty delivery quotes
+        let userTone = 'Friendly';
+        if (effectiveStatus === 'done') {
+          try {
+            const { data: toneRow } = await supabaseAdmin
+              .from('employee_cafeteria_preferences')
+              .select('notification_tone')
+              .eq('user_id', data.submitted_by)
+              .maybeSingle();
+            if (toneRow?.notification_tone) userTone = toneRow.notification_tone;
+          } catch (_) {}
+        }
+
+        // Witty delivery quotes by tone
+        const DELIVERY_QUOTES = {
+          Friendly:     [`Enjoy your ${item}! ${deliveryTime} 🎉`, `${item} delivered ${deliveryTime}! Hope it makes your day ☀️`, `Here's your ${item} ${deliveryTime}! Rate it? ⭐`],
+          Funny:        [`${item} aa gaya ${deliveryTime}! Ab kaam karo 😂`, `Delivery done ${deliveryTime}! ${item} ke liye standing ovation 👏`, `${item} has landed ${deliveryTime}! Better than Zomato 💅`],
+          'Mom Mode':   [`Beta, ${item} aa gaya ${deliveryTime} 💝 Thanda mat hone dena!`, `${item} ready hai ${deliveryTime}! Dhyan se khana beta 🥰`, `Aa gaya ${item} ${deliveryTime}! Maa kasam mast hai 😊`],
+          Professional: [`${item} delivered ${deliveryTime}. Please rate your experience.`, `Your ${item} is ready ${deliveryTime}. Enjoy.`],
+          Minimal:      [`${item} delivered ${deliveryTime}.`, `Done ${deliveryTime}. Enjoy.`],
+          gen_z:        [`${item} just dropped ${deliveryTime} no cap 🔥`, `slay bestie your ${item} is here ${deliveryTime} 💅✨`, `${item} ${deliveryTime}! its giving efficiency 💀`],
+          boyfriend:    [`Hey cutie, ${item} aa gaya ${deliveryTime} 💖 Enjoy karo!`, `Your ${item} is here ${deliveryTime} babe! Made with love 💕`, `${item} delivered ${deliveryTime}! Miss me while eating? 😘`],
+          girlfriend:   [`Hey handsome, ${item} ready hai ${deliveryTime} 💖`, `${item} aa gaya ${deliveryTime}! Tumhare liye special 🥰`, `Delivered ${deliveryTime}! Ab ${item} enjoy karo cutie 💕`],
+        };
+
+        const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
         const PUSH_MESSAGES = {
           accepted:   { title: '✅ Order Accepted!',      body: `${item} has been accepted and is being prepared.` },
           preparing:  { title: '☕ Being Prepared!',       body: `${item} is being made right now.` },
           on_the_way: { title: '🛵 On the Way!',           body: `${item} is heading to you now!` },
-          done:       { title: '🎉 Delivered!',            body: `${item} has been delivered. Enjoy! Rate your experience in the app.` },
+          done:       { title: '🎉 Delivered!',            body: pick(DELIVERY_QUOTES[userTone] || DELIVERY_QUOTES.Friendly) },
           cancelled:  { title: '❌ Order Cancelled',       body: `${item} was cancelled. You can place a new order anytime.` },
         };
 
