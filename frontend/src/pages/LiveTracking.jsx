@@ -276,6 +276,7 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
   });
   const [cancelling, setCancelling] = useState(false);
   const [cancelled, setCancelled]   = useState(false);
+  const confirmedRef = useRef(false);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -284,12 +285,17 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
       setSecsLeft(remaining);
       if (remaining <= 0) {
         clearInterval(t);
+        // Auto-confirm the order (sends it to office boy)
+        if (!confirmedRef.current) {
+          confirmedRef.current = true;
+          api.confirmOrder(req.id).catch(() => {});
+        }
         // Auto-dismiss after countdown ends + 1s
         setTimeout(onDismiss, 1000);
       }
     }, 1000);
     return () => clearInterval(t);
-  }, [req.created_at, onDismiss]);
+  }, [req.created_at, onDismiss, req.id]);
 
   async function doCancel() {
     setCancelling(true);
@@ -456,7 +462,9 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
 function OrderView({ req, onRate }) {
   const isCancelled = req.status === 'cancelled';
   const isDone      = req.status === 'done';
-  const curIdx      = isCancelled ? -1 : stageIndex(req.live_status || 'placed');
+  // 'confirming' is treated as 'placed' for the progress tracker
+  const effectiveLiveStatus = req.live_status === 'confirming' ? 'placed' : (req.live_status || 'placed');
+  const curIdx      = isCancelled ? -1 : stageIndex(effectiveLiveStatus);
   const curStage    = isCancelled ? CANCELLED : STAGES[curIdx];
 
   return (
@@ -597,14 +605,16 @@ export default function LiveTracking() {
         confirmChecked.current = true;
         const created = new Date(data.created_at).getTime();
         const elapsed = (Date.now() - created) / 1000;
-        if (data.status === 'pending' && (data.live_status || 'placed') === 'placed' && elapsed < CANCEL_WINDOW_SEC) {
+        const isConfirming = data.status === 'confirming';
+        const isPendingPlaced = data.status === 'pending' && (!data.live_status || data.live_status === 'placed');
+        if ((isConfirming || isPendingPlaced) && elapsed < CANCEL_WINDOW_SEC) {
           setShowConfirm(true);
         }
       }
 
       // Collect all active (non-done, non-cancelled) orders
       const active = (allRequests || []).filter(
-        (r) => ['pending', 'in_progress'].includes(r.status)
+        (r) => ['confirming', 'pending', 'in_progress'].includes(r.status)
       );
       // Make sure current order is included even if done/cancelled
       const hasCurrentInActive = active.some((r) => r.id === id);

@@ -259,24 +259,15 @@ router.post('/', async (req, res, next) => {
           parsed_location:       quick_location || null,
           instruction,
           submitted_by:          req.user.id,
-          live_status:           'placed',
-          status:                'pending',
+          live_status:           'confirming',
+          status:                'confirming',
         })
         .select()
         .single();
       if (qErr) throw qErr;
 
-      postOrderToTeams({ ...qData, priority: 'Normal', quantity: String(qty) }).catch((e) => console.error('[Teams quick-order]', e.message));
-
-      // Push notification to office boy / facility manager
-      supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data }) => {
-        if (data?.length) sendPushToUsers(data.map(u => u.id), {
-          title: `🔔 New Order`,
-          body:  `${firstName}: ${qty}x ${quick_item}${locPart}`,
-          url:   '/queue',
-          tag:   `order-${qData.id}`,
-        }).catch(() => {});
-      });
+      // NOTE: Teams + push notifications are NOT sent here.
+      // They fire only after the 30s cancel window via POST /:id/confirm.
 
       return res.status(201).json({ needs_followup: false, request: qData });
     }
@@ -311,35 +302,19 @@ router.post('/', async (req, res, next) => {
         parsed_location:       parsed.location || null,
         instruction:           parsed.instruction,
         submitted_by:          req.user.id,
-        live_status:           'placed',
-        status:                'pending',
+        live_status:           'confirming',
+        status:                'confirming',
       })
       .select()
       .single();
     if (error) throw error;
 
-    // Push notification to office boy / facility manager
-    const insertedId = data?.id;
-    supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data: staffRows }) => {
-      if (staffRows?.length) sendPushToUsers(staffRows.map(u => u.id), {
-        title: `🔔 New ${parsed.request_type || 'Request'}`,
-        body:  `${parsed.employee_name || req.user.full_name}: ${parsed.item || 'New request'}`,
-        url:   '/queue',
-        tag:   `order-${insertedId}`,
-      }).catch(() => {});
-    });
-
-    // Fire-and-forget Teams notification
-    const teamsResult = await postOrderToTeams({
-      ...data,
-      priority: parsed.priority || 'Normal',
-      quantity: parsed.quantity || '1',
-    });
+    // NOTE: Teams + push notifications are NOT sent here.
+    // They fire only after the 30s cancel window via POST /:id/confirm.
 
     res.status(201).json({
       needs_followup: false,
       request:        data,
-      teams:          teamsResult,
       model,
     });
   } catch (e) {
@@ -363,6 +338,61 @@ router.get('/queue-count', async (req, res, next) => {
     if (e2) throw e2;
 
     res.json({ pending: pending || 0, in_progress: in_progress || 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /api/requests/:id/confirm — called after 30s cancel window expires
+// Moves order from confirming → pending/placed and fires notifications
+router.post('/:id/confirm', async (req, res, next) => {
+  try {
+    // Fetch the order
+    const { data: order, error: fetchErr } = await supabaseAdmin
+      .from('requests')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
+
+    // Only the submitter can confirm their own order
+    if (order.submitted_by !== req.user.id) {
+      return res.status(403).json({ error: 'Not your order' });
+    }
+
+    // Only confirm if still in confirming state (not already cancelled)
+    if (order.status !== 'confirming') {
+      return res.json(order); // Already confirmed or cancelled — no-op
+    }
+
+    // Move to pending/placed
+    const { data, error } = await supabaseAdmin
+      .from('requests')
+      .update({ status: 'pending', live_status: 'placed' })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+
+    // NOW fire Teams + push notifications (order is confirmed)
+    const qty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+    const itemName = order.parsed_item || order.raw_text || 'New order';
+    const locPart = order.parsed_location ? ` to ${order.parsed_location}` : '';
+
+    postOrderToTeams({ ...data, priority: 'Normal', quantity: String(qty) })
+      .catch((e) => console.error('[Teams confirm-order]', e.message));
+
+    // Push notification to office boy / facility manager
+    supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data: staffRows }) => {
+      if (staffRows?.length) sendPushToUsers(staffRows.map(u => u.id), {
+        title: '🔔 New Order',
+        body:  `${order.parsed_employee_name || 'Someone'}: ${qty}x ${itemName}${locPart}`,
+        url:   '/queue',
+        tag:   `order-${data.id}`,
+      }).catch(() => {});
+    });
+
+    res.json(data);
   } catch (e) {
     next(e);
   }
@@ -554,8 +584,10 @@ router.post('/:id/cancel', async (req, res, next) => {
       return res.status(403).json({ error: 'You can only cancel your own orders' });
     }
 
-    // Must be pending + placed
-    if (order.status !== 'pending' || (order.live_status && order.live_status !== 'placed')) {
+    // Must be confirming or pending+placed (not yet accepted by office boy)
+    const canCancel = order.status === 'confirming'
+      || (order.status === 'pending' && (!order.live_status || order.live_status === 'placed'));
+    if (!canCancel) {
       return res.status(400).json({ error: 'Order has already been accepted and cannot be cancelled' });
     }
 
@@ -579,8 +611,10 @@ router.post('/:id/cancel', async (req, res, next) => {
       .single();
     if (error) throw error;
 
-    // ── Teams notification on self-cancel ─────────────────────────────
-    postCancelToTeams(data, 'self').catch((e) => console.error('[Teams self-cancel]', e.message));
+    // ── Teams notification on self-cancel (only if order was already confirmed/sent to office boy)
+    if (order.status !== 'confirming') {
+      postCancelToTeams(data, 'self').catch((e) => console.error('[Teams self-cancel]', e.message));
+    }
 
     // ── Restore stock on cancel ──────────────────────────────────────
     if (order.parsed_item) {

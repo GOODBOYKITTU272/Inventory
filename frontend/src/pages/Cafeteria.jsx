@@ -893,7 +893,7 @@ export default function Cafeteria() {
       setItems(itemsData || []);
 
       const active = (requestsData || []).filter(
-        (r) => ['pending', 'in_progress'].includes(r.status)
+        (r) => ['confirming', 'pending', 'in_progress'].includes(r.status)
       );
       setActiveOrders(active);
 
