@@ -21,6 +21,7 @@ import ConnectionsPage from './pages/Connections.jsx';
 import OnboardingPage from './pages/Onboarding.jsx';
 import MealBookingPage from './pages/MealBooking.jsx';
 import MealHistoryPage from './pages/MealHistory.jsx';
+import InactivityLock from './components/InactivityLock.jsx';
 import { useAuth } from './hooks/useAuth.js';
 
 function Protected({ children, allow }) {
@@ -127,7 +128,9 @@ export default function App() {
         element={
           <Protected>
             <OnboardingGate>
-              <Layout />
+              <InactivityLock>
+                <Layout />
+              </InactivityLock>
             </OnboardingGate>
           </Protected>
         }
