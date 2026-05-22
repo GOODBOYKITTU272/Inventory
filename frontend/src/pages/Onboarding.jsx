@@ -192,23 +192,28 @@ function StepName({ prefs, set, onNext, onBack }) {
         <div>
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1.5 block">Employee Code <span className="text-rose-400">*</span></label>
           <input
-            className="w-full border-2 border-slate-200 rounded-2xl px-4 py-4 text-lg font-semibold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none text-center uppercase"
-            placeholder="e.g. AW001, EMP042…"
+            type="text"
+            inputMode="numeric"
+            className="w-full border-2 border-slate-200 rounded-2xl px-4 py-4 text-2xl font-extrabold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none text-center tracking-[0.3em]"
+            placeholder="0001"
             value={prefs.employeeCode || ''}
-            onChange={(e) => set('employeeCode', e.target.value.toUpperCase())}
-            maxLength={20}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+              set('employeeCode', val);
+            }}
+            maxLength={4}
           />
           <p className="text-center text-[10px] text-slate-400 mt-1">
-            This will appear on your meal receipts and order tickets.
+            4-digit number — shown on meal receipts and order tickets.
           </p>
         </div>
 
         <p className="text-center text-xs text-slate-400">
-          Your order will say: <span className="font-bold text-slate-600">"{prefs.displayName || 'Your name'} ({prefs.employeeCode || 'CODE'}) needs 1x CCD Coffee 🚀"</span>
+          Your order will say: <span className="font-bold text-slate-600">"{prefs.displayName || 'Your name'} ({prefs.employeeCode || '0000'}) needs 1x CCD Coffee 🚀"</span>
         </p>
       </div>
 
-      <NavBar step={1} onBack={onBack} onNext={onNext} nextDisabled={!prefs.displayName?.trim() || !prefs.employeeCode?.trim()} />
+      <NavBar step={1} onBack={onBack} onNext={onNext} nextDisabled={!prefs.displayName?.trim() || (prefs.employeeCode || '').length !== 4} />
     </div>
   );
 }

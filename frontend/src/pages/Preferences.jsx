@@ -185,12 +185,14 @@ export default function Preferences() {
           <div className="flex-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Employee Code</label>
             <input
-              className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none uppercase"
-              placeholder="e.g. AW001"
+              type="text"
+              inputMode="numeric"
+              className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-extrabold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none tracking-widest"
+              placeholder="0001"
               value={employeeCode}
-              onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())}
+              onChange={(e) => setEmployeeCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
               onBlur={saveEmployeeCode}
-              maxLength={20}
+              maxLength={4}
             />
           </div>
           {codeSaving && <Loader2 size={16} className="animate-spin text-brand mt-5" />}
