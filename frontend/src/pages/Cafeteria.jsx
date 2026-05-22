@@ -879,10 +879,11 @@ export default function Cafeteria() {
     const updated = { ...itemPrefs, [key]: pref };
     setItemPrefs(updated);
     if (!session) return;
-    await supabase
-      .from('employee_cafeteria_preferences')
-      .upsert({ user_id: session.user.id, item_prefs: updated }, { onConflict: 'user_id' })
-      .catch(() => {});
+    try {
+      await supabase
+        .from('employee_cafeteria_preferences')
+        .upsert({ user_id: session.user.id, item_prefs: updated }, { onConflict: 'user_id' });
+    } catch (_) { /* ignore */ }
   }
 
   // ── Cart handlers ───────────────────────────────────────────────────────────
@@ -1003,6 +1004,7 @@ export default function Cafeteria() {
         setSavedLocation(location);
         supabase.from('employee_cafeteria_preferences')
           .upsert({ user_id: session.user.id, preferred_location: location }, { onConflict: 'user_id' })
+          .then(() => {})
           .catch(() => {});
       }
       setTimeout(() => {
