@@ -65,6 +65,25 @@ const OOS_BY_TONE = {
     "Sold out",
     "Not available",
   ],
+  boyfriend: [
+    "Hey cutie, this one's all gone for today 🥺💕",
+    "Sorry babe, someone else got the last one 😘",
+    "Out of stock baby, try something else? 💖",
+    "All gone princess, I'll make sure it's here tomorrow 🌹",
+  ],
+  girlfriend: [
+    "Hey handsome, this one's finished for today 🥺💕",
+    "Sorry babe, it's all sold out 😘",
+    "Out of stock baby, pick something else? 💖",
+    "All gone raja, it'll be back tomorrow 🌹",
+  ],
+  gen_z: [
+    "Bruh it's gone 💀",
+    "Sold out bestie, no cap 🫠",
+    "This one said byebye for today 😭",
+    "Not available rn, try another? 🔥",
+    "Stock said 'I'm out' fr fr 💅",
+  ],
 };
 
 function getOosMessage(tone, itemName) {
@@ -79,6 +98,9 @@ const LOW_STOCK_BY_TONE = {
   Funny: (n) => `${n} bache hai, jaldi kar! 🔥`,
   'Mom Mode': (n) => `Beta jaldi, sirf ${n} hai 💝`,
   Minimal: (n) => `${n} left`,
+  boyfriend: (n) => `Hurry babe, only ${n} left! 💕`,
+  girlfriend: (n) => `Jaldi karo raja, sirf ${n} bacha! 💕`,
+  gen_z: (n) => `${n} left no cap, grab it! 🔥`,
 };
 
 const STAGE_INFO = {
@@ -94,10 +116,12 @@ const STAGE_INFO = {
 const BREAD_ITEMS = ['bread + peanut butter', 'bread + jam'];
 const isBreadItem = (name) => BREAD_ITEMS.includes((name || '').toLowerCase());
 
-// ── Preferences Summary Card ──────────────────────────────────────────────────
-function PreferencesSummary({ prefs, location, onEdit }) {
+// ── Preferences Summary Card (Swiggy/Zomato style) ──────────────────────────
+function PreferencesSummary({ prefs, location, drinkPrefs, tastePrefs, onEdit }) {
   const entries = Object.entries(prefs || {});
-  const hasSomething = location || entries.length > 0;
+  const hasDrinks = drinkPrefs && drinkPrefs.length > 0;
+  const hasTastes = tastePrefs && tastePrefs.length > 0;
+  const hasSomething = location || entries.length > 0 || hasDrinks || hasTastes;
 
   if (!hasSomething) {
     return (
@@ -116,43 +140,72 @@ function PreferencesSummary({ prefs, location, onEdit }) {
     );
   }
 
-  const PREF_ICONS = { location: '📍', coffee: '☕', espresso: '☕', latte: '☕', cappuccino: '☕', tea: '🍵', assam: '🍵', elaichi: '🍵', ginger: '🍵', lemon: '🍋', 'hot chocolate': '🍫', badam: '🥜', jam: '🍓', 'peanut butter': '🥜', bread: '🍞' };
-  const prefItems = [];
-  if (location) prefItems.push({ label: `Location: ${location}`, icon: '📍' });
-  for (const [key, val] of entries) {
-    const icon = Object.entries(PREF_ICONS).find(([k]) => key.toLowerCase().includes(k))?.[1] || '⚙️';
-    let detail;
-    if (Array.isArray(val?.taste) && val.taste.length > 0) {
-      detail = val.taste.join(', ');
-    } else if (val?.sides) {
-      detail = `${val.sides === 'both' ? 'Both sides' : 'One side'}${val.bread_type ? `, ${val.bread_type}` : ''}`;
-    } else if (val?.toast) {
-      detail = `${val.slices} slice${val.slices > 1 ? 's' : ''}, ${val.toast}`;
-    } else if (val?.note) {
-      detail = val.note;
-    } else {
-      detail = JSON.stringify(val);
-    }
-    if (typeof detail === 'string' && detail.length < 80 && detail !== '{}') {
-      prefItems.push({ label: `${key}: ${detail}`, icon });
-    }
+  const DRINK_EMOJI = { coffee: '☕', espresso: '☕', latte: '☕', cappuccino: '☕', 'milk coffee': '🥛', tea: '🍵', assam: '🍵', elaichi: '🍵', ginger: '🍵', 'green tea': '🍃', lemon: '🍋', 'hot chocolate': '🍫', badam: '🥜', water: '💧' };
+
+  function getDrinkEmoji(name) {
+    const n = (name || '').toLowerCase();
+    return Object.entries(DRINK_EMOJI).find(([k]) => n.includes(k))?.[1] || '☕';
   }
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-          <MapPin size={12} /> Your Preferences
+    <div className="rounded-2xl bg-gradient-to-br from-brand/5 via-white to-amber-50/50 border border-brand/10 p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-extrabold text-brand uppercase tracking-wider flex items-center gap-1.5">
+          ✨ Your Preferences
         </h3>
-        <button onClick={onEdit} className="text-[11px] font-bold text-brand hover:underline">Edit →</button>
+        <button onClick={onEdit} className="text-[11px] font-bold text-brand bg-brand/10 px-2.5 py-1 rounded-full hover:bg-brand/20 transition-all">Edit</button>
       </div>
-      <div className="space-y-1">
-        {prefItems.slice(0, 4).map((p, i) => (
-          <div key={i} className="text-xs text-slate-600 flex items-center gap-1.5">
-            <span>{p.icon}</span> {p.label}
-          </div>
-        ))}
-      </div>
+
+      {/* Location chip */}
+      {location && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-xs bg-blue-50 text-blue-700 font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+            📍 {location}
+          </span>
+        </div>
+      )}
+
+      {/* Drink preference chips */}
+      {hasDrinks && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {drinkPrefs.map(d => (
+            <span key={d} className="text-[11px] bg-amber-50 text-amber-800 font-bold px-2.5 py-1 rounded-full flex items-center gap-1 border border-amber-100">
+              {getDrinkEmoji(d)} {d}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Taste chips */}
+      {hasTastes && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {tastePrefs.slice(0, 4).map(t => (
+            <span key={t} className="text-[10px] bg-slate-100 text-slate-600 font-medium px-2 py-0.5 rounded-full">
+              {t}
+            </span>
+          ))}
+          {tastePrefs.length > 4 && (
+            <span className="text-[10px] text-slate-400 font-medium px-1">+{tastePrefs.length - 4} more</span>
+          )}
+        </div>
+      )}
+
+      {/* Item-level saved preferences */}
+      {entries.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {entries.slice(0, 3).map(([key, val]) => {
+            let detail = '';
+            if (Array.isArray(val?.taste) && val.taste.length) detail = val.taste.join(', ');
+            else if (val?.sides) detail = val.sides === 'both' ? 'Both sides' : 'One side';
+            if (!detail) return null;
+            return (
+              <span key={key} className="text-[10px] bg-emerald-50 text-emerald-700 font-medium px-2 py-0.5 rounded-full border border-emerald-100">
+                {getDrinkEmoji(key)} {key}: {detail}
+              </span>
+            );
+          }).filter(Boolean)}
+        </div>
+      )}
     </div>
   );
 }
@@ -524,12 +577,14 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
 // ── Beverage Taste Preference Sheet (first-time popup for coffee/tea) ─────────
 const COFFEE_TASTES = ['Strong Coffee', 'Light Coffee', 'Less Sugar', 'No Sugar', 'With Milk', 'Without Milk'];
 const TEA_TASTES    = ['Strong Tea', 'Light Tea', 'Less Sugar', 'No Sugar'];
-const LEMON_TASTES  = ['Normal', 'Less Sugar', 'Strong Lemon', 'Mild Lemon'];
+const LEMON_TASTES  = ['Normal', 'Less Sugar', 'Strong Lemon', 'Mild Lemon', 'With Honey 🍯', 'Without Honey'];
+const GREEN_TEA_TASTES = ['Plain Green Tea', 'With Honey 🍯', 'With Lemon', 'Light Brew', 'Strong Brew'];
 const HOT_CHOC_TASTES = ['Less Sugar', 'No Sugar', 'Extra Milk'];
 
 function getTastesForItem(itemName) {
   const n = (itemName || '').toLowerCase();
   if (n.includes('lemon')) return LEMON_TASTES;
+  if (n.includes('green tea')) return GREEN_TEA_TASTES;
   if (n.includes('tea') || n.includes('elaichi') || n.includes('ginger') || n.includes('assam')) return TEA_TASTES;
   if (n.includes('hot chocolate') || n.includes('hot choc')) return HOT_CHOC_TASTES;
   if (n.includes('coffee') || n.includes('espresso') || n.includes('latte') || n.includes('cappuccino') || n.includes('badam')) return COFFEE_TASTES;
@@ -845,30 +900,25 @@ export default function Cafeteria() {
     }
   }, []);
 
-  // Load saved item preferences (bread slices/toast prefs) + AI tone
+  // Load saved item preferences, tone, drink/taste prefs
+  const [userDrinkPrefs, setUserDrinkPrefs] = useState([]);
+  const [userTastePrefs, setUserTastePrefs] = useState([]);
+
   useEffect(() => {
     if (!session) return;
     supabase
       .from('employee_cafeteria_preferences')
-      .select('item_prefs, preferred_location')
+      .select('item_prefs, preferred_location, notification_tone, drink_prefs, taste_prefs')
       .eq('user_id', session.user.id)
       .maybeSingle()
       .then(({ data }) => {
         if (data?.item_prefs) setItemPrefs(data.item_prefs);
         if (data?.preferred_location) setSavedLocation(data.preferred_location);
+        if (data?.notification_tone) setTone(data.notification_tone);
+        if (Array.isArray(data?.drink_prefs)) setUserDrinkPrefs(data.drink_prefs);
+        if (Array.isArray(data?.taste_prefs)) setUserTastePrefs(data.taste_prefs);
       })
       .catch(() => {});
-
-    // Load notification tone preference
-    supabase
-      .from('employee_preferences')
-      .select('notification_tone')
-      .eq('employee_id', session.user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.notification_tone) setTone(data.notification_tone);
-      })
-      .catch(() => {}); // table may not exist yet
   }, [session]);
 
   useEffect(() => { load(); }, [load]);
@@ -1083,6 +1133,8 @@ export default function Cafeteria() {
       <PreferencesSummary
         prefs={itemPrefs}
         location={savedLocation}
+        drinkPrefs={userDrinkPrefs}
+        tastePrefs={userTastePrefs}
         onEdit={() => navigate('/settings')}
       />
 

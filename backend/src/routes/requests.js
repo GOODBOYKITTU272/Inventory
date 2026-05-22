@@ -39,6 +39,12 @@ const DEPENDENCY_MESSAGES = {
   'Minimal': {
     _default: (item, dep) => `${dep} out of stock. Can't serve ${item}.`,
   },
+  'boyfriend': {
+    _default: (item, dep) => `Hey babe, ${dep} is out right now 🥺 Can't make your ${item} without it. We'll restock! 💕`,
+  },
+  'girlfriend': {
+    _default: (item, dep) => `Hey handsome, ${dep} ka stock khatam ho gaya 🥺 ${item} nahi ban payega abhi. Jaldi laate hain! 💕`,
+  },
 };
 
 function getDependencyMessage(tone, itemName, depName) {
@@ -158,9 +164,9 @@ router.post('/', async (req, res, next) => {
         let userTone = 'Friendly';
         try {
           const { data: prefRow } = await supabaseAdmin
-            .from('employee_preferences')
+            .from('employee_cafeteria_preferences')
             .select('notification_tone')
-            .eq('employee_id', req.user.id)
+            .eq('user_id', req.user.id)
             .maybeSingle();
           if (prefRow?.notification_tone) userTone = prefRow.notification_tone;
         } catch (_) { /* use default tone */ }

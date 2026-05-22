@@ -21,6 +21,7 @@ const DRINK_CATEGORIES = [
       { id: 'Assam Tea',    emoji: '🍵', label: 'Assam Tea' },
       { id: 'Elaichi Tea',  emoji: '🍵', label: 'Elaichi Tea' },
       { id: 'Ginger Tea',   emoji: '🍵', label: 'Ginger Tea' },
+      { id: 'Green Tea',    emoji: '🍃', label: 'Green Tea' },
       { id: 'Lemon Tea',    emoji: '🍋', label: 'Lemon Tea' },
     ]},
   { id: 'water', emoji: '💧', label: 'Water', subs: [] },
@@ -39,7 +40,8 @@ const SNACK_OPTS = [
 
 const COFFEE_TASTE  = ['Strong Coffee','Light Coffee','Less Sugar','No Sugar','With Milk','Without Milk'];
 const TEA_TASTE     = ['Strong Tea','Light Tea','Less Sugar','No Sugar'];
-const LEMON_TASTE   = ['Normal','Less Sugar','Strong Lemon','Mild Lemon'];
+const LEMON_TASTE   = ['Normal','Less Sugar','Strong Lemon','Mild Lemon','With Honey 🍯','Without Honey'];
+const GREEN_TEA_TASTE = ['Plain Green Tea','With Honey 🍯','With Lemon','Light Brew','Strong Brew'];
 
 const LOCATION_OPTS = [
   { id: 'Balaji Cabin',     label: 'Balaji Cabin' },
@@ -57,13 +59,24 @@ const SHIFT_OPTS = [
   { id: 'night',   emoji: '🌙', label: 'Night Shift',   sub: '8:00 PM – 5:30 AM', detail: 'Dinner served ~11:00 PM' },
 ];
 
-const TONE_OPTS = [
+const TONE_OPTS_BASE = [
   { id: 'gen_z',        emoji: '🔥', label: 'Gen-Z Vibes',    example: '"Your coffee is on its way bestie! ☕🚀"' },
   { id: 'Friendly',     emoji: '😊', label: 'Friendly',       example: '"Coffee time! Should we send your usual?"' },
   { id: 'Professional', emoji: '👔', label: 'Professional',   example: '"Your coffee reminder is ready."' },
   { id: 'Funny',        emoji: '😄', label: 'Funny',          example: '"Coffee is calling. Should we answer?"' },
   { id: 'Mom Mode',     emoji: '💝', label: 'Mom Mode',       example: '"Two days no coffee? Are you okay? 😄"' },
 ];
+const TONE_BOYFRIEND = { id: 'boyfriend', emoji: '💕', label: 'Boyfriend Style', example: '"Hey cutie, your coffee\'s here 💖 Don\'t forget to eat lunch!"' };
+const TONE_GIRLFRIEND = { id: 'girlfriend', emoji: '💕', label: 'Girlfriend Style', example: '"Hey handsome, your chai is ready ☕💖 Stay hydrated!"' };
+
+function getToneOpts(gender) {
+  const base = [...TONE_OPTS_BASE];
+  if (gender === 'female') base.splice(1, 0, TONE_BOYFRIEND);
+  if (gender === 'male')   base.splice(1, 0, TONE_GIRLFRIEND);
+  return base;
+}
+// For backward compat
+const TONE_OPTS = TONE_OPTS_BASE;
 
 /* ── Reusable chip components ────────────────────────────────────── */
 function MultiChip({ emoji, label, selected, onToggle }) {
@@ -351,16 +364,18 @@ function StepSnacks({ prefs, toggle, onNext, onBack }) {
 function StepTaste({ prefs, toggle, onNext, onBack }) {
   const drinks = prefs.drinks || [];
   const CCD_SUBS = ['Espresso', 'Latte', 'Cappuccino', 'Milk Coffee', 'Hot Chocolate', 'Badam Mix'];
-  const TEA_SUBS = ['Assam Tea', 'Elaichi Tea', 'Ginger Tea', 'Lemon Tea'];
+  const TEA_SUBS = ['Assam Tea', 'Elaichi Tea', 'Ginger Tea', 'Green Tea', 'Lemon Tea'];
 
-  const hasCoffee = drinks.some(d => CCD_SUBS.includes(d) || d.toLowerCase().includes('coffee'));
-  const hasTea    = drinks.some(d => TEA_SUBS.includes(d) || d === 'Regular Tea');
-  const hasLemon  = drinks.includes('Lemon Tea');
+  const hasCoffee   = drinks.some(d => CCD_SUBS.includes(d) || d.toLowerCase().includes('coffee'));
+  const hasTea      = drinks.some(d => ['Assam Tea','Elaichi Tea','Ginger Tea'].includes(d) || d === 'Regular Tea');
+  const hasGreenTea = drinks.includes('Green Tea');
+  const hasLemon    = drinks.includes('Lemon Tea');
 
   const groups = [];
-  if (hasCoffee) groups.push({ label: '☕ Coffee — how do you take it?', opts: COFFEE_TASTE });
-  if (hasTea)    groups.push({ label: '🍵 Tea — how do you like it?',    opts: TEA_TASTE });
-  if (hasLemon)  groups.push({ label: '🍋 Lemon Tea preference',         opts: LEMON_TASTE });
+  if (hasCoffee)   groups.push({ label: '☕ Coffee — how do you take it?', opts: COFFEE_TASTE });
+  if (hasTea)      groups.push({ label: '🍵 Tea — how do you like it?',    opts: TEA_TASTE });
+  if (hasGreenTea) groups.push({ label: '🍃 Green Tea preference',         opts: GREEN_TEA_TASTE });
+  if (hasLemon)    groups.push({ label: '🍋 Lemon Tea preference',         opts: LEMON_TASTE });
 
   if (!groups.length) {
     return (
@@ -481,8 +496,50 @@ function StepReminders({ prefs, set, onNext, onBack }) {
   );
 }
 
-// Step 8 — Tone
+// Step 8 — Gender (for personalized notification tone)
+function StepGender({ prefs, set, onNext, onBack }) {
+  const GENDER_OPTS = [
+    { id: 'male',   emoji: '👨', label: 'Male' },
+    { id: 'female', emoji: '👩', label: 'Female' },
+    { id: 'other',  emoji: '🧑', label: 'Prefer not to say' },
+  ];
+  return (
+    <div className="space-y-6 pb-28">
+      <div className="text-center pt-4">
+        <div className="text-5xl mb-3">🙋</div>
+        <h2 className="text-2xl font-bold text-slate-900">One quick thing...</h2>
+        <p className="text-slate-500 mt-2 text-sm">
+          This helps us personalize your notification style.
+          <br /><span className="text-[10px] text-slate-400">Only used for AI tone — never shared with anyone.</span>
+        </p>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {GENDER_OPTS.map(({ id, emoji, label }) => (
+          <button
+            key={id}
+            onClick={() => set('gender', id)}
+            className={`p-5 rounded-2xl border-2 text-center transition-all active:scale-95 ${
+              prefs.gender === id
+                ? 'border-brand bg-brand/5 shadow-md shadow-brand/10'
+                : 'border-slate-200 bg-white hover:border-brand/30'
+            }`}
+          >
+            <div className="text-3xl mb-2">{emoji}</div>
+            <div className={`text-sm font-bold ${prefs.gender === id ? 'text-brand' : 'text-slate-700'}`}>
+              {label}
+              {prefs.gender === id && <Check size={12} className="inline ml-1" />}
+            </div>
+          </button>
+        ))}
+      </div>
+      <NavBar step={8} onBack={onBack} onNext={onNext} />
+    </div>
+  );
+}
+
+// Step 9 — Tone
 function StepTone({ prefs, set, onNext, onBack }) {
+  const toneOpts = getToneOpts(prefs.gender);
   return (
     <div className="space-y-6 pb-28">
       <div className="text-center pt-4">
@@ -491,7 +548,7 @@ function StepTone({ prefs, set, onNext, onBack }) {
         <p className="text-slate-500 mt-2 text-sm">Controls notifications and AI personality.</p>
       </div>
       <div className="space-y-2">
-        {TONE_OPTS.map(({ id, emoji, label, example }) => (
+        {toneOpts.map(({ id, emoji, label, example }) => (
           <SingleChip
             key={id}
             emoji={emoji}
@@ -502,12 +559,12 @@ function StepTone({ prefs, set, onNext, onBack }) {
           />
         ))}
       </div>
-      <NavBar step={8} onBack={onBack} onNext={onNext} nextLabel="Almost Done →" />
+      <NavBar step={9} onBack={onBack} onNext={onNext} nextLabel="Almost Done →" />
     </div>
   );
 }
 
-// Step 7 — Done
+// Step 10 — Done
 function StepDone({ onFinish, saving }) {
   return (
     <div className="text-center py-16 space-y-6">
@@ -544,7 +601,7 @@ function StepDone({ onFinish, saving }) {
 }
 
 /* ── Main Onboarding ─────────────────────────────────────────────── */
-const TOTAL = 10;
+const TOTAL = 11;
 
 export default function Onboarding({ onComplete }) {
   const { session } = useAuth();
@@ -572,6 +629,7 @@ export default function Onboarding({ onComplete }) {
     lunchReminder:     false,
     lunchTime:         '12:45',
     waterReminder:     false,
+    gender: '',
     tone: 'gen_z',
   });
 
@@ -672,8 +730,9 @@ export default function Onboarding({ onComplete }) {
     <StepTaste     key={5} prefs={prefs} toggle={v => toggleArr('tastes', v)} onNext={next} onBack={back} />,
     <StepLocation  key={6} prefs={prefs} set={set}  onNext={next} onBack={back} />,
     <StepReminders key={7} prefs={prefs} set={set} onNext={next} onBack={back} />,
-    <StepTone      key={8} prefs={prefs} set={v => set('tone', v)} onNext={next} onBack={back} />,
-    <StepDone      key={9} onFinish={finish} saving={saving} />,
+    <StepGender    key={8} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepTone      key={9} prefs={prefs} set={v => set('tone', v)} onNext={next} onBack={back} />,
+    <StepDone      key={10} onFinish={finish} saving={saving} />,
   ];
 
   return (
