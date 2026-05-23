@@ -1056,22 +1056,26 @@ export default function Cafeteria() {
   });
 
   // ── Virtual drink enrichment ─────────────────────────────────────────────
-  // Coffee Beans → Espresso, Milk Coffee, Cappuccino, Latte
-  // Lemon sachets → Lemon Tea
-  // These items don't have their own cafeteria_items rows — they draw from
-  // a backing ingredient. We synthesise them so users see them in the menu.
+  // Maps INDUS+ machine menu → virtual drink cards in the app UI.
+  // Backing ingredients control in-stock status — if beans run out, all coffee drinks go OOS.
+  // Multi-ingredient drinks (Cappuccino) check BOTH Coffee Beans AND Milk.
   // Water is NOT touched here.
   function enrichItemsWithVirtualDrinks(rawItems) {
     if (!rawItems) return [];
 
-    // Find Coffee Beans and Lemon sachets rows
+    // Find backing ingredient rows from cafeteria_items
     const coffeeBeansRow  = rawItems.find(i => (i.item_name || '').toLowerCase().includes('coffee beans'));
     const lemonSachetsRow = rawItems.find(i => (i.item_name || '').toLowerCase().includes('lemon sachet'));
+    const assamTeaRow     = rawItems.find(i => (i.item_name || '').toLowerCase().includes('assam tea'));
+    const milkRow         = rawItems.find(i => (i.item_name || '').toLowerCase() === 'milk' ||
+                                               (i.item_name || '').toLowerCase().includes('milk tetra') ||
+                                               (i.item_name || '').toLowerCase().includes('toned milk'));
 
-    // Mark backing ingredients as non-orderable so they don't appear directly in the menu
+    // Mark backing ingredients as non-orderable (hidden from direct menu)
     const hiddenNames = new Set();
     if (coffeeBeansRow)  hiddenNames.add(coffeeBeansRow.item_name.toLowerCase());
     if (lemonSachetsRow) hiddenNames.add(lemonSachetsRow.item_name.toLowerCase());
+    // Note: Assam tea and Milk stay orderable as direct items too
 
     const filtered = rawItems.map(i =>
       hiddenNames.has((i.item_name || '').toLowerCase())
@@ -1081,48 +1085,131 @@ export default function Cafeteria() {
 
     const virtual = [];
 
+    // ── Coffee Beans → All coffee-based machine drinks ──────────────────────
     if (coffeeBeansRow) {
-      // Each coffee serving uses ~7g of beans. coffeeBeansRow.stock_servings tracks cups.
       const cupsAvail = coffeeBeansRow.stock_servings ?? null;
-      const COFFEE_VIRTUALS = [
-        { suffix: 'Espresso',    emoji: '☕', id_suffix: '_espresso' },
-        { suffix: 'Milk Coffee', emoji: '🥛', id_suffix: '_milk_coffee' },
-        { suffix: 'Cappuccino',  emoji: '☕', id_suffix: '_cappuccino' },
+      const milkAvail = milkRow ? (milkRow.stock_servings ?? milkRow.stock_today ?? null) : null;
+
+      // Helper: is a drink in stock? (null means no limit tracked)
+      const coffeeInStock = cupsAvail === null || cupsAvail > 0;
+      const milkInStock   = milkRow ? (milkAvail === null || milkAvail > 0) : true; // if no milk row, don't block
+
+      // Coffee-only drinks — just needs Coffee Beans
+      const COFFEE_ONLY = [
+        { name: 'Espresso',      emoji: '☕', id: '_espresso',      note: 'Intense shot, no milk' },
+        { name: 'Americano',     emoji: '🫖', id: '_americano',     note: 'Espresso + hot water' },
+        { name: 'Strong Coffee', emoji: '☕', id: '_strong_coffee', note: 'Extra strong brew' },
+        { name: 'Black Coffee',  emoji: '🖤', id: '_black_coffee',  note: 'No milk, no sugar' },
+        { name: 'Brew',          emoji: '🫗', id: '_brew',          note: 'Classic filter brew' },
+        { name: 'Half Cup',      emoji: '½☕', id: '_half_cup',     note: 'Half serving' },
       ];
-      COFFEE_VIRTUALS.forEach(({ suffix, emoji, id_suffix }) => {
+      COFFEE_ONLY.forEach(({ name, emoji, id, note }) => {
         virtual.push({
-          id:            coffeeBeansRow.id + id_suffix,
-          item_name:     suffix,
-          display_name:  suffix,
-          category:      'beverage',
+          id:             coffeeBeansRow.id + id,
+          item_name:      name,
+          display_name:   name,
+          description:    note,
+          category:       'beverage',
           emoji,
           stock_servings: cupsAvail,
           stock_today:    null,
-          orderable:      true,
+          orderable:      coffeeInStock,
           _virtual:       true,
           _backing:       coffeeBeansRow.item_name,
+          _machine:       true,
+        });
+      });
+
+      // Coffee + Milk drinks — needs BOTH Coffee Beans AND Milk
+      const COFFEE_MILK = [
+        { name: 'Cappuccino',  emoji: '☕', id: '_cappuccino',  note: 'Espresso + steamed milk + foam' },
+        { name: 'Latte',       emoji: '🍵', id: '_latte',       note: 'Espresso + steamed milk' },
+        { name: 'Milk Coffee', emoji: '🥛', id: '_milk_coffee', note: 'Coffee with milk' },
+      ];
+      COFFEE_MILK.forEach(({ name, emoji, id, note }) => {
+        virtual.push({
+          id:             coffeeBeansRow.id + id,
+          item_name:      name,
+          display_name:   name,
+          description:    note,
+          category:       'beverage',
+          emoji,
+          stock_servings: Math.min(cupsAvail ?? Infinity, milkAvail ?? Infinity) === Infinity ? null : Math.min(cupsAvail ?? 9999, milkAvail ?? 9999),
+          stock_today:    null,
+          orderable:      coffeeInStock && milkInStock,
+          _virtual:       true,
+          _backing:       coffeeBeansRow.item_name,
+          _machine:       true,
+          _needs_milk:    true,
         });
       });
     }
 
+    // ── Lemon sachets → Lemon Tea ────────────────────────────────────────────
     if (lemonSachetsRow) {
       const sachetsAvail = lemonSachetsRow.stock_servings ?? lemonSachetsRow.stock_today ?? null;
       virtual.push({
-        id:            lemonSachetsRow.id + '_lemon_tea',
-        item_name:     'Lemon Tea',
-        display_name:  'Lemon Tea',
-        category:      'beverage',
-        emoji:         '🍋',
+        id:             lemonSachetsRow.id + '_lemon_tea',
+        item_name:      'Lemon Tea',
+        display_name:   'Lemon Tea',
+        description:    'Refreshing lemon sachet brew',
+        category:       'beverage',
+        emoji:          '🍋',
         stock_servings: sachetsAvail,
         stock_today:    null,
-        orderable:      true,
+        orderable:      sachetsAvail === null || sachetsAvail > 0,
         _virtual:       true,
         _backing:       lemonSachetsRow.item_name,
+        _machine:       false,
       });
     }
 
+    // ── Assam Tea → Strong Tea, Black Tea, Dip Tea ───────────────────────────
+    if (assamTeaRow) {
+      const assamAvail = assamTeaRow.stock_servings ?? assamTeaRow.stock_today ?? null;
+      const assamInStock = assamAvail === null || assamAvail > 0;
+
+      [
+        { name: 'Strong Tea', emoji: '🍵', id: '_strong_tea', note: 'Extra strong tea brew' },
+        { name: 'Black Tea',  emoji: '🖤', id: '_black_tea',  note: 'No milk, pure tea' },
+        { name: 'Dip Tea',    emoji: '🫖', id: '_dip_tea',    note: 'Tea bag + hot water, 2–3 min steep' },
+      ].forEach(({ name, emoji, id, note }) => {
+        virtual.push({
+          id:             assamTeaRow.id + id,
+          item_name:      name,
+          display_name:   name,
+          description:    note,
+          category:       'beverage',
+          emoji,
+          stock_servings: assamAvail,
+          stock_today:    null,
+          orderable:      assamInStock,
+          _virtual:       true,
+          _backing:       assamTeaRow.item_name,
+          _machine:       true,
+        });
+      });
+    }
+
+    // ── Hot Water — always available, no stock deduction ─────────────────────
+    virtual.push({
+      id:            '__hot_water_virtual',
+      item_name:     'Hot Water',
+      display_name:  'Hot Water',
+      description:   'From machine — instant',
+      category:      'beverage',
+      emoji:         '♨️',
+      stock_servings: null,
+      stock_today:   null,
+      orderable:     true,
+      _virtual:      true,
+      _backing:      null,
+      _machine:      true,
+    });
+
     return [...filtered, ...virtual];
   }
+
 
   const load = useCallback(async () => {
     try {

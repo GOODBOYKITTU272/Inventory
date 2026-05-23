@@ -36,18 +36,40 @@ const ITEM_CATEGORY = {
   'biscuits': 'snack', 'black coffee': 'beverage',
   'stationery': 'stationery', 'cleaning': 'cleaning',
   'maintenance': 'maintenance', 'meeting room setup': 'other',
-  // Virtual drinks backed by Coffee Beans or Lemon sachets
+  // INDUS+ Machine drinks (virtual — backed by Coffee Beans, Tea bags, or Milk)
   'espresso': 'beverage', 'latte': 'beverage', 'cappuccino': 'beverage', 'milk coffee': 'beverage',
+  'americano': 'beverage', 'strong coffee': 'beverage', 'black coffee': 'beverage',
+  'half cup': 'beverage', 'brew': 'beverage', 'hot water': 'beverage',
+  'strong tea': 'beverage', 'black tea': 'beverage', 'dip tea': 'beverage',
+  'milk': 'beverage',
 };
 
-// Map virtual menu drink names → their real backing ingredient in cafeteria_items
-// e.g. 'Espresso' is not a DB row — it is served from 'Coffee Beans'
+// Map virtual menu drink names → array of backing ingredients with servings per cup.
+// This drives BOTH stock checks AND stock deductions.
+// Multi-ingredient drinks (Cappuccino = Coffee Beans + Milk) must list ALL ingredients.
+// servings: 1 = full cup deduction, 0.5 = half (Half Cup)
 const VIRTUAL_DRINK_MAP = {
-  'espresso':    'Coffee Beans',
-  'latte':       'Coffee Beans',
-  'cappuccino':  'Coffee Beans',
-  'milk coffee': 'Coffee Beans',
-  'lemon tea':   'Lemon sachets',
+  // Coffee-only drinks (Coffee Beans only)
+  'espresso':      [{ item: 'Coffee Beans', servings: 1 }],
+  'americano':     [{ item: 'Coffee Beans', servings: 1 }],
+  'strong coffee': [{ item: 'Coffee Beans', servings: 1 }],
+  'black coffee':  [{ item: 'Coffee Beans', servings: 1 }],
+  'brew':          [{ item: 'Coffee Beans', servings: 1 }],
+  'half cup':      [{ item: 'Coffee Beans', servings: 0.5 }],
+  // Coffee + Milk drinks (both deducted)
+  'cappuccino':    [{ item: 'Coffee Beans', servings: 1 }, { item: 'Milk', servings: 1 }],
+  'latte':         [{ item: 'Coffee Beans', servings: 1 }, { item: 'Milk', servings: 1 }],
+  'milk coffee':   [{ item: 'Coffee Beans', servings: 1 }, { item: 'Milk', servings: 1 }],
+  // Tea drinks
+  'strong tea':    [{ item: 'Assam tea', servings: 1 }],
+  'black tea':     [{ item: 'Assam tea', servings: 1 }],
+  'dip tea':       [{ item: 'Assam tea', servings: 1 }],
+  // Lemon tea
+  'lemon tea':     [{ item: 'Lemon sachets', servings: 1 }],
+  // Milk only
+  'milk':          [{ item: 'Milk', servings: 1 }],
+  // Hot Water — no stock deduction (direct from machine)
+  'hot water':     [],
 };
 
 // ── Tone-aware dependency messages ──────────────────────────────────────────
@@ -693,21 +715,63 @@ function getOOSMessage(userTone, itemName) {
 async function deductStockForRequest(user, itemName, qty, instruction, breadType) {
   const nameLower = (itemName || '').toLowerCase();
 
-  // Resolve virtual drinks → their real backing ingredient in cafeteria_items
-  // e.g. 'Espresso' is served from 'Coffee Beans'; 'Lemon Tea' from 'Lemon sachets'
-  const backingName = VIRTUAL_DRINK_MAP[nameLower] || itemName;
+  // Check if this is a virtual drink with a multi-ingredient backing map
+  const virtualIngredients = VIRTUAL_DRINK_MAP[nameLower];
 
-  // 1. Look up the main item (use backing ingredient name if virtual drink)
-  const { data: itemRow } = await supabaseAdmin
-    .from('cafeteria_items')
-    .select('id, item_name, stock_today, stock_servings, dependencies, sides_option, serving_grams')
-    .ilike('item_name', backingName)
-    .maybeSingle();
+  if (virtualIngredients !== undefined) {
+    // ── Virtual drink path ────────────────────────────────────────────────────
+    // Could be multi-ingredient (e.g. Cappuccino = Coffee Beans + Milk)
+    // Hot Water has empty array — no stock deduction needed
+    if (virtualIngredients.length === 0) return; // Hot Water — no deduction
 
-  if (!itemRow) {
-    // Unknown item — skip silently (don't block the order)
-    return;
+    for (const { item: backingItemName, servings: servingsPerCup } of virtualIngredients) {
+      const deductAmt = Math.ceil(qty * servingsPerCup); // round up, always integer
+
+      const { data: backingRow } = await supabaseAdmin
+        .from('cafeteria_items')
+        .select('id, item_name, stock_today, stock_servings')
+        .ilike('item_name', backingItemName)
+        .maybeSingle();
+
+      if (!backingRow) continue; // ingredient not tracked — skip silently
+
+      const effectiveStock = backingRow.stock_servings ?? backingRow.stock_today;
+      if (effectiveStock !== null && effectiveStock !== undefined && effectiveStock < deductAmt) {
+        const userTone = await getUserTone(user.id);
+        // Use the virtual drink name for the error, ingredient name as context
+        throw new Error(getOOSMessage(userTone, `${itemName} (${backingItemName} ran out)`));
+      }
+
+      // Deduct
+      const updatePayload = {};
+      if (backingRow.stock_servings !== null) {
+        updatePayload.stock_servings = Math.max(0, (backingRow.stock_servings || 0) - deductAmt);
+      } else if (backingRow.stock_today !== null) {
+        updatePayload.stock_today = Math.max(0, (backingRow.stock_today || 0) - deductAmt);
+      }
+      if (Object.keys(updatePayload).length > 0) {
+        await supabaseAdmin.from('cafeteria_items').update(updatePayload).eq('id', backingRow.id);
+      }
+    }
+
+    // Also deduct stirrers for virtual beverages that need them
+    if (isBeverageUsingStirrer(itemName)) {
+      const stirrerNeeded = Math.round(qty * 1.5);
+      const { data: stirItem } = await supabaseAdmin
+        .from('cafeteria_items').select('id, stock_servings').ilike('item_name', 'Stirrers').maybeSingle();
+      if (stirItem && stirItem.stock_servings !== null) {
+        if (stirItem.stock_servings < stirrerNeeded) {
+          throw new Error(`Sorry, not enough stirrers left to prepare your ${itemName}.`);
+        }
+        await supabaseAdmin.from('cafeteria_items')
+          .update({ stock_servings: (stirItem.stock_servings || 0) - stirrerNeeded })
+          .eq('id', stirItem.id);
+      }
+    }
+    return; // done with virtual drink
   }
+
+  // ── Regular (non-virtual) item path ──────────────────────────────────────
 
   // 2. Check if we need to deduct stirrers
   const needsStirrers = isBeverageUsingStirrer(itemName);
@@ -814,16 +878,49 @@ async function restoreStockForRequest(order) {
   const isBoth = /both\s*side/i.test(order.instruction || '');
   const sidesM = isBoth ? 2 : 1;
 
-  // Resolve virtual drinks → their backing ingredient (same logic as deduct)
-  const backingName = VIRTUAL_DRINK_MAP[(itemName || '').toLowerCase()] || itemName;
+  const nameLower = (itemName || '').toLowerCase();
+  const virtualIngredients = VIRTUAL_DRINK_MAP[nameLower];
 
-  const { data: itemRow } = await supabaseAdmin
-    .from('cafeteria_items')
-    .select('id, item_name, stock_today, stock_servings, dependencies, sides_option')
-    .ilike('item_name', backingName)
-    .maybeSingle();
+  if (virtualIngredients !== undefined) {
+    // ── Virtual drink restore path ────────────────────────────────────────────
+    if (virtualIngredients.length === 0) return; // Hot Water — nothing to restore
 
-  if (!itemRow) return;
+    for (const { item: backingItemName, servings: servingsPerCup } of virtualIngredients) {
+      const restoreAmt = Math.ceil(rawQty * servingsPerCup);
+
+      const { data: backingRow } = await supabaseAdmin
+        .from('cafeteria_items')
+        .select('id, stock_today, stock_servings')
+        .ilike('item_name', backingItemName)
+        .maybeSingle();
+
+      if (!backingRow) continue;
+
+      const updatePayload = {};
+      if (backingRow.stock_servings !== null) {
+        updatePayload.stock_servings = (backingRow.stock_servings || 0) + restoreAmt;
+      } else if (backingRow.stock_today !== null) {
+        updatePayload.stock_today = (backingRow.stock_today || 0) + restoreAmt;
+      }
+      if (Object.keys(updatePayload).length > 0) {
+        await supabaseAdmin.from('cafeteria_items').update(updatePayload).eq('id', backingRow.id);
+      }
+    }
+
+    // Restore stirrers for virtual beverages
+    if (isBeverageUsingStirrer(itemName)) {
+      const { data: stirItem } = await supabaseAdmin
+        .from('cafeteria_items').select('id, stock_servings').ilike('item_name', 'Stirrers').maybeSingle();
+      if (stirItem && stirItem.stock_servings !== null) {
+        await supabaseAdmin.from('cafeteria_items')
+          .update({ stock_servings: (stirItem.stock_servings || 0) + Math.round(rawQty * 1.5) })
+          .eq('id', stirItem.id);
+      }
+    }
+    return;
+  }
+
+  // ── Regular (non-virtual) restore path ───────────────────────────────────
 
   // 1. Restore stirrers
   if (isBeverageUsingStirrer(itemName)) {
