@@ -13,9 +13,9 @@ import { test, expect } from '@playwright/test';
 
 test('login page renders', async ({ page }) => {
   await page.goto('/login');
-  await expect(page.getByText(/applyways pantry/i)).toBeVisible();
-  await expect(page.getByPlaceholder(/you@applyways\.com/i)).toBeVisible();
-  await expect(page.getByRole('button', { name: /send magic link/i })).toBeVisible();
+  await expect(page.getByText(/Office Pantry/i)).toBeVisible();
+  await expect(page.getByPlaceholder(/you@applywizz\.ai/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Continue/i })).toBeVisible();
 });
 
 test('protected route redirects to login when signed out', async ({ page }) => {
