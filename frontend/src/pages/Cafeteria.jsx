@@ -160,83 +160,93 @@ function PreferencesSummary({ prefs, location, drinkPrefs, tastePrefs, items, on
     return !obOut && !servOut;
   }
 
+  function getDrinkCustomizations(drinkName) {
+    const dn = drinkName.toLowerCase();
+    const saved = prefs?.[dn];
+    if (saved?.taste && saved.taste.length > 0) {
+      return saved.taste.join(', ');
+    }
+    if (tastePrefs && tastePrefs.length > 0) {
+      const item = items?.find(i => (i.item_name || '').toLowerCase().includes(dn) || (i.display_name || '').toLowerCase().includes(dn));
+      const targetName = item?.item_name || drinkName;
+      const validTastes = getTastesForItem(targetName) || [];
+      const applied = tastePrefs.filter(t => validTastes.includes(t));
+      if (applied.length > 0) {
+        return applied.join(', ');
+      }
+    }
+    return '';
+  }
+
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-brand/5 via-white to-amber-50/50 border border-brand/10 p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-3">
+    <div className="rounded-2xl bg-gradient-to-br from-brand/5 via-white to-amber-50/50 border border-brand/10 p-5 shadow-sm space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <h3 className="text-xs font-extrabold text-brand uppercase tracking-wider flex items-center gap-1.5">
-          ⚡ Quick Order
+          ⚡ Quick Checkout
         </h3>
-        <button onClick={onEdit} className="text-[11px] font-bold text-brand bg-brand/10 px-2.5 py-1 rounded-full hover:bg-brand/20 transition-all">Edit Prefs</button>
+        <button onClick={onEdit} className="text-[11px] font-bold text-brand bg-brand/10 px-2.5 py-1 rounded-full hover:bg-brand/20 transition-all">Edit</button>
       </div>
 
-      {/* Location chip */}
+      {/* Location field is separate */}
       {location && (
-        <div className="flex items-center gap-1.5 mb-2">
-          <span className="text-xs bg-blue-50 text-blue-700 font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
-            📍 {location}
-          </span>
+        <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-2.5 rounded-xl border border-slate-100 font-medium">
+          <span className="text-base shrink-0">📍</span>
+          <span>Deliver to: <span className="font-extrabold text-slate-800">{location}</span></span>
         </div>
       )}
 
-      {/* Drink preference chips — TAPPABLE for quick order */}
-      {hasDrinks && (
-        <div className="flex flex-wrap gap-1.5 mb-2">
+      {/* Favorite Orders as actionable cards/rows */}
+      {hasDrinks ? (
+        <div className="space-y-2">
           {drinkPrefs.map(d => {
             const inStock = isDrinkInStock(d);
             const emoji = getDrinkEmoji(d);
-            return inStock ? (
-              <button
-                key={d}
-                onClick={() => onQuickOrder && onQuickOrder(d, emoji)}
-                className="text-[11px] bg-amber-50 text-amber-800 font-bold px-2.5 py-1 rounded-full flex items-center gap-1 border border-amber-200 hover:bg-amber-100 hover:border-amber-300 active:scale-95 transition-all cursor-pointer shadow-sm"
+            const customizations = getDrinkCustomizations(d);
+
+            return (
+              <div 
+                key={d} 
+                className={`flex items-center justify-between p-3.5 rounded-xl border transition-all ${
+                  inStock 
+                    ? 'bg-white border-slate-100 hover:border-brand/20 shadow-sm' 
+                    : 'bg-slate-50 border-slate-100 opacity-60'
+                }`}
               >
-                {emoji} {d} <span className="text-[9px] text-amber-500 font-bold">TAP</span>
-              </button>
-            ) : (
-              <span
-                key={d}
-                className="text-[11px] bg-slate-100 text-slate-400 font-bold px-2.5 py-1 rounded-full flex items-center gap-1 border border-slate-200 line-through cursor-not-allowed"
-              >
-                {emoji} {d} <span className="text-[9px] no-underline">😔</span>
-              </span>
+                <div className="flex items-start gap-3 min-w-0">
+                  <span className="text-2xl shrink-0 mt-0.5">{emoji}</span>
+                  <div className="min-w-0">
+                    <div className={`font-bold text-sm ${inStock ? 'text-slate-800' : 'text-slate-400 line-through'}`}>
+                      {d}
+                    </div>
+                    {customizations && (
+                      <div className="text-[11px] text-slate-500 mt-1 font-medium bg-slate-50/50 px-2 py-0.5 rounded-md border border-slate-100/50 inline-block">
+                        ✨ {customizations}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="shrink-0 ml-3">
+                  {inStock ? (
+                    <button
+                      onClick={() => onQuickOrder && onQuickOrder(d, emoji)}
+                      className="text-[11px] font-bold bg-brand text-white hover:bg-brand/90 px-3 py-2 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
+                    >
+                      Add / Order Again
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-bold bg-slate-200 text-slate-400 px-3 py-2 rounded-xl">
+                      Out of Stock
+                    </span>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
-      )}
-
-      {/* Taste chips — display only, not tappable */}
-      {hasTastes && (
-        <div className="flex flex-wrap gap-1.5 mb-1">
-          {tastePrefs.slice(0, 4).map(t => (
-            <span key={t} className="text-[10px] bg-slate-100 text-slate-500 font-medium px-2 py-0.5 rounded-full">
-              {t}
-            </span>
-          ))}
-          {tastePrefs.length > 4 && (
-            <span className="text-[10px] text-slate-400 font-medium px-1">+{tastePrefs.length - 4} more</span>
-          )}
-        </div>
-      )}
-
-      {hasDrinks && (
-        <p className="text-[9px] text-slate-400 mt-1">Tap a drink chip to order instantly with your saved prefs</p>
-      )}
-
-      {/* Item-level saved preferences */}
-      {entries.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-1">
-          {entries.slice(0, 3).map(([key, val]) => {
-            let detail = '';
-            if (Array.isArray(val?.taste) && val.taste.length) detail = val.taste.join(', ');
-            else if (val?.sides) detail = val.sides === 'both' ? 'Both sides' : 'One side';
-            if (!detail) return null;
-            return (
-              <span key={key} className="text-[10px] bg-emerald-50 text-emerald-700 font-medium px-2 py-0.5 rounded-full border border-emerald-100">
-                {getDrinkEmoji(key)} {key}: {detail}
-              </span>
-            );
-          }).filter(Boolean)}
-        </div>
+      ) : (
+        <p className="text-xs text-slate-400 italic">No favorite drinks saved. Tap edit to set up.</p>
       )}
     </div>
   );
@@ -829,10 +839,10 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
           })}
         </div>
 
-        {/* Delivery Mode Toggle */}
+        {/* Fulfillment Type Selection */}
         <div className="mb-4">
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-            🚚 Delivery mode
+            📋 Fulfillment Type
           </label>
           {selfPickupDay?.is_self_pickup_day ? (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-orange-50 border border-orange-200">
@@ -855,8 +865,8 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {[{ value: 'get_it_here', label: '🛵 Get it here', sub: 'Office boy delivers' },
-                { value: 'self_pickup', label: '🏃 I\'ll pick it up', sub: 'Collect from pantry' }].map(opt => (
+              {[{ value: 'get_it_here', label: '🛵 Deliver to Cabin', sub: 'Office boy delivers' },
+                { value: 'self_pickup', label: '🏃 Pick up from Cafeteria', sub: 'Collect from pantry' }].map(opt => (
                 <button
                   key={opt.value}
                   type="button"
@@ -1197,6 +1207,7 @@ export default function Cafeteria() {
           quick_instruction: instruction,
           quick_bread_type:  breadType,
           delivery_mode:     delivery_mode,
+          fulfillmentType:   delivery_mode === 'self_pickup' ? 'pickup' : 'delivery',
         });
         lastReq = r?.request;
       }

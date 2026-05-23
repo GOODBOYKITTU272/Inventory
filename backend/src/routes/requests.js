@@ -9,6 +9,25 @@ import { learnFromRating } from '../lib/learning.js';
 import { sendPushToUsers } from './push.js';
 const router = Router();
 
+function isMorningShift(dateTimeStr) {
+  const date = dateTimeStr ? new Date(dateTimeStr) : new Date();
+  const options = { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false };
+  const istStr = date.toLocaleTimeString('en-US', options);
+  const [hour, minute] = istStr.split(':').map(Number);
+  const timeInMinutes = hour * 60 + minute;
+  const startMinutes = 8 * 60 + 30; // 08:30
+  const endMinutes = 17 * 60; // 17:00
+  return timeInMinutes >= startMinutes && timeInMinutes <= endMinutes;
+}
+
+function mapFulfillmentType(reqRow) {
+  if (!reqRow) return null;
+  return {
+    ...reqRow,
+    fulfillmentType: reqRow.delivery_mode === 'self_pickup' ? 'pickup' : 'delivery'
+  };
+}
+
 // Map well-known cafeteria items to categories
 const ITEM_CATEGORY = {
   'ccd coffee': 'beverage', 'regular tea': 'beverage', 'lemon tea': 'beverage',
@@ -129,8 +148,16 @@ router.post('/', async (req, res, next) => {
       }
 
       const breadPart = quick_bread_type ? ` [bread:${quick_bread_type}]` : '';
-      const deliveryMode = ['get_it_here', 'self_pickup'].includes(req.body.delivery_mode)
-        ? req.body.delivery_mode : 'get_it_here';
+      let deliveryMode = req.body.delivery_mode;
+      if (!deliveryMode) {
+        if (req.body.fulfillmentType === 'pickup') deliveryMode = 'self_pickup';
+        else if (req.body.fulfillmentType === 'delivery') deliveryMode = 'get_it_here';
+        else deliveryMode = 'get_it_here';
+      }
+      if (!['get_it_here', 'self_pickup'].includes(deliveryMode)) {
+        deliveryMode = 'get_it_here';
+      }
+
       const { data: qData, error: qErr } = await supabaseAdmin
         .from('requests')
         .insert({
@@ -151,7 +178,7 @@ router.post('/', async (req, res, next) => {
       // NOTE: Teams + push notifications are NOT sent here.
       // They fire only after the 30s cancel window via POST /:id/confirm.
 
-      return res.status(201).json({ needs_followup: false, request: qData });
+      return res.status(201).json({ needs_followup: false, request: mapFulfillmentType(qData) });
     }
 
     // ── Standard AI-parsed request ────────────────────────────────
@@ -191,6 +218,16 @@ router.post('/', async (req, res, next) => {
       }
     }
 
+    let deliveryMode = req.body.delivery_mode;
+    if (!deliveryMode) {
+      if (req.body.fulfillmentType === 'pickup') deliveryMode = 'self_pickup';
+      else if (req.body.fulfillmentType === 'delivery') deliveryMode = 'get_it_here';
+      else deliveryMode = 'get_it_here';
+    }
+    if (!['get_it_here', 'self_pickup'].includes(deliveryMode)) {
+      deliveryMode = 'get_it_here';
+    }
+
     const { data, error } = await supabaseAdmin
       .from('requests')
       .insert({
@@ -203,6 +240,7 @@ router.post('/', async (req, res, next) => {
         submitted_by:          req.user.id,
         live_status:           'confirming',
         status:                'confirming',
+        delivery_mode:         deliveryMode,
       })
       .select()
       .single();
@@ -213,7 +251,7 @@ router.post('/', async (req, res, next) => {
 
     res.status(201).json({
       needs_followup: false,
-      request:        data,
+      request:        mapFulfillmentType(data),
       model,
     });
   } catch (e) {
@@ -266,34 +304,50 @@ router.post('/:id/confirm', async (req, res, next) => {
       return res.json(order); // Already confirmed or cancelled — no-op
     }
 
-    // Move to pending/placed
+    // Move to pending/placed (or auto-approve if night shift)
+    const morning = isMorningShift(order.created_at);
+    const updateData = morning
+      ? { status: 'pending', live_status: 'placed' }
+      : { status: 'done', live_status: 'Recorded', fulfilled_at: new Date().toISOString() };
+
     const { data, error } = await supabaseAdmin
       .from('requests')
-      .update({ status: 'pending', live_status: 'placed' })
+      .update(updateData)
       .eq('id', req.params.id)
       .select()
       .single();
     if (error) throw error;
 
-    // NOW fire Teams + push notifications (order is confirmed)
-    const qty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
-    const itemName = order.parsed_item || order.raw_text || 'New order';
-    const locPart = order.parsed_location ? ` to ${order.parsed_location}` : '';
+    // NOW fire notifications if morning shift (active delivery/pickup workflow)
+    if (morning) {
+      const qty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+      const itemName = order.parsed_item || order.raw_text || 'New order';
+      const locPart = order.parsed_location ? ` to ${order.parsed_location}` : '';
 
-    postOrderToTeams({ ...data, priority: 'Normal', quantity: String(qty) })
-      .catch((e) => console.error('[Teams confirm-order]', e.message));
+      postOrderToTeams({ ...data, priority: 'Normal', quantity: String(qty) })
+        .catch((e) => console.error('[Teams confirm-order]', e.message));
 
-    // Push notification to office boy / facility manager
-    supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data: staffRows }) => {
-      if (staffRows?.length) sendPushToUsers(staffRows.map(u => u.id), {
-        title: '🔔 New Order',
-        body:  `${order.parsed_employee_name || 'Someone'}: ${qty}x ${itemName}${locPart}`,
-        url:   '/queue',
-        tag:   `order-${data.id}`,
+      // Push notification to office boy / facility manager
+      supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data: staffRows }) => {
+        if (staffRows?.length) sendPushToUsers(staffRows.map(u => u.id), {
+          title: '🔔 New Order',
+          body:  `${order.parsed_employee_name || 'Someone'}: ${qty}x ${itemName}${locPart}`,
+          url:   '/queue',
+          tag:   `order-${data.id}`,
+        }).catch(() => {});
+      });
+    } else {
+      // Send Recorded status confirmation push notification to employee
+      const itemName = order.parsed_item || order.raw_text || 'Your order';
+      sendPushToUsers([order.submitted_by], {
+        title: '🌙 Order Recorded',
+        body: `Your order for ${itemName} has been recorded for night shift.`,
+        url: `/track/${data.id}`,
+        tag: `status-${data.id}`,
       }).catch(() => {});
-    });
+    }
 
-    res.json(data);
+    res.json(mapFulfillmentType(data));
   } catch (e) {
     next(e);
   }
@@ -315,7 +369,7 @@ router.get('/', async (req, res, next) => {
 
     const { data, error } = await q;
     if (error) throw error;
-    res.json(data);
+    res.json((data || []).map(mapFulfillmentType));
   } catch (e) {
     next(e);
   }
@@ -336,15 +390,36 @@ router.get('/:id', async (req, res, next) => {
     if (!isStaff && data.submitted_by !== req.user.id) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    res.json(data);
+    res.json(mapFulfillmentType(data));
   } catch (e) { next(e); }
 });
 
 router.patch(
   '/:id/status',
-  requireRole('office_boy', 'facility_manager', 'leadership'),
   async (req, res, next) => {
     try {
+      // 1. Fetch the request to check ownership and status
+      const { data: order, error: fetchErr } = await supabaseAdmin
+        .from('requests')
+        .select('*')
+        .eq('id', req.params.id)
+        .single();
+      if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
+
+      // 2. Perform role/ownership check
+      const isStaff = ['office_boy', 'facility_manager', 'leadership'].includes(req.user.role);
+      const isOwner = order.submitted_by === req.user.id;
+      
+      // Submitters can only mark their own self-pickup orders as done when they are ready for pickup
+      const isAllowedOwnerAction = isOwner && 
+                                   order.delivery_mode === 'self_pickup' && 
+                                   order.live_status === 'ready_for_pickup' && 
+                                   req.body.status === 'done';
+
+      if (!isStaff && !isAllowedOwnerAction) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
       const statusSchema = z.object({
         status: z.enum(['pending', 'in_progress', 'done', 'cancelled']),
         live_status: z.string().optional(),
@@ -433,7 +508,7 @@ router.patch(
           accepted:          { title: '✅ Order Accepted!',       body: `${item} has been accepted and is being prepared.` },
           preparing:         { title: '☕ Being Prepared!',        body: `${item} is being made right now.` },
           on_the_way:        { title: '🛵 On the Way!',            body: `${item} is heading to you now!` },
-          ready_for_pickup:  { title: '🏃 Ready for Pickup!',     body: `${item} is ready at the pantry counter. Come grab it! 🎉` },
+          ready_for_pickup:  { title: '🏃 Ready for Pickup!',     body: data.delivery_mode === 'self_pickup' ? 'Your food/drink is prepared. Please pick it up from the Cafeteria.' : `${item} is ready at the pantry counter. Come grab it! 🎉` },
           done:              { title: '🎉 Delivered!',             body: pick(DELIVERY_QUOTES[userTone] || DELIVERY_QUOTES.Friendly) },
           cancelled:         { title: '❌ Order Cancelled',        body: `${item} was cancelled. You can place a new order anytime.` },
         };
@@ -448,7 +523,7 @@ router.patch(
         }
       }
 
-      res.json(data);
+      res.json(mapFulfillmentType(data));
     } catch (e) {
       next(e);
     }

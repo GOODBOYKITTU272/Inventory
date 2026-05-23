@@ -28,6 +28,7 @@ const LIVE_STATUS_LABEL = {
   on_the_way: 'On the Way',
   done:       'Delivered',
   cancelled:  'Cancelled',
+  Recorded:   'Recorded',
 };
 
 const FILTERS = [

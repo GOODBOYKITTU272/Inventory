@@ -478,55 +478,89 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
 }
 
 /* ── Single Order View (extracted, unchanged logic) ──────────────── */
-function OrderView({ req, onRate }) {
+function OrderView({ req, onRate, onRefresh }) {
   const isCancelled = req.status === 'cancelled';
   const isDone      = req.status === 'done';
+  const isRecorded  = req.live_status === 'Recorded';
+
   // 'confirming' is treated as 'placed' for the progress tracker
   const effectiveLiveStatus = req.live_status === 'confirming' ? 'placed' : (req.live_status || 'placed');
   const curIdx      = isCancelled ? -1 : stageIndex(effectiveLiveStatus);
   const curStage    = isCancelled ? CANCELLED : STAGES[curIdx];
 
+  const [confirmingCollection, setConfirmingCollection] = useState(false);
+
+  async function handleConfirmCollection() {
+    setConfirmingCollection(true);
+    try {
+      await api.setRequestStatus(req.id, 'done', 'done');
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setConfirmingCollection(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Hero status card */}
-      <motion.div
-        key={curStage.id}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`card ${curStage.color} border-0 shadow-lg`}
-      >
-        <div className="flex items-center gap-4">
-          <motion.div
-            animate={!isCancelled && !isDone ? { scale: [1, 1.12, 1] } : { scale: 1 }}
-            transition={{ repeat: Infinity, duration: 2 }}
-            className="text-6xl"
-          >
-            {curStage.emoji}
-          </motion.div>
-          <div className="min-w-0">
-            <div className="text-xl font-bold">{curStage.label}</div>
-            <div className="text-sm opacity-80 mt-0.5">{curStage.sub}</div>
-            {req.parsed_location && (
-              <div className="flex items-center gap-1 text-xs mt-2 opacity-70">
-                <MapPin size={12} /> {req.parsed_location}
+      {isRecorded ? (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 shadow-lg text-indigo-900"
+        >
+          <div className="flex items-center gap-4">
+            <div className="text-6xl animate-pulse">🌙</div>
+            <div className="min-w-0">
+              <div className="text-lg font-extrabold text-indigo-800">Order Recorded!</div>
+              <div className="text-xs opacity-95 mt-1 leading-relaxed">
+                Night shift order recorded for inventory and reporting. No delivery/office boy service is active at night. Collect your order from the pantry counter.
               </div>
-            )}
-          </div>
-        </div>
-
-        {!isCancelled && (
-          <div className="mt-5">
-            <ProgressBar current={curIdx} total={STAGES.length} />
-            <div className="flex justify-between text-[10px] mt-1 opacity-60">
-              <span>Placed</span>
-              <span>Delivered</span>
             </div>
           </div>
-        )}
-      </motion.div>
+        </motion.div>
+      ) : (
+        <motion.div
+          key={curStage.id}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`card ${curStage.color} border-0 shadow-lg`}
+        >
+          <div className="flex items-center gap-4">
+            <motion.div
+              animate={!isCancelled && !isDone ? { scale: [1, 1.12, 1] } : { scale: 1 }}
+              transition={{ repeat: Infinity, duration: 2 }}
+              className="text-6xl"
+            >
+              {curStage.emoji}
+            </motion.div>
+            <div className="min-w-0">
+              <div className="text-xl font-bold">{curStage.label}</div>
+              <div className="text-sm opacity-80 mt-0.5">{curStage.sub}</div>
+              {req.parsed_location && (
+                <div className="flex items-center gap-1 text-xs mt-2 opacity-70">
+                  <MapPin size={12} /> {req.parsed_location}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {!isCancelled && (
+            <div className="mt-5">
+              <ProgressBar current={curIdx} total={STAGES.length} />
+              <div className="flex justify-between text-[10px] mt-1 opacity-60">
+                <span>Placed</span>
+                <span>Delivered</span>
+              </div>
+            </div>
+          )}
+        </motion.div>
+      )}
 
       {/* Delivery time badge */}
-      {isDone && req.fulfilled_at && req.created_at && (
+      {isDone && !isRecorded && req.fulfilled_at && req.created_at && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -548,7 +582,7 @@ function OrderView({ req, onRate }) {
       )}
 
       {/* Stage timeline */}
-      {!isCancelled && (
+      {!isCancelled && !isRecorded && (
         <div className="card space-y-5">
           <h3 className="font-semibold text-slate-900 text-sm uppercase tracking-wide">Live Status</h3>
           {STAGES.map((stage, idx) => (
@@ -607,6 +641,21 @@ function OrderView({ req, onRate }) {
           onClick={() => onRate(req.id)}
         >
           ⭐ Rate this order
+        </button>
+      )}
+
+      {/* Collection button for ready_for_pickup self_pickup orders */}
+      {req.live_status === 'ready_for_pickup' && req.delivery_mode === 'self_pickup' && (
+        <button
+          disabled={confirmingCollection}
+          onClick={handleConfirmCollection}
+          className="w-full h-12 bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-sm rounded-2xl shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 active:scale-[0.99] transition-all disabled:opacity-50"
+        >
+          {confirmingCollection ? (
+            <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Confirming...</>
+          ) : (
+            <>✓ I've collected my order</>
+          )}
         </button>
       )}
     </div>
@@ -785,6 +834,7 @@ export default function LiveTracking() {
           <OrderView
             req={req}
             onRate={(rid) => { setRateId(rid); setShowRate(true); }}
+            onRefresh={load}
           />
         </motion.div>
       </AnimatePresence>
