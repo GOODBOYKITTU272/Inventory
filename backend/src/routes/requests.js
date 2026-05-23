@@ -36,6 +36,18 @@ const ITEM_CATEGORY = {
   'biscuits': 'snack', 'black coffee': 'beverage',
   'stationery': 'stationery', 'cleaning': 'cleaning',
   'maintenance': 'maintenance', 'meeting room setup': 'other',
+  // Virtual drinks backed by Coffee Beans or Lemon sachets
+  'espresso': 'beverage', 'latte': 'beverage', 'cappuccino': 'beverage', 'milk coffee': 'beverage',
+};
+
+// Map virtual menu drink names → their real backing ingredient in cafeteria_items
+// e.g. 'Espresso' is not a DB row — it is served from 'Coffee Beans'
+const VIRTUAL_DRINK_MAP = {
+  'espresso':    'Coffee Beans',
+  'latte':       'Coffee Beans',
+  'cappuccino':  'Coffee Beans',
+  'milk coffee': 'Coffee Beans',
+  'lemon tea':   'Lemon sachets',
 };
 
 // ── Tone-aware dependency messages ──────────────────────────────────────────
@@ -589,27 +601,47 @@ router.post('/:id/cancel', async (req, res, next) => {
 });
 
 // POST /api/requests/:id/rate
+// Writes to service_ratings (1-5 scale) — requests table has NO rating/feedback columns.
+// Also stamps rating_status='done' on the request row so the UI knows it's rated.
 router.post(
   '/:id/rate',
   async (req, res, next) => {
     try {
       const { rating, feedback } = req.body;
+
+      // Fetch the request to get office boy info
+      const { data: reqRow } = await supabaseAdmin
+        .from('requests')
+        .select('id, submitted_by, fulfilled_by, assigned_to, rating_status')
+        .eq('id', req.params.id)
+        .maybeSingle();
+
+      // Map 1-10 frontend rating → 1-5 DB scale (service_ratings.rating is int 1-5)
+      const mappedRating = Math.max(1, Math.min(5, Math.round((rating || 1) / 2)));
+
+      // Insert into service_ratings
+      await supabaseAdmin.from('service_ratings').insert({
+        request_id:     req.params.id,
+        employee_id:    req.user.id,
+        office_boy_id:  reqRow?.fulfilled_by || reqRow?.assigned_to || null,
+        rating:         mappedRating,
+        review_comment: feedback || null,
+      });
+
+      // Stamp rating_status on the request so UI knows it's been rated
       const { data, error } = await supabaseAdmin
         .from('requests')
-        .update({
-          rating,
-          feedback,
-          rating_status: 'done'
-        })
+        .update({ rating_status: 'done' })
         .eq('id', req.params.id)
         .select()
         .single();
       if (error) throw error;
 
-      // Trigger AI Learning (Async)
-      learnFromRating(req.user.id, req.params.id).catch(console.error);
+      // Trigger AI Learning async (pass numeric values, not the request id)
+      learnFromRating(req.user.id, mappedRating, feedback || '').catch(console.error);
 
-      res.json(data);
+      // Return the request row enriched with the display-scale rating
+      res.json({ ...data, rating: rating, feedback: feedback || null });
     } catch (e) {
       next(e);
     }
@@ -661,14 +693,19 @@ function getOOSMessage(userTone, itemName) {
 async function deductStockForRequest(user, itemName, qty, instruction, breadType) {
   const nameLower = (itemName || '').toLowerCase();
 
-  // 1. Look up the main item
+  // Resolve virtual drinks → their real backing ingredient in cafeteria_items
+  // e.g. 'Espresso' is served from 'Coffee Beans'; 'Lemon Tea' from 'Lemon sachets'
+  const backingName = VIRTUAL_DRINK_MAP[nameLower] || itemName;
+
+  // 1. Look up the main item (use backing ingredient name if virtual drink)
   const { data: itemRow } = await supabaseAdmin
     .from('cafeteria_items')
     .select('id, item_name, stock_today, stock_servings, dependencies, sides_option, serving_grams')
-    .ilike('item_name', itemName)
+    .ilike('item_name', backingName)
     .maybeSingle();
 
   if (!itemRow) {
+    // Unknown item — skip silently (don't block the order)
     return;
   }
 
@@ -777,10 +814,13 @@ async function restoreStockForRequest(order) {
   const isBoth = /both\s*side/i.test(order.instruction || '');
   const sidesM = isBoth ? 2 : 1;
 
+  // Resolve virtual drinks → their backing ingredient (same logic as deduct)
+  const backingName = VIRTUAL_DRINK_MAP[(itemName || '').toLowerCase()] || itemName;
+
   const { data: itemRow } = await supabaseAdmin
     .from('cafeteria_items')
     .select('id, item_name, stock_today, stock_servings, dependencies, sides_option')
-    .ilike('item_name', itemName)
+    .ilike('item_name', backingName)
     .maybeSingle();
 
   if (!itemRow) return;

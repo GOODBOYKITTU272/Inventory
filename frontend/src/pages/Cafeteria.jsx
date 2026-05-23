@@ -638,15 +638,18 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
   );
 }
 
-// ── Beverage Taste Preference Sheet (first-time popup for coffee/tea) ─────────
-const COFFEE_TASTES = ['Strong Coffee', 'Light Coffee', 'Less Sugar', 'No Sugar', 'With Milk', 'Without Milk'];
-const TEA_TASTES    = ['Strong Tea', 'Light Tea', 'Less Sugar', 'No Sugar'];
-const LEMON_TASTES  = ['Normal', 'Less Sugar', 'Strong Lemon', 'Mild Lemon', 'With Honey 🍯', 'Without Honey'];
+// ── Beverage Taste Preference Sheet ─────────────────────────────────────────
+const COFFEE_TASTES  = ['Strong Coffee', 'Light Coffee', 'Less Sugar', 'No Sugar', 'With Milk', 'Without Milk'];
+const TEA_TASTES     = ['Strong Tea', 'Light Tea', 'Less Sugar', 'No Sugar'];
+const LEMON_TASTES   = ['Normal', 'Less Sugar', 'Strong Lemon', 'Mild Lemon', 'With Honey 🍯', 'Without Honey'];
 const GREEN_TEA_TASTES = ['Plain Green Tea', 'With Honey 🍯', 'With Lemon', 'Light Brew', 'Strong Brew'];
 const HOT_CHOC_TASTES = ['Less Sugar', 'No Sugar', 'Extra Milk'];
+// Water preference: just temperature — no coffee tags ever!
+const WATER_TASTES   = ['Cold 🧊', 'Normal 💧', 'Hot ♨️'];
 
 function getTastesForItem(itemName) {
   const n = (itemName || '').toLowerCase();
+  if (n.includes('water')) return WATER_TASTES;          // ← fix: Water gets its own options
   if (n.includes('lemon')) return LEMON_TASTES;
   if (n.includes('green tea')) return GREEN_TEA_TASTES;
   if (n.includes('tea') || n.includes('elaichi') || n.includes('ginger') || n.includes('assam')) return TEA_TASTES;
@@ -656,7 +659,10 @@ function getTastesForItem(itemName) {
 }
 
 function BeverageCustomSheet({ item, savedPref, onConfirm, onClose }) {
-  const tastes = getTastesForItem(item.item_name) || COFFEE_TASTES;
+  const tastes = getTastesForItem(item.item_name);
+  // If item has no specific taste options, skip the popup (caller should have guarded this)
+  // Never fall back to COFFEE_TASTES for unrelated items like Water
+  const displayTastes = tastes || [];
   const [selected, setSelected] = useState(savedPref?.taste || []);
   const [remember, setRemember] = useState(false);
 
@@ -701,7 +707,7 @@ function BeverageCustomSheet({ item, savedPref, onConfirm, onClose }) {
 
         {/* Taste grid */}
         <div className="grid grid-cols-2 gap-2 mb-5">
-          {tastes.map(t => (
+          {displayTastes.map(t => (
             <button
               key={t}
               onClick={() => toggleTaste(t)}
@@ -888,14 +894,34 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
           )}
         </div>
 
-        {/* ETA */}
-        <div className="flex items-center gap-2 mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-          <Timer size={14} className="text-emerald-600 shrink-0" />
-          <span className="text-xs text-emerald-700 font-medium">
-            Est. delivery: ~{queueAhead >= 3 ? '3' : queueAhead >= 1 ? '2' : '1'} min
-            {queueAhead > 0 && <span className="text-emerald-500"> ({queueAhead} order{queueAhead > 1 ? 's' : ''} ahead)</span>}
-          </span>
-        </div>
+        {/* ETA — context-aware: machine drinks are instant self-serve; OB delivery takes longer */}
+        {(() => {
+          const cartItemNames = cartItems.map(ci => (ci.item_name || '').toLowerCase());
+          const hasMachineDrink = cartItemNames.some(n =>
+            n.includes('espresso') || n.includes('cappuccino') || n.includes('latte') ||
+            n.includes('americano') || n.includes('milk coffee') || n.includes('black coffee') ||
+            n.includes('hot water') || n.includes('brew') || n.includes('strong coffee')
+          );
+          const allMachine = hasMachineDrink && cartItemNames.every(n =>
+            n.includes('espresso') || n.includes('cappuccino') || n.includes('latte') ||
+            n.includes('americano') || n.includes('milk coffee') || n.includes('black coffee') ||
+            n.includes('hot water') || n.includes('brew') || n.includes('strong coffee') ||
+            n.includes('water')
+          );
+          const etaText = allMachine
+            ? 'Machine dispenses instantly — collect from pantry counter 🤖'
+            : effectiveMode === 'self_pickup'
+              ? `Ready in ~${queueAhead >= 3 ? '8–12' : queueAhead >= 1 ? '5–8' : '3–5'} min — collect from pantry`
+              : `Est. delivery: ~${queueAhead >= 3 ? '10–15' : queueAhead >= 1 ? '7–10' : '5–8'} min${
+                  queueAhead > 0 ? ` (${queueAhead} order${queueAhead > 1 ? 's' : ''} ahead)` : ''
+                }`;
+          return (
+            <div className="flex items-center gap-2 mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+              <Timer size={14} className="text-emerald-600 shrink-0" />
+              <span className="text-xs text-emerald-700 font-medium">{etaText}</span>
+            </div>
+          );
+        })()}
 
         {/* Location — hidden for self-pickup orders */}
         {effectiveMode !== 'self_pickup' && (
@@ -1029,6 +1055,75 @@ export default function Cafeteria() {
     return servings === null || servings > 0;
   });
 
+  // ── Virtual drink enrichment ─────────────────────────────────────────────
+  // Coffee Beans → Espresso, Milk Coffee, Cappuccino, Latte
+  // Lemon sachets → Lemon Tea
+  // These items don't have their own cafeteria_items rows — they draw from
+  // a backing ingredient. We synthesise them so users see them in the menu.
+  // Water is NOT touched here.
+  function enrichItemsWithVirtualDrinks(rawItems) {
+    if (!rawItems) return [];
+
+    // Find Coffee Beans and Lemon sachets rows
+    const coffeeBeansRow  = rawItems.find(i => (i.item_name || '').toLowerCase().includes('coffee beans'));
+    const lemonSachetsRow = rawItems.find(i => (i.item_name || '').toLowerCase().includes('lemon sachet'));
+
+    // Mark backing ingredients as non-orderable so they don't appear directly in the menu
+    const hiddenNames = new Set();
+    if (coffeeBeansRow)  hiddenNames.add(coffeeBeansRow.item_name.toLowerCase());
+    if (lemonSachetsRow) hiddenNames.add(lemonSachetsRow.item_name.toLowerCase());
+
+    const filtered = rawItems.map(i =>
+      hiddenNames.has((i.item_name || '').toLowerCase())
+        ? { ...i, orderable: false }
+        : i
+    );
+
+    const virtual = [];
+
+    if (coffeeBeansRow) {
+      // Each coffee serving uses ~7g of beans. coffeeBeansRow.stock_servings tracks cups.
+      const cupsAvail = coffeeBeansRow.stock_servings ?? null;
+      const COFFEE_VIRTUALS = [
+        { suffix: 'Espresso',    emoji: '☕', id_suffix: '_espresso' },
+        { suffix: 'Milk Coffee', emoji: '🥛', id_suffix: '_milk_coffee' },
+        { suffix: 'Cappuccino',  emoji: '☕', id_suffix: '_cappuccino' },
+      ];
+      COFFEE_VIRTUALS.forEach(({ suffix, emoji, id_suffix }) => {
+        virtual.push({
+          id:            coffeeBeansRow.id + id_suffix,
+          item_name:     suffix,
+          display_name:  suffix,
+          category:      'beverage',
+          emoji,
+          stock_servings: cupsAvail,
+          stock_today:    null,
+          orderable:      true,
+          _virtual:       true,
+          _backing:       coffeeBeansRow.item_name,
+        });
+      });
+    }
+
+    if (lemonSachetsRow) {
+      const sachetsAvail = lemonSachetsRow.stock_servings ?? lemonSachetsRow.stock_today ?? null;
+      virtual.push({
+        id:            lemonSachetsRow.id + '_lemon_tea',
+        item_name:     'Lemon Tea',
+        display_name:  'Lemon Tea',
+        category:      'beverage',
+        emoji:         '🍋',
+        stock_servings: sachetsAvail,
+        stock_today:    null,
+        orderable:      true,
+        _virtual:       true,
+        _backing:       lemonSachetsRow.item_name,
+      });
+    }
+
+    return [...filtered, ...virtual];
+  }
+
   const load = useCallback(async () => {
     try {
       const [itemsData, requestsData, pickupStatus] = await Promise.all([
@@ -1036,7 +1131,7 @@ export default function Cafeteria() {
         api.listRequests(),
         api.selfPickupStatus().catch(() => ({ is_self_pickup_day: false })),
       ]);
-      setItems(itemsData || []);
+      setItems(enrichItemsWithVirtualDrinks(itemsData || []));
       setSelfPickupDay(pickupStatus);
 
       const active = (requestsData || []).filter(
@@ -1231,7 +1326,7 @@ export default function Cafeteria() {
       setErrorMsg(e.message);
       setShowSheet(false); // Close order sheet so error toast is visible on top
       // Refresh items to get updated stock counts
-      api.cafeteriaItems().then((d) => d && setItems(d)).catch(() => {});
+      api.cafeteriaItems().then((d) => d && setItems(enrichItemsWithVirtualDrinks(d))).catch(() => {});
       // Auto-dismiss error after 6 seconds
       setTimeout(() => setErrorMsg(''), 6000);
     } finally {

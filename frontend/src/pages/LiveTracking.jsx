@@ -710,7 +710,8 @@ export default function LiveTracking() {
       setAllOrders(combined);
 
       // Show rating once when order first reaches 'done'
-      if (data.status === 'done' && data.rating_status !== 'done' && !shownRatingRef.current) {
+      // Night shift orders (live_status='Recorded') skip rating — no real delivery happened
+      if (data.status === 'done' && data.rating_status !== 'done' && data.live_status !== 'Recorded' && !shownRatingRef.current) {
         shownRatingRef.current = true;
         setTimeout(() => setShowRate(true), 1200);
       }
