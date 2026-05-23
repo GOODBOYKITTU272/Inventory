@@ -746,9 +746,9 @@ function getCartItemCalories(item, qty, customNote) {
   return qty * (item.calories_per_serving || 0);
 }
 
-function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, savedLocation, onRemoveItem, onUpdateQty, itemPrefs, queueAhead, selfPickupDay, deliveryMode, onDeliveryModeChange }) {
-  // On leave days → force self-pickup
-  const effectiveMode = selfPickupDay?.is_self_pickup_day ? 'self_pickup' : deliveryMode;
+function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, savedLocation, onRemoveItem, onUpdateQty, itemPrefs, queueAhead, selfPickupDay, deliveryMode, onDeliveryModeChange, isNightShift }) {
+  // On leave days or night shift → force self-pickup
+  const effectiveMode = (selfPickupDay?.is_self_pickup_day || isNightShift) ? 'self_pickup' : deliveryMode;
 
   // Auto-fill saved location (Zomato style) — unless "Ask Every Time" or self-pickup
   const autoFill = (effectiveMode !== 'self_pickup' && savedLocation && savedLocation !== 'Ask Every Time') ? savedLocation : '';
@@ -840,6 +840,18 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
               <span className="text-xs font-bold text-orange-700">
                 Self-pickup only — {selfPickupDay.message}
               </span>
+            </div>
+          ) : isNightShift ? (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+              <span className="text-base">🌙</span>
+              <div>
+                <div className="text-xs font-bold text-indigo-700">
+                  🌙 Night shift — Self pickup only
+                </div>
+                <div className="text-[10px] text-indigo-600 mt-0.5">
+                  No office boy available at night. Collect your order from the pantry counter.
+                </div>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
@@ -1037,11 +1049,13 @@ export default function Cafeteria() {
   const [userDrinkPrefs, setUserDrinkPrefs] = useState([]);
   const [userTastePrefs, setUserTastePrefs] = useState([]);
 
+  const [userShift, setUserShift] = useState('morning');
+
   useEffect(() => {
     if (!session) return;
     supabase
       .from('employee_cafeteria_preferences')
-      .select('item_prefs, preferred_location, notification_tone, drink_prefs, taste_prefs')
+      .select('item_prefs, preferred_location, notification_tone, drink_prefs, taste_prefs, shift')
       .eq('user_id', session.user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -1050,6 +1064,7 @@ export default function Cafeteria() {
         if (data?.notification_tone) setTone(data.notification_tone);
         if (Array.isArray(data?.drink_prefs)) setUserDrinkPrefs(data.drink_prefs);
         if (Array.isArray(data?.taste_prefs)) setUserTastePrefs(data.taste_prefs);
+        if (data?.shift) setUserShift(data.shift);
       })
       .catch(() => {});
   }, [session]);
@@ -1297,7 +1312,7 @@ export default function Cafeteria() {
         <p className="text-slate-500 text-sm mt-1">What can we get you today?</p>
       </div>
 
-      {/* ── Self-Pickup Day Banner ── */}
+      {/* ── Self-Pickup Day Banner (OB on leave) ── */}
       {selfPickupDay?.is_self_pickup_day && (
         <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4 flex items-start gap-3">
           <span className="text-2xl shrink-0">🏖</span>
@@ -1307,6 +1322,21 @@ export default function Cafeteria() {
             </div>
             <div className="text-xs text-orange-600 mt-0.5">
               All orders are self-pickup from pantry. Prep times still apply!
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Night Shift Banner ── */}
+      {userShift === 'night' && (
+        <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-4 flex items-start gap-3">
+          <span className="text-2xl shrink-0">🌙</span>
+          <div>
+            <div className="font-extrabold text-indigo-800 text-sm">
+              You're on night shift — self pickup only
+            </div>
+            <div className="text-xs text-indigo-600 mt-0.5">
+              No office boy at night. Collect your order from the pantry counter.
             </div>
           </div>
         </div>
@@ -1574,8 +1604,9 @@ export default function Cafeteria() {
             itemPrefs={itemPrefs}
             queueAhead={queueAhead}
             selfPickupDay={selfPickupDay}
-            deliveryMode={selfPickupDay?.is_self_pickup_day ? 'self_pickup' : deliveryMode}
+            deliveryMode={(selfPickupDay?.is_self_pickup_day || userShift === 'night') ? 'self_pickup' : deliveryMode}
             onDeliveryModeChange={setDeliveryMode}
+            isNightShift={userShift === 'night'}
           />
         )}
       </AnimatePresence>

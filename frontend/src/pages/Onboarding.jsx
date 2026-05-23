@@ -470,21 +470,41 @@ function StepLocation({ prefs, set, onNext, onBack }) {
   );
 }
 
-// Step 7 — Reminders
-function StepReminders({ prefs, set, onNext, onBack }) {
-  const items = [
-    { key: 'morningReminder',   label: '☀️ Morning drink',       sub: 'Reminds you around 10:45 AM',  timeKey: 'morningTime',   defTime: '10:45' },
-    { key: 'afternoonReminder', label: '🌤️ Afternoon drink',     sub: 'Reminds you around 2:45 PM',   timeKey: 'afternoonTime', defTime: '14:45' },
-    { key: 'lunchReminder',     label: '🍱 Lunch reminder',       sub: 'Reminds you around 12:45 PM',  timeKey: 'lunchTime',     defTime: '12:45' },
-    { key: 'waterReminder',     label: '💧 Hydration nudge',      sub: 'Reminds you to drink water',   timeKey: null,            defTime: null },
+// Step 7 — Reminders (shift-aware)
+function StepReminders({ prefs, set, onNext, onBack, shift }) {
+  const isNight = shift === 'night';
+
+  const MORNING_ITEMS = [
+    { key: 'morningReminder',   label: '☀️ Morning drink',    sub: 'Reminds you around 10:45 AM', timeKey: 'morningTime',   defTime: '10:45' },
+    { key: 'afternoonReminder', label: '🌤️ Afternoon drink',  sub: 'Reminds you around 2:45 PM',  timeKey: 'afternoonTime', defTime: '14:45' },
+    { key: 'lunchReminder',     label: '🍱 Lunch reminder',    sub: 'Reminds you around 12:45 PM', timeKey: 'lunchTime',     defTime: '12:45' },
+    { key: 'waterReminder',     label: '💧 Hydration nudge',   sub: 'Drink water reminder',        timeKey: null,            defTime: null },
   ];
+
+  const NIGHT_ITEMS = [
+    { key: 'eveningReminder',   label: '🌙 Evening drink',    sub: 'Reminds you around 9:30 PM',  timeKey: 'eveningTime',   defTime: '21:30' },
+    { key: 'lateNightReminder', label: '🌛 Late night drink', sub: 'Reminds you around 1:00 AM',  timeKey: 'lateNightTime', defTime: '01:00' },
+    { key: 'dinnerReminder',    label: '🍽️ Dinner reminder',  sub: 'Reminds you around 11:00 PM', timeKey: 'dinnerTime',    defTime: '23:00' },
+    { key: 'waterReminder',     label: '💧 Hydration nudge',   sub: 'Drink water reminder',        timeKey: null,            defTime: null },
+  ];
+
+  const items = isNight ? NIGHT_ITEMS : MORNING_ITEMS;
 
   return (
     <div className="space-y-6 pb-28">
       <div className="text-center pt-4">
-        <div className="text-5xl mb-3">🔔</div>
+        <div className="text-5xl mb-3">{isNight ? '🌙' : '🔔'}</div>
         <h2 className="text-2xl font-bold text-slate-900">Remind me to order?</h2>
-        <p className="text-slate-500 mt-2 text-sm">Toggle what you want. Change anytime in Settings.</p>
+        <p className="text-slate-500 mt-2 text-sm">
+          {isNight
+            ? '🌙 Night shift reminders — times adjusted for your shift.'
+            : 'Toggle what you want. Change anytime in Settings.'}
+        </p>
+        {isNight && (
+          <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 rounded-full">
+            <span className="text-xs text-indigo-700 font-bold">🌙 Night shift — self pickup only at night</span>
+          </div>
+        )}
       </div>
       <div className="space-y-3">
         {items.map(({ key, label, sub, timeKey, defTime }) => (
@@ -645,6 +665,7 @@ export default function Onboarding({ onComplete }) {
     tastes: [],
     shift: 'morning',
     location: '',
+    // Morning shift reminders
     morningReminder:   true,
     morningTime:       '10:45',
     afternoonReminder: false,
@@ -652,6 +673,13 @@ export default function Onboarding({ onComplete }) {
     lunchReminder:     false,
     lunchTime:         '12:45',
     waterReminder:     false,
+    // Night shift reminders
+    eveningReminder:   true,
+    eveningTime:       '21:30',
+    lateNightReminder: false,
+    lateNightTime:     '01:00',
+    dinnerReminder:    false,
+    dinnerTime:        '23:00',
     gender: '',
     tone: 'gen_z',
   });
@@ -718,8 +746,13 @@ export default function Onboarding({ onComplete }) {
         taste_prefs:          prefs.tastes,
         shift:                prefs.shift || 'morning',
         preferred_location:   prefs.location || null,
-        reminder_enabled:     prefs.morningReminder || prefs.afternoonReminder || prefs.lunchReminder || prefs.waterReminder,
-        reminder_time:        prefs.morningTime || null,
+        gender:               prefs.gender || null,
+        reminder_enabled:     prefs.morningReminder || prefs.afternoonReminder || prefs.lunchReminder || prefs.waterReminder
+                              || prefs.eveningReminder || prefs.lateNightReminder || prefs.dinnerReminder || false,
+        // Save the primary reminder time based on shift
+        reminder_time:        prefs.shift === 'night'
+                                ? (prefs.eveningTime   || '21:30')
+                                : (prefs.morningTime   || '10:45'),
         notification_tone:    prefs.tone || 'gen_z',
         onboarding_completed: true,
       });
@@ -755,7 +788,7 @@ export default function Onboarding({ onComplete }) {
     <StepSnacks    key={4} prefs={prefs} toggle={v => toggleArr('snacks', v)} onNext={next} onBack={back} />,
     <StepTaste     key={5} prefs={prefs} toggle={v => toggleArr('tastes', v)} onNext={next} onBack={back} />,
     <StepLocation  key={6} prefs={prefs} set={set}  onNext={next} onBack={back} />,
-    <StepReminders key={7} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepReminders key={7} prefs={prefs} set={set} onNext={next} onBack={back} shift={prefs.shift} />,
     <StepGender    key={8} prefs={prefs} set={set} onNext={next} onBack={back} />,
     <StepTone      key={9} prefs={prefs} set={v => set('tone', v)} onNext={next} onBack={back} />,
     <StepDone      key={10} onFinish={finish} saving={saving} />,
