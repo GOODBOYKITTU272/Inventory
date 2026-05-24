@@ -304,7 +304,7 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, br
         <div className="text-center">
           <div className="text-xs font-bold text-slate-500 leading-tight">{displayName}</div>
           {cal > 0 && <div className="text-[9px] text-slate-400 mt-0.5">🔥 {cal} cal</div>}
-          <div className="text-[10px] text-amber-600 font-bold mt-1">🍞 Needs bread</div>
+          <div className="text-[10px] text-amber-600 font-bold mt-1">🍞 No Bread</div>
         </div>
       </div>
     );
