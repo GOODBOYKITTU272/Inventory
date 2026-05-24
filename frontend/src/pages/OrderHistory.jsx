@@ -144,7 +144,7 @@ function OrderCard({ order, onTap, onReorder, onCancel }) {
             <div className="mt-1 flex flex-col gap-0.5">
               <div className="flex items-center gap-0.5">
                 {[1, 2, 3, 4, 5].map((n) => {
-                  const starRating = order.rating > 5 ? Math.round(order.rating / 2) : order.rating;
+                  const starRating = Math.round(order.rating / 2);
                   return (
                     <span
                       key={n}

@@ -3,12 +3,17 @@
 -- Run AFTER enabling pg_cron and pg_net extensions in Supabase
 -- =====================================================================
 
--- 1. Add rating and feedback columns directly to requests if they do not exist
+-- 1. Add rating, feedback, and priority columns directly to requests if they do not exist
 ALTER TABLE public.requests ADD COLUMN IF NOT EXISTS rating INT;
 ALTER TABLE public.requests ADD COLUMN IF NOT EXISTS feedback TEXT;
+ALTER TABLE public.requests ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'Normal';
 
--- 2. Fix v_request_queue — expose all columns the frontend uses (static columns representation)
-CREATE OR REPLACE VIEW public.v_request_queue AS
+
+-- 2. Drop the existing view first to avoid Postgres column reordering/naming errors
+DROP VIEW IF EXISTS public.v_request_queue CASCADE;
+
+-- 3. Create v_request_queue exposing all the columns the frontend uses
+CREATE VIEW public.v_request_queue AS
 SELECT
   r.id, r.raw_text, r.category, r.parsed_item,
   r.parsed_employee_name, r.parsed_location, r.instruction,
@@ -27,7 +32,7 @@ SELECT cron.schedule(
   '*/30 9-18 * * 1-5',   -- every 30 minutes, 9:00 AM to 6:59 PM, Monday to Friday
   $$
     SELECT net.http_post(
-      url := 'http://localhost:4000/api/cron/ai-reminders',
+      url := 'https://inventory-vgor.onrender.com/api/cron/ai-reminders',
       headers := '{"Content-Type": "application/json"}'::jsonb,
       body := '{"secret":"app_wizz_cron_secret_change_in_production"}'::jsonb
     )
