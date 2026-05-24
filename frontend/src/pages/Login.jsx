@@ -19,9 +19,9 @@ const FEATURES = [
 ];
 
 const STATS = [
-  { value: '8 min',  label: 'avg delivery', color: '#2C76FF' },
-  { value: '4.8★',   label: 'satisfaction',  color: '#29FE29' },
-  { value: '100%',   label: 'desk delivery', color: '#ffffff' },
+  { value: '🚀', label: 'Desk delivery', color: '#2C76FF' },
+  { value: '🏃', label: 'Self pickup',   color: '#29FE29' },
+  { value: '✌️', label: 'Zero queue',    color: '#ffffff' },
 ];
 
 export default function Login() {
@@ -260,18 +260,8 @@ export default function Login() {
         {...fade(0)}
       >
         {/* Logo image only — no text beside it, logo already has APPLY WIZZ in it */}
-        <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 flex items-center gap-3">
-          <img
-            src="/logo.png"
-            alt="ApplyWizz"
-            className="h-7 sm:h-8 object-contain"
-          />
-          <span
-            className="text-white/25 text-[10px] font-semibold tracking-widest uppercase hidden sm:block"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-          >
-            Office Pantry
-          </span>
+        <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5">
+          <img src="/logo.png" alt="ApplyWizz" className="h-7 sm:h-8 object-contain" />
         </div>
 
         <div className="flex items-center gap-2 border px-3 py-1.5 rounded-full"
@@ -291,29 +281,12 @@ export default function Login() {
 
               {/* Logo hero card — the star of the show */}
               <motion.div {...fade(0.1)} className="mb-8">
-                <div
-                  className="inline-flex items-center gap-4 rounded-2xl px-5 py-4 border"
-                  style={{
-                    background: 'rgba(255,255,255,0.03)',
-                    borderColor: 'rgba(255,255,255,0.08)',
-                  }}
-                >
-                  <img
-                    src="/logo.png"
-                    alt="ApplyWizz"
-                    className="h-12 sm:h-14 object-contain"
-                  />
-                  <div>
-                    <p className="text-white/25 text-[10px] font-semibold tracking-widest uppercase"
-                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                      Office Pantry
-                    </p>
-                    {/* Brand color accent line */}
-                    <div className="flex gap-1 mt-1.5">
-                      <div className="h-0.5 w-8 rounded-full" style={{ background: '#2C76FF' }} />
-                      <div className="h-0.5 w-5 rounded-full" style={{ background: '#29FE29' }} />
-                      <div className="h-0.5 w-2 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }} />
-                    </div>
+                <div className="inline-flex items-center rounded-2xl px-5 py-4 border"
+                     style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.08)' }}>
+                  <img src="/logo.png" alt="ApplyWizz" className="h-10 sm:h-12 object-contain" />
+                  <div className="flex gap-1 mt-3 ml-4">
+                    <div className="h-0.5 w-8 rounded-full" style={{ background: '#2C76FF' }} />
+                    <div className="h-0.5 w-5 rounded-full" style={{ background: '#29FE29' }} />
                   </div>
                 </div>
               </motion.div>
