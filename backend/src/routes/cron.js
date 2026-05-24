@@ -15,14 +15,9 @@ router.post('/ai-reminders', async (req, res) => {
   }
 
   // Fetch opted-in employee reminder policies
-  const { data: optedIn, error: err } = await supabaseAdmin
+  const { data: rawOptedIn, error: err } = await supabaseAdmin
     .from('employee_cafeteria_preferences')
-    .select(`
-      user_id,
-      profiles:user_id (
-        full_name
-      )
-    `)
+    .select('user_id')
     .eq('reminder_enabled', true);
 
   if (err) {
@@ -30,7 +25,34 @@ router.post('/ai-reminders', async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 
-  if (!optedIn?.length) return res.json({ sent: 0 });
+  if (!rawOptedIn?.length) return res.json({ sent: 0 });
+
+  // Fetch profiles for the opted-in users to get their full names
+  const userIds = rawOptedIn.map((o) => o.user_id).filter(Boolean);
+  const { data: profiles, error: profilesErr } = await supabaseAdmin
+    .from('profiles')
+    .select('id, full_name')
+    .in('id', userIds);
+
+  if (profilesErr) {
+    console.error('[Cron] failed to load profiles:', profilesErr.message);
+    return res.status(500).json({ error: profilesErr.message });
+  }
+
+  const nameMap = {};
+  if (profiles) {
+    profiles.forEach((p) => {
+      nameMap[p.id] = p.full_name;
+    });
+  }
+
+  const optedIn = rawOptedIn.map(({ user_id }) => ({
+    user_id,
+    profiles: {
+      full_name: nameMap[user_id] || 'Team Member',
+    },
+  }));
+
 
   // Respond immediately — don't block on GPT calls
   res.json({ queued: optedIn.length });
