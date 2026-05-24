@@ -49,27 +49,19 @@ const ITEM_CATEGORY = {
 // Multi-ingredient drinks (Cappuccino = Coffee Beans + Milk) must list ALL ingredients.
 // servings: 1 = full cup deduction, 0.5 = half (Half Cup)
 const VIRTUAL_DRINK_MAP = {
-  // Coffee-only drinks (Coffee Beans only)
+  // Coffee (Only 4 options)
   'espresso':      [{ item: 'Coffee Beans', servings: 1 }],
   'americano':     [{ item: 'Coffee Beans', servings: 1 }],
-  'strong coffee': [{ item: 'Coffee Beans', servings: 1 }],
-  'black coffee':  [{ item: 'Coffee Beans', servings: 1 }],
-  'brew':          [{ item: 'Coffee Beans', servings: 1 }],
-  'half cup':      [{ item: 'Coffee Beans', servings: 0.5 }],
-  // Coffee + Milk drinks (both deducted)
   'cappuccino':    [{ item: 'Coffee Beans', servings: 1 }, { item: 'Milk', servings: 1 }],
   'latte':         [{ item: 'Coffee Beans', servings: 1 }, { item: 'Milk', servings: 1 }],
-  'milk coffee':   [{ item: 'Coffee Beans', servings: 1 }, { item: 'Milk', servings: 1 }],
-  // Tea drinks
-  'strong tea':    [{ item: 'Assam tea', servings: 1 }],
-  'black tea':     [{ item: 'Assam tea', servings: 1 }],
-  'dip tea':       [{ item: 'Assam tea', servings: 1 }],
-  // Lemon tea
+  // Tea (Only 4 options)
+  'assam tea':     [{ item: 'Assam tea', servings: 1 }, { item: 'Milk', servings: 1 }],
+  'elaichi tea':   [{ item: 'Elaichi tea', servings: 1 }, { item: 'Milk', servings: 1 }],
+  'ginger tea':    [{ item: 'Ginger tea', servings: 1 }, { item: 'Milk', servings: 1 }],
   'lemon tea':     [{ item: 'Lemon sachets', servings: 1 }],
-  // Milk only
-  'milk':          [{ item: 'Milk', servings: 1 }],
-  // Hot Water — no stock deduction (direct from machine)
-  'hot water':     [],
+  // Hot Mixes
+  'hot chocolate': [{ item: 'Hot chocolate', servings: 1 }, { item: 'Milk', servings: 1 }],
+  'badam mix':     [{ item: 'Badam Sachets', servings: 1 }, { item: 'Milk', servings: 1 }],
 };
 
 // ── Tone-aware dependency messages ──────────────────────────────────────────
@@ -698,18 +690,7 @@ async function getUserTone(userId) {
 }
 
 function getOOSMessage(userTone, itemName) {
-  const oosMessages = {
-    Friendly: [`Oops, ${itemName} is all gone for today! 😊`, `This one's finished, try tomorrow! 🌈`],
-    Funny: [`Sorry beta, ${itemName} khatam ho gaya 🥺`, `Aaj ki ${itemName} quota over hai bestie 💅`],
-    'Mom Mode': [`Beta, ${itemName} aaj khatam ho gaya 🥺💝`, `Aur nahi hai beta, doosra le lo na 🫂`],
-    Professional: [`${itemName} is currently out of stock.`, `${itemName} unavailable for today.`],
-    Minimal: [`${itemName} out of stock.`],
-    boyfriend: [`Hey babe, ${itemName} is all gone 🥺💕`, `Sorry cutie, no more ${itemName} today 💖`],
-    girlfriend: [`Hey handsome, ${itemName} khatam ho gaya 🥺💕`, `Sorry raja, ${itemName} nahi bacha 💖`],
-    gen_z: [`Bruh ${itemName} said byebye 💀`, `${itemName} sold out fr fr 🫠`],
-  };
-  const msgs = oosMessages[userTone] || oosMessages.Friendly;
-  return msgs[Math.floor(Math.random() * msgs.length)];
+  return `${itemName} is currently out of stock.`;
 }
 
 async function deductStockForRequest(user, itemName, qty, instruction, breadType) {
@@ -733,7 +714,13 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
         .ilike('item_name', backingItemName)
         .maybeSingle();
 
-      if (!backingRow) continue; // ingredient not tracked — skip silently
+      if (!backingRow) {
+        if (backingItemName === 'Milk') {
+          const userTone = await getUserTone(user.id);
+          throw new Error(getOOSMessage(userTone, `${itemName} (Milk ran out)`));
+        }
+        continue; // ingredient not tracked — skip silently
+      }
 
       const effectiveStock = backingRow.stock_servings ?? backingRow.stock_today;
       if (effectiveStock !== null && effectiveStock !== undefined && effectiveStock < deductAmt) {
@@ -772,6 +759,18 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
   }
 
   // ── Regular (non-virtual) item path ──────────────────────────────────────
+
+  // 1b. Fetch the real DB row for this item
+  const { data: itemRow } = await supabaseAdmin
+    .from('cafeteria_items')
+    .select('id, item_name, stock_today, stock_servings, sides_option, dependencies')
+    .ilike('item_name', itemName)
+    .maybeSingle();
+
+  if (!itemRow) {
+    // Item not found in DB — allow order through but skip stock deduction
+    return;
+  }
 
   // 2. Check if we need to deduct stirrers
   const needsStirrers = isBeverageUsingStirrer(itemName);
@@ -921,6 +920,16 @@ async function restoreStockForRequest(order) {
   }
 
   // ── Regular (non-virtual) restore path ───────────────────────────────────
+
+  const { data: itemRow } = await supabaseAdmin
+    .from('cafeteria_items')
+    .select('id, item_name, stock_today, stock_servings, sides_option, dependencies')
+    .ilike('item_name', itemName)
+    .maybeSingle();
+
+  if (!itemRow) {
+    return;
+  }
 
   // 1. Restore stirrers
   if (isBeverageUsingStirrer(itemName)) {

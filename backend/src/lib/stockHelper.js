@@ -167,7 +167,18 @@ export function mapProductToCafeteria(itemName, quantity, unit = '') {
       servings = quantity * packSize;
     }
   }
-  // 5. Water Bottle
+  // 5. Milk
+  else if (nameLower.includes('milk') && !nameLower.includes('bread') && !nameLower.includes('container') && !nameLower.includes('sachet')) {
+    targetItemName = 'Milk';
+    category = 'beverage';
+    isOrderable = false;
+    let liters = quantity;
+    if (nameLower.includes('500ml') || nameLower.includes('500 ml')) {
+      liters = quantity * 0.5;
+    }
+    servings = Math.round(liters * 5);
+  }
+  // 6. Water Bottle
   else if (nameLower.includes('water bottle') || nameLower.includes('water')) {
     targetItemName = 'Water Bottle';
     category = 'beverage';

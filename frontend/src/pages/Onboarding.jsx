@@ -12,7 +12,6 @@ const DRINK_CATEGORIES = [
       { id: 'Espresso',      emoji: '☕', label: 'Espresso' },
       { id: 'Latte',         emoji: '☕', label: 'Latte' },
       { id: 'Cappuccino',    emoji: '☕', label: 'Cappuccino' },
-      { id: 'Milk Coffee',   emoji: '🥛', label: 'Milk Coffee' },
       { id: 'Hot Chocolate',  emoji: '🍫', label: 'Hot Chocolate' },
       { id: 'Badam Mix',     emoji: '🥜', label: 'Badam Mix' },
     ]},
@@ -385,7 +384,7 @@ function StepSnacks({ prefs, toggle, onNext, onBack }) {
 // Step 5 — Taste preferences (dynamic based on drink selection)
 function StepTaste({ prefs, toggle, onNext, onBack }) {
   const drinks = prefs.drinks || [];
-  const CCD_SUBS = ['Espresso', 'Latte', 'Cappuccino', 'Milk Coffee', 'Hot Chocolate', 'Badam Mix'];
+  const CCD_SUBS = ['Espresso', 'Latte', 'Cappuccino', 'Hot Chocolate', 'Badam Mix'];
   const TEA_SUBS = ['Assam Tea', 'Elaichi Tea', 'Ginger Tea', 'Green Tea', 'Lemon Tea'];
 
   const hasCoffee   = drinks.some(d => CCD_SUBS.includes(d) || d.toLowerCase().includes('coffee'));

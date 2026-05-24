@@ -87,20 +87,19 @@ const OOS_BY_TONE = {
 };
 
 function getOosMessage(tone, itemName) {
-  const messages = OOS_BY_TONE[tone] || OOS_BY_TONE.Friendly;
-  return messages[Math.floor(Math.random() * messages.length)];
+  return "Currently unavailable";
 }
 
 // ── Low stock messages by tone ────────────────────────────────────────────────
 const LOW_STOCK_BY_TONE = {
-  Professional: (n) => `${n} remaining`,
-  Friendly: (n) => `Only ${n} left! 🏃`,
-  Funny: (n) => `${n} bache hai, jaldi kar! 🔥`,
-  'Mom Mode': (n) => `Beta jaldi, sirf ${n} hai 💝`,
-  Minimal: (n) => `${n} left`,
-  boyfriend: (n) => `Hurry babe, only ${n} left! 💕`,
-  girlfriend: (n) => `Jaldi karo raja, sirf ${n} bacha! 💕`,
-  gen_z: (n) => `${n} left no cap, grab it! 🔥`,
+  Professional: (n) => `Only ${n} left`,
+  Friendly: (n) => `Only ${n} left`,
+  Funny: (n) => `Only ${n} left`,
+  'Mom Mode': (n) => `Only ${n} left`,
+  Minimal: (n) => `Only ${n} left`,
+  boyfriend: (n) => `Only ${n} left`,
+  girlfriend: (n) => `Only ${n} left`,
+  gen_z: (n) => `Only ${n} left`,
 };
 
 const STAGE_INFO = {
@@ -142,7 +141,7 @@ function PreferencesSummary({ prefs, location, drinkPrefs, tastePrefs, items, on
     );
   }
 
-  const DRINK_EMOJI = { coffee: '☕', espresso: '☕', latte: '☕', cappuccino: '☕', 'milk coffee': '🥛', tea: '🍵', assam: '🍵', elaichi: '🍵', ginger: '🍵', 'green tea': '🍃', lemon: '🍋', 'hot chocolate': '🍫', badam: '🥜', water: '💧' };
+  const DRINK_EMOJI = { coffee: '☕', espresso: '☕', latte: '☕', cappuccino: '☕', tea: '🍵', assam: '🍵', elaichi: '🍵', ginger: '🍵', 'green tea': '🍃', lemon: '🍋', 'hot chocolate': '🍫', badam: '🥜', water: '💧' };
 
   function getDrinkEmoji(name) {
     const n = (name || '').toLowerCase();
@@ -278,12 +277,25 @@ function ActiveOrderBanner({ order, onPress }) {
 }
 
 // ── Item Chip ──────────────────────────────────────────────────────────────────
-function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, breadAvailable }) {
+function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, breadAvailable, needsMilk }) {
   const inCart = qty > 0;
   const blockedByBread = needsBread && !breadAvailable;
   // Use frontend_name > display_name > item_name (cleanest name first)
   const displayName = item.frontend_name || item.display_name || item.item_name;
   const cal = item.calories_per_serving;
+
+  if (needsMilk) {
+    return (
+      <div className="relative rounded-2xl border-2 border-blue-100 bg-blue-50/40 p-3 flex flex-col gap-2 opacity-60">
+        <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
+        <div className="text-center">
+          <div className="text-xs font-bold text-slate-500 leading-tight">{displayName}</div>
+          {cal > 0 && <div className="text-[9px] text-slate-400 mt-0.5">🔥 {cal} cal</div>}
+          <div className="text-[10px] text-blue-500 font-bold mt-1">🥛 No Milk</div>
+        </div>
+      </div>
+    );
+  }
 
   if (blockedByBread) {
     return (
@@ -639,7 +651,7 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
 }
 
 // ── Beverage Taste Preference Sheet ─────────────────────────────────────────
-const COFFEE_TASTES  = ['Strong Coffee', 'Light Coffee', 'Less Sugar', 'No Sugar', 'With Milk', 'Without Milk'];
+const COFFEE_TASTES  = ['Light Coffee', 'Less Sugar', 'No Sugar'];
 const TEA_TASTES     = ['Strong Tea', 'Light Tea', 'Less Sugar', 'No Sugar'];
 const LEMON_TASTES   = ['Normal', 'Less Sugar', 'Strong Lemon', 'Mild Lemon', 'With Honey 🍯', 'Without Honey'];
 const GREEN_TEA_TASTES = ['Plain Green Tea', 'With Honey 🍯', 'With Lemon', 'Light Brew', 'Strong Brew'];
@@ -1067,43 +1079,56 @@ export default function Cafeteria() {
     const coffeeBeansRow  = rawItems.find(i => (i.item_name || '').toLowerCase().includes('coffee beans'));
     const lemonSachetsRow = rawItems.find(i => (i.item_name || '').toLowerCase().includes('lemon sachet'));
     const assamTeaRow     = rawItems.find(i => (i.item_name || '').toLowerCase().includes('assam tea'));
-    const milkRow         = rawItems.find(i => (i.item_name || '').toLowerCase() === 'milk' ||
-                                               (i.item_name || '').toLowerCase().includes('milk tetra') ||
-                                               (i.item_name || '').toLowerCase().includes('toned milk'));
+    const milkRow         = rawItems.find(i => {
+      const n = (i.item_name || '').toLowerCase();
+      return n === 'milk' || n.includes('toned milk') || n.includes('milk tetra');
+    });
+
+    const milkAvail = milkRow ? (milkRow.stock_servings ?? milkRow.stock_today ?? null) : null;
+    const milkInStock = milkRow ? (milkAvail === null || milkAvail > 0) : false;
 
     // Mark backing ingredients as non-orderable (hidden from direct menu)
     const hiddenNames = new Set();
     if (coffeeBeansRow)  hiddenNames.add(coffeeBeansRow.item_name.toLowerCase());
     if (lemonSachetsRow) hiddenNames.add(lemonSachetsRow.item_name.toLowerCase());
-    // Note: Assam tea and Milk stay orderable as direct items too
 
-    const filtered = rawItems.map(i =>
-      hiddenNames.has((i.item_name || '').toLowerCase())
-        ? { ...i, orderable: false }
-        : i
-    );
+    const filtered = rawItems.map(i => {
+      const nameL = (i.item_name || '').toLowerCase();
+      const selfInStock = (i.stock_servings ?? i.stock_today ?? null) === null || (i.stock_servings ?? i.stock_today ?? 0) > 0;
+      
+      if (hiddenNames.has(nameL)) {
+        return { ...i, orderable: false };
+      }
+      
+      if (
+        nameL.includes('elaichi') || 
+        nameL.includes('ginger') || 
+        nameL.includes('assam tea') ||
+        nameL.includes('hot chocolate') ||
+        nameL.includes('badam')
+      ) {
+        return {
+          ...i,
+          orderable: selfInStock && milkInStock,
+          _needs_milk: true,
+        };
+      }
+      
+      return i;
+    });
 
     const virtual = [];
 
     // ── Coffee Beans → All coffee-based machine drinks ──────────────────────
     if (coffeeBeansRow) {
       const cupsAvail = coffeeBeansRow.stock_servings ?? null;
-      const milkAvail = milkRow ? (milkRow.stock_servings ?? milkRow.stock_today ?? null) : null;
-
-      // Helper: is a drink in stock? (null means no limit tracked)
       const coffeeInStock = cupsAvail === null || cupsAvail > 0;
-      const milkInStock   = milkRow ? (milkAvail === null || milkAvail > 0) : true; // if no milk row, don't block
 
-      // Coffee-only drinks — just needs Coffee Beans
-      const COFFEE_ONLY = [
-        { name: 'Espresso',      emoji: '☕', id: '_espresso',      note: 'Intense shot, no milk' },
-        { name: 'Americano',     emoji: '🫖', id: '_americano',     note: 'Espresso + hot water' },
-        { name: 'Strong Coffee', emoji: '☕', id: '_strong_coffee', note: 'Extra strong brew' },
-        { name: 'Black Coffee',  emoji: '🖤', id: '_black_coffee',  note: 'No milk, no sugar' },
-        { name: 'Brew',          emoji: '🫗', id: '_brew',          note: 'Classic filter brew' },
-        { name: 'Half Cup',      emoji: '½☕', id: '_half_cup',     note: 'Half serving' },
-      ];
-      COFFEE_ONLY.forEach(({ name, emoji, id, note }) => {
+      // 1. Water-dependent Coffees
+      [
+        { name: 'Espresso',  emoji: '☕', id: '_espresso',  note: 'Intense coffee quickly brewed at high pressure' },
+        { name: 'Americano', emoji: '🫖', id: '_americano', note: 'Traditional espresso mixed with hot water' },
+      ].forEach(({ name, emoji, id, note }) => {
         virtual.push({
           id:             coffeeBeansRow.id + id,
           item_name:      name,
@@ -1120,13 +1145,11 @@ export default function Cafeteria() {
         });
       });
 
-      // Coffee + Milk drinks — needs BOTH Coffee Beans AND Milk
-      const COFFEE_MILK = [
-        { name: 'Cappuccino',  emoji: '☕', id: '_cappuccino',  note: 'Espresso + steamed milk + foam' },
-        { name: 'Latte',       emoji: '🍵', id: '_latte',       note: 'Espresso + steamed milk' },
-        { name: 'Milk Coffee', emoji: '🥛', id: '_milk_coffee', note: 'Coffee with milk' },
-      ];
-      COFFEE_MILK.forEach(({ name, emoji, id, note }) => {
+      // 2. Milk-dependent Coffees
+      [
+        { name: 'Cappuccino', emoji: '☕', id: '_cappuccino', note: 'Equal parts espresso, steamed milk and foamed milk' },
+        { name: 'Latte',      emoji: '🍵', id: '_latte',      note: 'Steamed milk and espresso, topped with milk foam' },
+      ].forEach(({ name, emoji, id, note }) => {
         virtual.push({
           id:             coffeeBeansRow.id + id,
           item_name:      name,
@@ -1163,49 +1186,6 @@ export default function Cafeteria() {
         _machine:       false,
       });
     }
-
-    // ── Assam Tea → Strong Tea, Black Tea, Dip Tea ───────────────────────────
-    if (assamTeaRow) {
-      const assamAvail = assamTeaRow.stock_servings ?? assamTeaRow.stock_today ?? null;
-      const assamInStock = assamAvail === null || assamAvail > 0;
-
-      [
-        { name: 'Strong Tea', emoji: '🍵', id: '_strong_tea', note: 'Extra strong tea brew' },
-        { name: 'Black Tea',  emoji: '🖤', id: '_black_tea',  note: 'No milk, pure tea' },
-        { name: 'Dip Tea',    emoji: '🫖', id: '_dip_tea',    note: 'Tea bag + hot water, 2–3 min steep' },
-      ].forEach(({ name, emoji, id, note }) => {
-        virtual.push({
-          id:             assamTeaRow.id + id,
-          item_name:      name,
-          display_name:   name,
-          description:    note,
-          category:       'beverage',
-          emoji,
-          stock_servings: assamAvail,
-          stock_today:    null,
-          orderable:      assamInStock,
-          _virtual:       true,
-          _backing:       assamTeaRow.item_name,
-          _machine:       true,
-        });
-      });
-    }
-
-    // ── Hot Water — always available, no stock deduction ─────────────────────
-    virtual.push({
-      id:            '__hot_water_virtual',
-      item_name:     'Hot Water',
-      display_name:  'Hot Water',
-      description:   'From machine — instant',
-      category:      'beverage',
-      emoji:         '♨️',
-      stock_servings: null,
-      stock_today:   null,
-      orderable:     true,
-      _virtual:      true,
-      _backing:      null,
-      _machine:      true,
-    });
 
     return [...filtered, ...virtual];
   }
@@ -1254,7 +1234,7 @@ export default function Cafeteria() {
         if (data?.item_prefs) setItemPrefs(data.item_prefs);
         if (data?.preferred_location) setSavedLocation(data.preferred_location);
         if (data?.notification_tone) setTone(data.notification_tone);
-        if (Array.isArray(data?.drink_prefs)) setUserDrinkPrefs(data.drink_prefs);
+        if (Array.isArray(data?.drink_prefs)) setUserDrinkPrefs(data.drink_prefs.filter(d => d !== 'Milk Coffee'));
         if (Array.isArray(data?.taste_prefs)) setUserTastePrefs(data.taste_prefs);
         if (data?.shift) setUserShift(data.shift);
       })
@@ -1471,19 +1451,70 @@ export default function Cafeteria() {
     }
   }
 
-  // ── Group items by category (only orderable items) ───────────────────────────
-  const orderableItems = items.filter((item) => item.orderable !== false);
-  const grouped = orderableItems.reduce((acc, item) => {
-    const cat = item.category || 'other';
+  // Helper to map any item to the clean 6 display categories
+  function getDisplayCategory(item) {
+    const nameL = (item.item_name || '').toLowerCase();
+    
+    // 6. Accessories
+    if (nameL.includes('stirrer') || nameL.includes('paper cup') || nameL.includes('sugar sachet') || nameL.includes('sugar free')) {
+      return 'accessories';
+    }
+    
+    // 4. Refreshments
+    if (nameL === 'water' || nameL === 'water bottle') {
+      return 'refreshments';
+    }
+    
+    // 5. Food / Pantry
+    const isFoodOrPantry = ['food', 'snack', 'meal'].includes(item.category) && 
+      !nameL.includes('tea') && 
+      !nameL.includes('coffee') && 
+      !nameL.includes('chocolate') && 
+      !nameL.includes('badam');
+    if (isFoodOrPantry || nameL.includes('jam') || nameL.includes('bread') || nameL.includes('banana')) {
+      return 'food_pantry';
+    }
+    
+    // 3. Hot Mixes
+    if (nameL.includes('chocolate') || nameL.includes('badam') || nameL.includes('boost') || nameL.includes('horlicks') || nameL.includes('soup')) {
+      return 'hot_mixes';
+    }
+
+    // 1. Caffeine Fix
+    const isCaffeineFix = [
+      'espresso', 'americano', 'cappuccino', 'latte'
+    ].includes(nameL);
+    if (isCaffeineFix || nameL.includes('coffee')) {
+      return 'caffeine_fix';
+    }
+
+    // 2. Tea & Sachets (Default for teas)
+    if (nameL.includes('tea') || nameL.includes('sachet')) {
+      return 'tea_sachets';
+    }
+
+    return 'caffeine_fix'; // default fallback
+  }
+
+  // ── Group items by category ────────────────────────────────────────────────────
+  // Include milk-blocked items (_needs_milk) so they show as greyed-out cards.
+  // Exclude only items that are truly hidden (orderable:false without _needs_milk).
+  const visibleItems = items.filter((item) => item.orderable !== false || item._needs_milk);
+  const grouped = visibleItems.reduce((acc, item) => {
+    const cat = getDisplayCategory(item);
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(item);
     return acc;
   }, {});
 
-  const catOrder  = ['beverage', 'refreshment', 'food', 'snack', 'meal', 'stationery', 'cleaning', 'other'];
+  const catOrder = ['caffeine_fix', 'tea_sachets', 'hot_mixes', 'refreshments', 'food_pantry', 'accessories'];
   const catLabels = {
-    beverage: 'Drinks', refreshment: 'Refreshments', food: 'Food', snack: 'Snacks', meal: 'Meals',
-    stationery: 'Stationery', cleaning: 'Cleaning', other: 'Other',
+    caffeine_fix: 'Caffeine Fix ☕',
+    tea_sachets: 'Tea & Sachets 🍵',
+    hot_mixes: 'Hot Mixes 🍫',
+    refreshments: 'Refreshments 💧',
+    food_pantry: 'Food / Pantry 🥪',
+    accessories: 'Accessories 📎',
   };
   const sortedGroups = catOrder.filter((c) => grouped[c]?.length);
 
@@ -1592,6 +1623,8 @@ export default function Cafeteria() {
               const servingsOut   = stockServings !== null && stockServings !== undefined && stockServings <= 0;
               const isOut = obMarkedOut || servingsOut;
               const hasBreadDep = Array.isArray(item.dependencies) && item.dependencies.some(d => d.toLowerCase() === 'bread');
+              // Milk-blocked: item is in stock physically but milk is OOS → show card greyed out
+              const isMilkBlocked = item._needs_milk && item.orderable === false;
               return (
                 <ItemChip
                   key={item.id}
@@ -1603,6 +1636,7 @@ export default function Cafeteria() {
                   tone={tone}
                   needsBread={hasBreadDep}
                   breadAvailable={anyBreadInStock}
+                  needsMilk={isMilkBlocked}
                 />
               );
             })}
