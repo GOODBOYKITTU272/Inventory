@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase.js';
@@ -12,36 +12,16 @@ const fade = (delay = 0) => ({
 });
 
 const FEATURES = [
-  {
-    icon: '⚡',
-    title: '5-second ordering',
-    desc: 'Tap once. Your order is placed, tracked, and on its way.',
-    color: '#FFDE59',
-  },
-  {
-    icon: '📍',
-    title: 'Live delivery tracking',
-    desc: 'Watch your CCD Coffee move from machine to your desk in real time.',
-    color: '#2C76FF',
-  },
-  {
-    icon: '🍱',
-    title: 'Meal booking',
-    desc: 'Book veg, non-veg, or egg lunch the night before. No queues.',
-    color: '#29FE29',
-  },
-  {
-    icon: '🤖',
-    title: 'AI-powered reminders',
-    desc: "Your personal pantry AI nudges you when it's chai time.",
-    color: '#FF6B6B',
-  },
+  { icon: '⚡', title: '5-sec ordering',  desc: 'One tap. Confirmed. On its way.',      accent: '#2C76FF' },
+  { icon: '📍', title: 'Live tracking',   desc: 'Watch your order move in real time.',  accent: '#29FE29' },
+  { icon: '🍱', title: 'Meal booking',    desc: 'Book veg or non-veg lunch ahead.',     accent: '#2C76FF' },
+  { icon: '🤖', title: 'AI reminders',    desc: "Nudged by AI when it's chai time.",   accent: '#29FE29' },
 ];
 
 const STATS = [
-  { value: '< 8 min', label: 'avg delivery' },
-  { value: '4.8★',    label: 'satisfaction' },
-  { value: '100%',    label: 'desk delivery' },
+  { value: '8 min',  label: 'avg delivery', color: '#2C76FF' },
+  { value: '4.8★',   label: 'satisfaction',  color: '#29FE29' },
+  { value: '100%',   label: 'desk delivery', color: '#ffffff' },
 ];
 
 export default function Login() {
@@ -249,7 +229,13 @@ export default function Login() {
     }
   }
 
-  const isFormStep = step === 'email' || step === 'verify' || step === 'enroll';
+  function resetToEmail() {
+    setStep('email');
+    setErr('');
+    setTotpCode('');
+    submitting.current = false;
+    supabase.auth.signOut();
+  }
 
   // ── RENDER ──────────────────────────────────────────────────
   return (
@@ -257,154 +243,190 @@ export default function Login() {
       className="min-h-[100dvh] flex flex-col relative overflow-hidden"
       style={{
         fontFamily: "'Noto Sans', 'Inter', system-ui, sans-serif",
-        background: 'linear-gradient(160deg, #0B1D33 0%, #0a1628 50%, #091220 100%)',
+        background: 'linear-gradient(160deg, #0d1117 0%, #0a0e18 60%, #080c14 100%)',
       }}
     >
-      {/* ── Ambient glow orbs ── */}
+      {/* ── Subtle brand-colored ambient glows ── */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full opacity-[0.06]"
-             style={{ background: 'radial-gradient(circle, #29FE29, transparent 70%)' }} />
-        <div className="absolute -bottom-60 -right-40 w-[700px] h-[700px] rounded-full opacity-[0.04]"
+        <div className="absolute -top-60 -left-60 w-[700px] h-[700px] rounded-full opacity-[0.04]"
              style={{ background: 'radial-gradient(circle, #2C76FF, transparent 70%)' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full opacity-[0.03]"
-             style={{ background: 'radial-gradient(circle, #0f766e, transparent 70%)' }} />
+        <div className="absolute -bottom-60 -right-40 w-[600px] h-[600px] rounded-full opacity-[0.04]"
+             style={{ background: 'radial-gradient(circle, #29FE29, transparent 70%)' }} />
       </div>
 
-      {/* ── Header ── */}
+      {/* ── Header — real logo, no text duplication ── */}
       <motion.header
-        className="relative z-10 px-6 sm:px-10 lg:px-16 py-5 flex items-center justify-between shrink-0"
+        className="relative z-10 px-5 sm:px-10 lg:px-16 py-4 flex items-center justify-between shrink-0"
         {...fade(0)}
       >
-        {/* Logo — bigger, with company name beside it */}
-        <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="ApplyWizz" className="h-10 sm:h-12 object-contain" />
-          <div className="hidden sm:block">
-            <p className="text-white/80 text-sm font-bold tracking-tight leading-tight"
-               style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-              ApplyWizz
-            </p>
-            <p className="text-white/30 text-[10px] tracking-widest uppercase">Office Pantry</p>
-          </div>
+        {/* Logo image only — no text beside it, logo already has APPLY WIZZ in it */}
+        <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 flex items-center gap-3">
+          <img
+            src="/logo.png"
+            alt="ApplyWizz"
+            className="h-7 sm:h-8 object-contain"
+          />
+          <span
+            className="text-white/25 text-[10px] font-semibold tracking-widest uppercase hidden sm:block"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            Office Pantry
+          </span>
         </div>
-        <div className="flex items-center gap-2 bg-white/[0.05] border border-white/[0.08] px-3 py-1.5 rounded-full">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#29FE29] animate-pulse" />
-          <span className="text-[11px] text-white/40 font-medium">Pantry Online</span>
+
+        <div className="flex items-center gap-2 border px-3 py-1.5 rounded-full"
+             style={{ background: 'rgba(41,254,41,0.05)', borderColor: 'rgba(41,254,41,0.15)' }}>
+          <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#29FE29' }} />
+          <span className="text-[11px] font-medium" style={{ color: 'rgba(41,254,41,0.7)' }}>Pantry Online</span>
         </div>
       </motion.header>
 
-      {/* ── Main — two column on desktop ── */}
+      {/* ── Main ── */}
       <main className="relative z-10 flex-1 flex items-center">
-        <div className="w-full max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-8 lg:py-0">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+        <div className="w-full max-w-7xl mx-auto px-5 sm:px-10 lg:px-16 py-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
 
-            {/* ── LEFT COLUMN — Content ── */}
+            {/* ── LEFT — Logo hero + content ── */}
             <div className="order-2 lg:order-1">
 
-              {/* Badge */}
-              <motion.div {...fade(0.1)}
-                className="inline-flex items-center gap-2 bg-white/[0.06] border border-white/[0.08] text-[#29FE29] text-[11px] font-semibold px-4 py-1.5 rounded-full mb-6 tracking-wide uppercase"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#29FE29] animate-pulse" />
-                Office Pantry · Applywizz HQ
+              {/* Logo hero card — the star of the show */}
+              <motion.div {...fade(0.1)} className="mb-8">
+                <div
+                  className="inline-flex items-center gap-4 rounded-2xl px-5 py-4 border"
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    borderColor: 'rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <img
+                    src="/logo.png"
+                    alt="ApplyWizz"
+                    className="h-12 sm:h-14 object-contain"
+                  />
+                  <div>
+                    <p className="text-white/25 text-[10px] font-semibold tracking-widest uppercase"
+                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                      Office Pantry
+                    </p>
+                    {/* Brand color accent line */}
+                    <div className="flex gap-1 mt-1.5">
+                      <div className="h-0.5 w-8 rounded-full" style={{ background: '#2C76FF' }} />
+                      <div className="h-0.5 w-5 rounded-full" style={{ background: '#29FE29' }} />
+                      <div className="h-0.5 w-2 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }} />
+                    </div>
+                  </div>
+                </div>
               </motion.div>
 
               {/* Headline */}
               <motion.h1 {...fade(0.2)}
-                className="text-4xl sm:text-5xl lg:text-[3.25rem] font-extrabold text-white leading-[1.08] tracking-tight mb-4"
+                className="text-4xl sm:text-5xl font-extrabold text-white leading-[1.08] tracking-tight mb-4"
               >
                 Skip the queue.
                 <br />
                 Not the{' '}
-                <span className="text-[#29FE29] inline-block"
-                      style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>
+                <span style={{ color: '#29FE29', fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>
                   snack.
                 </span>
               </motion.h1>
 
-              {/* Subheadline */}
               <motion.p {...fade(0.3)}
-                className="text-white/45 text-base sm:text-[17px] leading-relaxed mb-8 max-w-lg"
+                className="text-white/40 text-sm sm:text-base leading-relaxed mb-8 max-w-md"
               >
                 CCD Coffee, snacks, and daily meals — ordered in one tap,
                 tracked live, delivered to your desk by the Office Boy.
               </motion.p>
 
               {/* Stats row */}
-              <motion.div {...fade(0.35)} className="flex items-center gap-6 mb-10">
-                {STATS.map(({ value, label }) => (
-                  <div key={label} className="text-center">
-                    <p className="text-xl sm:text-2xl font-extrabold text-white leading-none"
-                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              <motion.div {...fade(0.35)}
+                className="flex items-center gap-px rounded-2xl overflow-hidden border mb-8"
+                style={{ borderColor: 'rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.025)' }}
+              >
+                {STATS.map(({ value, label, color }, i) => (
+                  <div key={label} className="flex-1 text-center py-4 px-3" style={{
+                    borderRight: i < STATS.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none'
+                  }}>
+                    <p className="text-lg sm:text-xl font-extrabold" style={{ color, fontFamily: "'Space Grotesk', sans-serif" }}>
                       {value}
                     </p>
-                    <p className="text-[11px] text-white/30 mt-1 uppercase tracking-wider">{label}</p>
+                    <p className="text-[10px] text-white/25 uppercase tracking-wider mt-1">{label}</p>
                   </div>
                 ))}
               </motion.div>
 
-              {/* Feature cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {FEATURES.map(({ icon, title, desc, color }, i) => (
+              {/* Feature cards — blue/green alternating matching logo */}
+              <div className="grid grid-cols-2 gap-3">
+                {FEATURES.map(({ icon, title, desc, accent }, i) => (
                   <motion.div
                     key={title}
-                    {...fade(0.4 + i * 0.08)}
-                    className="bg-white/[0.04] border border-white/[0.07] rounded-2xl p-4 hover:bg-white/[0.07] hover:border-white/[0.12] transition-all duration-300"
+                    {...fade(0.4 + i * 0.07)}
+                    className="rounded-2xl p-4 border transition-all duration-300 hover:scale-[1.02]"
+                    style={{
+                      background: `${accent}08`,
+                      borderColor: `${accent}20`,
+                    }}
                   >
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl shrink-0 mt-0.5">{icon}</span>
-                      <div>
-                        <p className="text-white/85 text-sm font-semibold leading-tight mb-1"
-                           style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                          {title}
-                        </p>
-                        <p className="text-white/35 text-[12px] leading-relaxed">{desc}</p>
-                      </div>
-                    </div>
+                    <span className="text-xl block mb-2">{icon}</span>
+                    <p className="text-white/80 text-xs font-bold mb-1"
+                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                      {title}
+                    </p>
+                    <p className="text-white/30 text-[11px] leading-relaxed">{desc}</p>
                   </motion.div>
                 ))}
               </div>
-
-              {/* Built for line */}
-              <motion.p {...fade(0.8)} className="mt-8 text-[11px] text-white/15 flex items-center gap-2">
-                <span className="w-8 h-px bg-white/10" />
-                Built with ❤️ for the people who build ApplyWizz
-              </motion.p>
             </div>
 
-            {/* ── RIGHT COLUMN — Auth Form ── */}
+            {/* ── RIGHT — Login form ── */}
             <div className="order-1 lg:order-2 flex justify-center lg:justify-end">
-              <div className="w-full max-w-[400px]">
+              <div className="w-full max-w-[390px]">
 
-                {/* Form card */}
+                {/* Logo above form — prominent placement */}
+                <motion.div {...fade(0.15)} className="flex justify-center mb-5">
+                  <div
+                    className="flex items-center gap-3 px-5 py-3 rounded-2xl border"
+                    style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      borderColor: 'rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <img
+                      src="/logo.png"
+                      alt="ApplyWizz"
+                      className="h-8 object-contain"
+                    />
+                  </div>
+                </motion.div>
+
+                {/* Auth card */}
                 <motion.div
-                  {...fade(0.2)}
-                  className="bg-white/[0.04] border border-white/[0.09] rounded-3xl p-7 sm:p-8 backdrop-blur-sm"
+                  {...fade(0.25)}
+                  className="rounded-3xl border p-6 sm:p-7"
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    borderColor: 'rgba(255,255,255,0.08)',
+                  }}
                 >
                   <AnimatePresence mode="wait">
 
                     {/* ═══ STEP: Email ═══ */}
                     {step === 'email' && (
-                      <motion.div
-                        key="email"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
+                      <motion.div key="email"
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                         exit={{ opacity: 0, transition: { duration: 0.15 } }}
                         className="space-y-5"
                       >
                         <div>
-                          <h2 className="text-white text-xl font-bold mb-1"
+                          <h2 className="text-white text-lg font-bold mb-1"
                               style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                             Sign in to Pantry
                           </h2>
-                          <p className="text-white/35 text-sm">
-                            Use your @applywizz.ai work email
-                          </p>
+                          <p className="text-white/30 text-sm">Use your @applywizz.ai work email</p>
                         </div>
 
                         <form onSubmit={submitEmail} className="space-y-3">
                           <div>
-                            <label className="block text-[11px] font-semibold text-white/25 uppercase tracking-widest mb-2"
+                            <label className="block text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-2"
                                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                               Work email
                             </label>
@@ -413,28 +435,39 @@ export default function Login() {
                               placeholder={`you@${ALLOWED_DOMAIN}`}
                               value={email}
                               onChange={(e) => setEmail(e.target.value)}
-                              className="w-full bg-white/[0.06] border border-white/[0.1] rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/25 focus:border-[#29FE29]/40 transition-all"
+                              className="w-full rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/20 focus:outline-none transition-all"
+                              style={{
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                              }}
+                              onFocus={e => e.target.style.borderColor = 'rgba(44,118,255,0.5)'}
+                              onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
                             />
                           </div>
+
                           {err && <Msg text={err} />}
+
+                          {/* Gradient button matching logo colors */}
                           <button type="submit" disabled={busy}
-                            className="w-full bg-[#29FE29] hover:bg-[#22e622] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
-                            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                            className="w-full text-white text-sm font-bold py-3.5 rounded-2xl transition-all active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-2"
+                            style={{
+                              background: busy ? 'rgba(255,255,255,0.1)' : 'linear-gradient(90deg, #2C76FF, #29FE29)',
+                              fontFamily: "'Space Grotesk', sans-serif",
+                            }}
                           >
-                            {busy && <Spinner dark />}
+                            {busy && <Spinner />}
                             {busy ? 'Checking…' : 'Continue →'}
                           </button>
                         </form>
 
-                        <p className="text-[11px] text-white/15 text-center pt-1">
+                        <p className="text-[11px] text-white/15 text-center">
                           Secured with Microsoft Authenticator (MFA)
                         </p>
 
-                        {/* Trust indicators */}
-                        <div className="pt-2 border-t border-white/[0.06]">
+                        <div className="pt-2 border-t border-white/[0.05]">
                           <div className="flex items-center justify-center gap-4">
-                            {['🔐 MFA secured', '☁️ Supabase auth', '🏢 Internal only'].map(label => (
-                              <span key={label} className="text-[10px] text-white/20">{label}</span>
+                            {['🔐 MFA secured', '☁️ Supabase', '🏢 Internal only'].map(label => (
+                              <span key={label} className="text-[10px] text-white/15">{label}</span>
                             ))}
                           </div>
                         </div>
@@ -443,114 +476,101 @@ export default function Login() {
 
                     {/* ═══ STEP: Enroll ═══ */}
                     {step === 'enroll' && (
-                      <motion.div
-                        key="enroll"
-                        className="space-y-4"
-                        initial={{ opacity: 0, y: 16 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.4 }}
+                      <motion.div key="enroll" className="space-y-4"
+                        initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }} transition={{ duration: 0.4 }}
                       >
-                        <div className="w-14 h-14 mx-auto rounded-2xl bg-[#2C76FF]/15 border border-[#2C76FF]/20 grid place-items-center text-2xl">
+                        <div className="w-14 h-14 mx-auto rounded-2xl grid place-items-center text-2xl"
+                             style={{ background: 'rgba(44,118,255,0.1)', border: '1px solid rgba(44,118,255,0.2)' }}>
                           📱
                         </div>
                         <div className="text-center">
                           <h2 className="text-xl font-bold text-white mb-1">Set up Authenticator</h2>
-                          <p className="text-sm text-white/45 leading-relaxed">
-                            Open <strong className="text-white/70">Microsoft Authenticator</strong> on your phone.
-                            Tap <strong className="text-white/70">+</strong> → <strong className="text-white/70">Other account</strong> → Scan this QR
+                          <p className="text-sm text-white/40 leading-relaxed">
+                            Open <strong className="text-white/70">Microsoft Authenticator</strong> →
+                            tap <strong className="text-white/70">+</strong> → scan this QR
                           </p>
                         </div>
 
                         {qrCode && (
                           <div className="flex justify-center py-2">
-                            <div className="bg-white rounded-2xl p-4 inline-block shadow-xl shadow-black/30">
+                            <div className="bg-white rounded-2xl p-4 shadow-xl shadow-black/30">
                               <img src={qrCode} alt="QR Code" className="w-44 h-44 sm:w-48 sm:h-48" />
                             </div>
                           </div>
                         )}
 
-                        <form onSubmit={submitCode} className="space-y-3 text-left">
-                          <label className="block text-[11px] font-semibold text-white/25 uppercase tracking-widest mb-1"
+                        <form onSubmit={submitCode} className="space-y-3">
+                          <label className="block text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-1"
                                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                             Enter the 6-digit code
                           </label>
                           <CodeInput value={totpCode} onChange={setTotpCode} />
                           {err && <Msg text={err} />}
-                          <GreenBtn busy={busy}>{busy ? 'Verifying…' : 'Verify & Continue →'}</GreenBtn>
+                          <GradientBtn busy={busy}>{busy ? 'Verifying…' : 'Verify & Continue →'}</GradientBtn>
                         </form>
-
-                        <BackBtn onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }} />
+                        <BackBtn onClick={resetToEmail} />
                       </motion.div>
                     )}
 
                     {/* ═══ STEP: Verify ═══ */}
                     {step === 'verify' && (
-                      <motion.div
-                        key="verify"
-                        className="space-y-4"
-                        initial={{ opacity: 0, y: 16 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.4 }}
+                      <motion.div key="verify" className="space-y-4"
+                        initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }} transition={{ duration: 0.4 }}
                       >
-                        <div className="w-14 h-14 mx-auto rounded-2xl bg-[#29FE29]/10 border border-[#29FE29]/20 grid place-items-center text-2xl">
+                        <div className="w-14 h-14 mx-auto rounded-2xl grid place-items-center text-2xl"
+                             style={{ background: 'rgba(41,254,41,0.08)', border: '1px solid rgba(41,254,41,0.18)' }}>
                           🔐
                         </div>
                         <div className="text-center">
                           <h2 className="text-xl font-bold text-white mb-1">Welcome back</h2>
-                          <p className="text-sm text-white/45 leading-relaxed">
+                          <p className="text-sm text-white/40 leading-relaxed">
                             Enter the 6-digit code from{' '}
                             <strong className="text-white/70">Microsoft Authenticator</strong>
                             <br />
-                            for <strong className="text-[#29FE29]">{email}</strong>
+                            for <strong style={{ color: '#29FE29' }}>{email}</strong>
                           </p>
                         </div>
 
-                        <form onSubmit={submitCode} className="space-y-3 text-left">
+                        <form onSubmit={submitCode} className="space-y-3">
                           <CodeInput value={totpCode} onChange={setTotpCode} />
                           {err && <Msg text={err} />}
-                          <GreenBtn busy={busy}>{busy ? 'Verifying…' : 'Sign in →'}</GreenBtn>
+                          <GradientBtn busy={busy}>{busy ? 'Verifying…' : 'Sign in →'}</GradientBtn>
                         </form>
-
-                        <BackBtn onClick={() => { setStep('email'); setErr(''); setTotpCode(''); submitting.current = false; supabase.auth.signOut(); }} />
+                        <BackBtn onClick={resetToEmail} />
                       </motion.div>
                     )}
 
                     {/* ═══ STEP: Done ═══ */}
                     {step === 'done' && (
-                      <motion.div
-                        key="done"
-                        className="text-center space-y-3 py-8"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
+                      <motion.div key="done" className="text-center space-y-3 py-8"
+                        initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.3 }}
                       >
-                        <div className="w-12 h-12 mx-auto rounded-full border-2 border-[#29FE29] border-t-transparent animate-spin" />
+                        <div className="w-12 h-12 mx-auto rounded-full border-2 border-t-transparent animate-spin"
+                             style={{ borderColor: '#2C76FF', borderTopColor: 'transparent' }} />
                         <p className="text-sm text-white/40">Signing you in…</p>
                       </motion.div>
                     )}
 
                   </AnimatePresence>
                 </motion.div>
+
+                <motion.p {...fade(0.6)} className="text-center text-[11px] text-white/10 mt-4">
+                  Built with ❤️ for the people who build ApplyWizz
+                </motion.p>
               </div>
             </div>
 
           </div>
         </div>
       </main>
-
-      {/* ── Footer ── */}
-      <footer className="relative z-10 px-5 py-4 text-center shrink-0">
-        <p className="text-[11px] text-white/10">
-          Built with ❤️ for the people who build ApplyWizz
-        </p>
-      </footer>
     </div>
   );
 }
 
-/* ═══ Shared Components ═══ */
+/* ═══ Shared sub-components ═══ */
 
 function CodeInput({ value, onChange }) {
   return (
@@ -560,32 +580,34 @@ function CodeInput({ value, onChange }) {
       placeholder="000000"
       value={value}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
-      className="w-full bg-white/[0.06] border border-white/[0.1] rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.5em] font-mono text-white placeholder-white/15 focus:outline-none focus:ring-2 focus:ring-[#29FE29]/25 focus:border-[#29FE29]/40 transition-all"
+      className="w-full rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.5em] font-mono text-white placeholder-white/15 focus:outline-none transition-all"
+      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
     />
   );
 }
 
-function GreenBtn({ busy, children }) {
+function GradientBtn({ busy, children }) {
   return (
     <button type="submit" disabled={busy}
-      className="w-full bg-[#29FE29] hover:bg-[#22e622] active:scale-[0.97] text-[#0B1D33] text-sm font-bold py-3.5 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-[#29FE29]/20"
-      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+      className="w-full text-white text-sm font-bold py-3.5 rounded-2xl transition-all active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-2"
+      style={{
+        background: busy ? 'rgba(255,255,255,0.1)' : 'linear-gradient(90deg, #2C76FF, #29FE29)',
+        fontFamily: "'Space Grotesk', sans-serif",
+      }}
     >
-      {busy && <Spinner dark />}
+      {busy && <Spinner />}
       {children}
     </button>
   );
 }
 
-function Spinner({ dark }) {
-  const c = dark ? 'border-[#0B1D33]/30 border-t-[#0B1D33]' : 'border-white/30 border-t-white';
-  return <div className={`w-4 h-4 rounded-full border-2 ${c} animate-spin`} />;
+function Spinner() {
+  return <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />;
 }
 
 function BackBtn({ onClick }) {
   return (
-    <button onClick={onClick}
-      className="text-xs text-white/25 hover:text-[#29FE29] transition-colors mt-2">
+    <button onClick={onClick} className="w-full text-xs text-white/20 hover:text-white/50 transition-colors mt-1 text-center">
       ← Use a different email
     </button>
   );
