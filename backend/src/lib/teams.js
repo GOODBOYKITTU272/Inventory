@@ -126,3 +126,17 @@ export async function postLeaveAlertToTeams({ ob_name, leave_date, leave_type, h
     time:          istNow(),
   });
 }
+
+// ── AI Reminder Alert ────────────────────────────────────────────────────────
+export async function postAIReminderToTeams(employeeId, decision) {
+  return postToPA({
+    event_type:  'ai_reminder',
+    employee_id: employeeId,
+    type:        decision.notification_type,
+    tone:        decision.tone_used,
+    title:       decision.title,
+    message:     decision.message,
+    time:        istNow(),
+  });
+}
+

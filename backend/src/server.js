@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -22,6 +22,7 @@ import telegramWebhookRouter from './routes/telegramWebhook.js';
 import cafeteriaRouter from './routes/cafeteria.js';
 import mealsRouter from './routes/meals.js';
 import pushRouter from './routes/push.js';
+import cronRouter from './routes/cron.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -62,6 +63,7 @@ app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOStrin
 app.use('/api/bills/webhook', billWebhookRouter);
 app.use('/api/telegram/webhook', telegramWebhookRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/cron', cronRouter);
 
 app.use('/api', authMiddleware);
 app.use('/api/products',     productsRouter);

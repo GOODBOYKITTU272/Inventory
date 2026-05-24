@@ -353,6 +353,14 @@ router.post('/:id/confirm', async (req, res, next) => {
       postOrderToTeams({ ...data, priority: 'Normal', quantity: String(qty) })
         .catch((e) => console.error('[Teams confirm-order]', e.message));
 
+      // Notify the employee that their order is confirmed and placed
+      sendPushToUsers([order.submitted_by], {
+        title: '✅ Order Placed!',
+        body:  `Your ${itemName} is confirmed and the office boy has been notified.`,
+        url:   `/track/${data.id}`,
+        tag:   `placed-${data.id}`,
+      }).catch(() => {});
+
       // Push notification to office boy / facility manager
       supabaseAdmin.from('profiles').select('id').in('role', ['office_boy', 'facility_manager']).then(({ data: staffRows }) => {
         if (staffRows?.length) sendPushToUsers(staffRows.map(u => u.id), {

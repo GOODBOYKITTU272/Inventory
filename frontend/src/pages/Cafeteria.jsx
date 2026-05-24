@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, MapPin, Send, ChevronRight, X, Clock,
@@ -290,7 +290,9 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, br
         <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
         <div className="text-center">
           <div className="text-xs font-bold text-slate-500 leading-tight">{displayName}</div>
-          {cal > 0 && <div className="text-[9px] text-slate-400 mt-0.5">🔥 {cal} cal</div>}
+          {item.calories_per_serving !== null && item.calories_per_serving !== undefined && (
+            <div className="text-[10px] text-slate-400 font-normal mt-0.5">{item.calories_per_serving} kcal</div>
+          )}
           <div className="text-[10px] text-blue-500 font-bold mt-1">🥛 No Milk</div>
         </div>
       </div>
@@ -303,7 +305,9 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, br
         <div className="text-2xl text-center grayscale">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
         <div className="text-center">
           <div className="text-xs font-bold text-slate-500 leading-tight">{displayName}</div>
-          {cal > 0 && <div className="text-[9px] text-slate-400 mt-0.5">🔥 {cal} cal</div>}
+          {item.calories_per_serving !== null && item.calories_per_serving !== undefined && (
+            <div className="text-[10px] text-slate-400 font-normal mt-0.5">{item.calories_per_serving} kcal</div>
+          )}
           <div className="text-[10px] text-amber-600 font-bold mt-1">🍞 No Bread</div>
         </div>
       </div>
@@ -334,7 +338,9 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, br
       <div className="text-2xl text-center">{item.emoji || CATEGORY_EMOJI[item.category] || '☕'}</div>
       <div className="text-center">
         <div className="text-xs font-bold text-slate-700 leading-tight">{displayName}</div>
-        {cal > 0 && <div className="text-[9px] text-slate-400 mt-0.5">🔥 {cal} cal</div>}
+        {item.calories_per_serving !== null && item.calories_per_serving !== undefined && (
+          <div className="text-[10px] text-slate-400 font-normal mt-0.5">{item.calories_per_serving} kcal</div>
+        )}
         {item.description && (
           <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{item.description}</div>
         )}
@@ -1020,6 +1026,7 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
 export default function Cafeteria() {
   const { profile, session } = useAuth();
   const navigate    = useNavigate();
+  const location    = useLocation();
   const greeting    = getISTGreeting();
   const firstName   = (profile?.full_name || profile?.email || 'there').split(' ')[0];
 
@@ -1242,6 +1249,22 @@ export default function Cafeteria() {
   }, [session]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const state = location.state;
+    if (state?.reorderItem && items.length > 0) {
+      const match = items.find(i =>
+        i.item_name?.toLowerCase() === state.reorderItem?.toLowerCase() ||
+        i.display_name?.toLowerCase() === state.reorderItem?.toLowerCase() ||
+        i.frontend_name?.toLowerCase() === state.reorderItem?.toLowerCase() ||
+        (i.item_name && state.reorderItem?.toLowerCase().includes(i.item_name.toLowerCase()))
+      );
+      if (match) {
+        setCart({ [match.id]: state.reorderQty || 1 });
+      }
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [items, location, navigate]);
 
   // Save a single item preference to DB
   async function saveItemPref(itemName, pref) {

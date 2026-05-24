@@ -112,84 +112,93 @@ function OrderCard({ order, onTap, onReorder, onCancel }) {
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+      className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm hover:shadow-md transition-shadow p-4 flex flex-col gap-3"
     >
-      <button
-        onClick={onTap}
-        className="w-full text-left p-4"
-      >
-        {/* Top row: date + status */}
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] text-slate-400 font-medium">
-            {formatDateTime(order.created_at)}
-          </span>
-          <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full ${status.color}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-            {isActive ? liveLabel : status.label}
-          </span>
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-slate-400 font-medium">
+          {formatDateTime(order.created_at)}
+        </span>
+        <span className={`inline-flex items-center gap-1.5 text-[10px] font-extrabold px-2.5 py-1 rounded-full ${status.color}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+          {isActive ? liveLabel : status.label}
+        </span>
+      </div>
+
+      <div className="flex items-start gap-3 cursor-pointer" onClick={onTap}>
+        <div className="h-12 w-12 rounded-2xl bg-slate-50 flex items-center justify-center text-2xl shrink-0">
+          {emoji}
         </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-slate-900 text-[15px] leading-tight">
+            {order.parsed_item || order.raw_text}
+            {qty > 1 && <span className="text-brand ml-1">×{qty}</span>}
+          </h3>
+          {order.parsed_location && (
+            <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+              📍 {order.parsed_location}
+            </p>
+          )}
 
-        {/* Item row */}
-        <div className="flex items-center gap-3">
-          <div className="h-12 w-12 rounded-2xl bg-slate-50 flex items-center justify-center text-2xl shrink-0">
-            {emoji}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-slate-900 text-[15px] leading-tight">
-              {order.parsed_item || order.raw_text}
-              {qty > 1 && <span className="text-brand ml-1">×{qty}</span>}
-            </h3>
-            {order.parsed_location && (
-              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
-                📍 {order.parsed_location}
-              </p>
-            )}
-          </div>
-          <ChevronRight size={18} className="text-slate-300 shrink-0" />
+          {/* Star rating display */}
+          {isDone && order.rating && (
+            <div className="mt-1 flex flex-col gap-0.5">
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((n) => {
+                  const starRating = order.rating > 5 ? Math.round(order.rating / 2) : order.rating;
+                  return (
+                    <span
+                      key={n}
+                      className={`text-sm ${n <= starRating ? 'text-amber-400' : 'text-slate-200'}`}
+                    >
+                      ★
+                    </span>
+                  );
+                })}
+              </div>
+              {order.feedback && (
+                <p className="text-slate-400 text-[10px] italic mt-0.5">"{order.feedback}"</p>
+              )}
+            </div>
+          )}
         </div>
+        <ChevronRight size={18} className="text-slate-300 self-center" />
+      </div>
 
-        {/* Delivery duration for completed orders */}
-        {isDone && duration && (
-          <div className="mt-3 pt-2.5 border-t border-slate-50 flex items-center gap-2">
-            <span className="text-emerald-500 text-xs">✅</span>
-            <span className="text-xs text-slate-500">Delivered in <span className="font-semibold text-slate-700">{duration}</span></span>
-          </div>
-        )}
+      {/* Delivery duration for completed orders */}
+      {isDone && duration && (
+        <div className="bg-slate-50 rounded-xl px-3 py-2 flex items-center gap-2 text-[11px] text-slate-500">
+          <span className="text-emerald-500">⏱️</span>
+          <span>Delivered in <span className="font-bold text-slate-700">{duration}</span></span>
+        </div>
+      )}
 
-        {/* Cancelled reason */}
-        {order.status === 'cancelled' && order.notes && (
-          <div className="mt-3 pt-2.5 border-t border-slate-50 flex items-center gap-2">
-            <span className="text-rose-400 text-xs">❌</span>
-            <span className="text-xs text-slate-400 italic">{order.notes}</span>
-          </div>
-        )}
-      </button>
+      {/* Cancelled reason */}
+      {order.status === 'cancelled' && order.notes && (
+        <div className="bg-rose-50/40 rounded-xl px-3 py-2 flex items-center gap-2 text-[11px] text-rose-500 italic">
+          <span>❌ {order.notes}</span>
+        </div>
+      )}
 
-      {/* Cancel strip — within 30s window */}
-      {canCancel && (
-        <div className="border-t border-rose-100 bg-rose-50/50 px-4 py-2.5 flex items-center justify-between">
-          <span className="text-[11px] text-rose-500 font-medium">Cancel within {Math.ceil(CANCEL_WINDOW_SEC - secsElapsed)}s</span>
+      {/* Action strip */}
+      <div className="border-t border-slate-50 pt-3 flex items-center justify-between">
+        <span className="text-[10px] text-slate-300 font-mono">#{order.id?.slice(0, 8)}</span>
+        
+        {canCancel ? (
           <button
             onClick={(e) => { e.stopPropagation(); onCancel(order); }}
             className="flex items-center gap-1 text-rose-600 text-xs font-bold hover:underline"
           >
-            <XCircle size={12} /> Cancel
+            <XCircle size={12} /> Cancel order ({Math.ceil(CANCEL_WINDOW_SEC - secsElapsed)}s)
           </button>
-        </div>
-      )}
-
-      {/* Re-order strip — only for completed/cancelled orders */}
-      {!isActive && !canCancel && (
-        <div className="border-t border-slate-50 px-4 py-2.5 flex items-center justify-between">
+        ) : !isActive ? (
           <button
             onClick={(e) => { e.stopPropagation(); onReorder(order); }}
-            className="flex items-center gap-1.5 text-brand text-xs font-bold hover:underline"
+            className="flex items-center gap-1 bg-brand/5 hover:bg-brand/10 text-brand px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
           >
             <RotateCcw size={12} /> Reorder
           </button>
-          <span className="text-[10px] text-slate-300 font-mono">#{order.id?.slice(0, 8)}</span>
-        </div>
-      )}
+        ) : null}
+      </div>
     </motion.div>
   );
 }
@@ -263,7 +272,14 @@ export default function OrderHistory() {
   const counts = { all: orders.length, active: activeCount, delivered: deliveredCount, cancelled: cancelledCount };
 
   function handleReorder(order) {
-    navigate('/request');
+    const qty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+    navigate('/request', {
+      state: {
+        reorderItem: order.parsed_item,
+        reorderQty:  qty,
+        reorderLocation: order.parsed_location,
+      },
+    });
   }
 
   async function handleCancelConfirm() {
