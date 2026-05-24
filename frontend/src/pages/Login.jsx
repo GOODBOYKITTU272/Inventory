@@ -260,8 +260,12 @@ export default function Login() {
         {...fade(0)}
       >
         {/* Logo image only — no text beside it, logo already has APPLY WIZZ in it */}
-        <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5">
-          <img src="/logo.png" alt="ApplyWizz" className="h-7 sm:h-8 object-contain" />
+        <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 flex items-center gap-2">
+          <img src="/logo-icon.png" alt="ApplyWizz" className="h-7 object-contain" />
+          <span className="text-white font-black text-xs tracking-widest hidden sm:block"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            APPLY WIZZ
+          </span>
         </div>
 
         <div className="flex items-center gap-2 border px-3 py-1.5 rounded-full"
@@ -281,13 +285,12 @@ export default function Login() {
 
               {/* Logo hero card — the star of the show */}
               <motion.div {...fade(0.1)} className="mb-8">
-                <div className="inline-flex items-center rounded-2xl px-5 py-4 border"
-                     style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.08)' }}>
-                  <img src="/logo.png" alt="ApplyWizz" className="h-10 sm:h-12 object-contain" />
-                  <div className="flex gap-1 mt-3 ml-4">
-                    <div className="h-0.5 w-8 rounded-full" style={{ background: '#2C76FF' }} />
-                    <div className="h-0.5 w-5 rounded-full" style={{ background: '#29FE29' }} />
-                  </div>
+                <div className="inline-flex items-center">
+                  <img src="/logo-icon.png" alt="ApplyWizz" className="h-14 object-contain" />
+                  <span className="text-white font-black text-xl tracking-widest ml-3"
+                        style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                    APPLY WIZZ
+                  </span>
                 </div>
               </motion.div>
 
@@ -306,8 +309,7 @@ export default function Login() {
               <motion.p {...fade(0.3)}
                 className="text-white/40 text-sm sm:text-base leading-relaxed mb-8 max-w-md"
               >
-                CCD Coffee, snacks, and daily meals — ordered in one tap,
-                tracked live, delivered to your desk by the Office Boy.
+                Order to your desk or walk in and skip the queue — your call, zero crowd.
               </motion.p>
 
               {/* Stats row */}
@@ -322,7 +324,7 @@ export default function Login() {
                     <p className="text-lg sm:text-xl font-extrabold" style={{ color, fontFamily: "'Space Grotesk', sans-serif" }}>
                       {value}
                     </p>
-                    <p className="text-[10px] text-white/25 uppercase tracking-wider mt-1">{label}</p>
+                    <p className="text-[10px] text-white/60 uppercase tracking-wider mt-1">{label}</p>
                   </div>
                 ))}
               </motion.div>
@@ -356,19 +358,21 @@ export default function Login() {
 
                 {/* Logo above form — prominent placement */}
                 <motion.div {...fade(0.15)} className="flex justify-center mb-5">
-                  <div
-                    className="flex items-center gap-3 px-5 py-3 rounded-2xl border"
-                    style={{
-                      background: 'rgba(255,255,255,0.03)',
-                      borderColor: 'rgba(255,255,255,0.08)',
-                    }}
-                  >
-                    <img
-                      src="/logo.png"
-                      alt="ApplyWizz"
-                      className="h-8 object-contain"
-                    />
-                  </div>
+                      <div
+                        className="flex items-center gap-3 px-5 py-3 rounded-2xl border"
+                        style={{
+                          background: 'rgba(255,255,255,0.03)',
+                          borderColor: 'rgba(255,255,255,0.08)',
+                        }}
+                      >
+                        <div className="flex items-center gap-2 justify-center">
+                          <img src="/logo-icon.png" alt="ApplyWizz" className="h-8 object-contain" />
+                          <span className="text-white font-black text-sm tracking-widest"
+                                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                            APPLY WIZZ
+                          </span>
+                        </div>
+                      </div>
                 </motion.div>
 
                 {/* Auth card */}
