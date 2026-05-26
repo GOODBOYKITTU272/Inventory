@@ -41,6 +41,99 @@ function DeliveryBadge({ mode }) {
   );
 }
 
+const RECEIPT_WIDTH = '80mm';
+
+function buildReceiptHTML(order) {
+  const orderId = (order.id || '').slice(0, 8).toUpperCase();
+  const item = order.parsed_item || order.raw_text || 'Unknown Item';
+  const employee = order.submitter_name || order.parsed_employee_name || 'Employee';
+  const location = order.parsed_location || 'Not specified';
+  const instruction = order.instruction || '';
+  const isSelfPickup = order.delivery_mode === 'self_pickup';
+  const qtyMatch = order.raw_text?.match(/^(\d+)x/);
+  const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+  const dateStr = new Date(order.created_at || Date.now()).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+  const noteMatch = instruction.match(/Note:\s*(.+?)\.?$/i);
+  const note = noteMatch?.[1] || '';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  @page { size: ${RECEIPT_WIDTH} auto; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    width: ${RECEIPT_WIDTH};
+    padding: 4mm 2mm;
+    color: #000;
+  }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  .line { border-top: 1px dashed #000; margin: 4px 0; }
+  .row { display: flex; justify-content: space-between; padding: 1px 0; }
+  .big { font-size: 16px; font-weight: bold; }
+  .footer { margin-top: 8px; text-align: center; font-size: 14px; font-weight: bold; }
+  @media screen { body { display: none; } }
+</style>
+</head>
+<body>
+  <div class="center bold" style="font-size:14px;">APPLYWIZZ OFFICE PANTRY</div>
+  <div class="line"></div>
+  <div class="row"><span>Order</span><span class="bold">#${orderId}</span></div>
+  <div class="row"><span>Date</span><span>${dateStr}</span></div>
+  <div class="line"></div>
+  <div class="row"><span>Employee</span><span class="bold">${employee}</span></div>
+  <div class="row"><span>Location</span><span>${isSelfPickup ? 'Pantry Counter' : location}</span></div>
+  <div class="row"><span>Mode</span><span>${isSelfPickup ? '🏃 SELF PICK' : '🛵 DELIVER'}</span></div>
+  <div class="line"></div>
+  <div class="big center" style="padding:4px 0;">${item}${qty > 1 ? ' x' + qty : ''}</div>
+  ${note ? `<div style="padding:2px 0;font-size:11px;">Note: ${note}</div>` : ''}
+  <div class="line"></div>
+  <div class="footer">${isSelfPickup ? '⏳ PREPARE & KEEP READY' : '🛵 DELIVER ASAP!'}</div>
+  <div class="center" style="font-size:9px;margin-top:6px;color:#666;">Powered by ApplyWizz</div>
+</body>
+</html>`;
+}
+
+function printReceipt(order) {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:none;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open();
+  doc.write(buildReceiptHTML(order));
+  doc.close();
+
+  const triggerPrint = () => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (e) {
+      console.warn('Print failed:', e);
+    }
+    setTimeout(() => {
+      try { document.body.removeChild(iframe); } catch (_) {}
+    }, 2000);
+  };
+
+  iframe.contentWindow.onload = triggerPrint;
+  // Fallback if onload doesn't fire
+  setTimeout(() => {
+    if (iframe.parentNode) triggerPrint();
+  }, 500);
+}
+
 export default function RequestQueue() {
   const { profile } = useAuth();
   const [rows, setRows] = useState(null);
@@ -58,10 +151,14 @@ export default function RequestQueue() {
 
   useEffect(() => { load(); }, [filter]);
 
-  async function setStatus(id, status, liveStatus) {
+  async function setStatus(id, status, liveStatus, orderData) {
     setBusy((b) => ({ ...b, [id]: true }));
     try {
       await api.setRequestStatus(id, status, liveStatus);
+      // Auto-print receipt when office boy accepts the order
+      if (liveStatus === 'accepted' && orderData) {
+        printReceipt(orderData);
+      }
       await load();
     } catch (e) {
       setErr(e.message);
@@ -162,7 +259,7 @@ export default function RequestQueue() {
                       <button
                         className="btn-primary text-xs px-3 py-1.5"
                         disabled={busy[r.id]}
-                        onClick={() => setStatus(r.id, 'in_progress', 'accepted')}
+                        onClick={() => setStatus(r.id, 'in_progress', 'accepted', r)}
                       >
                         Accept
                       </button>
