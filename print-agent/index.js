@@ -114,6 +114,64 @@ function formatReceipt(order) {
   return lines.join('\n');
 }
 
+// ── Night Shift Receipt Format ────────────────────────────────────────────────
+// Fires when an order placed after office hours (5 PM) is auto-recorded.
+// No office boy delivery — just prints for inventory/audit trail.
+function formatNightReceipt(order) {
+  const qty      = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
+  const item     = order.parsed_item || order.raw_text || 'Unknown Item';
+  const employee = order.parsed_employee_name || 'Unknown';
+  const location = order.parsed_location || 'Not specified';
+  const orderId  = (order.id || '').slice(0, 8).toUpperCase();
+
+  const dateStr = new Date(order.created_at || Date.now()).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  const lines = [
+    CMD.INIT,
+    CMD.CENTER,
+    CMD.BOLD_ON,
+    CMD.DOUBLE_ON,
+    'APPLYWIZZ',
+    CMD.DOUBLE_OFF,
+    'OFFICE PANTRY',
+    CMD.BOLD_OFF,
+    CMD.FEED,
+    LINE,
+    CMD.LEFT,
+    `Order  #${orderId}`,
+    `Date   ${dateStr}`,
+    DASH,
+    `${CMD.BOLD_ON}Employee${CMD.BOLD_OFF}  ${employee}`,
+    `${CMD.BOLD_ON}Location${CMD.BOLD_OFF}  ${location}`,
+    DASH,
+    CMD.BOLD_ON,
+    `  ${qty}x ${item}`,
+    CMD.BOLD_OFF,
+    DASH,
+    CMD.CENTER,
+    CMD.BOLD_ON,
+    '*** NIGHT SHIFT ***',
+    'RECORDED ONLY',
+    CMD.BOLD_OFF,
+    'No delivery active at night.',
+    LINE,
+    CMD.FEED,
+    CMD.FEED,
+    CMD.FEED,
+    CMD.PARTIAL_CUT,
+  ];
+
+  return lines.join('\n');
+}
+
 // ── Print an order receipt ────────────────────────────────────────────────────
 function printReceipt(order) {
   const receipt = formatReceipt(order);
@@ -220,16 +278,29 @@ function startListening() {
       async (payload) => {
         const oldStatus = payload.old?.status;
         const newStatus = payload.new?.status;
+        const newLive   = payload.new?.live_status;
 
-        // Only print when order transitions from confirming → pending
+        // ── Daytime: confirming → pending (office hours 8:30AM–5PM) ──────────
         if (oldStatus === 'confirming' && newStatus === 'pending') {
           const order = payload.new;
           console.log(`[print-agent] 🔔 Order confirmed: #${(order.id || '').slice(0, 8)} — ${order.parsed_item}`);
-
           try {
             await printReceipt(order);
           } catch (err) {
             console.error(`[print-agent] Failed to print after retries:`, err.message);
+          }
+        }
+
+        // ── Night shift: confirming → done/Recorded (after 5PM) ──────────────
+        if (oldStatus === 'confirming' && newStatus === 'done' && newLive === 'Recorded') {
+          const order   = payload.new;
+          const orderId = (order.id || '').slice(0, 8);
+          console.log(`[print-agent] 🌙 Night shift recorded: #${orderId} — ${order.parsed_item}`);
+          try {
+            const receipt = formatNightReceipt(order);
+            await sendToPrinter(receipt, `night-#${orderId}`);
+          } catch (err) {
+            console.error(`[print-agent] Failed to print night receipt:`, err.message);
           }
         }
       }
