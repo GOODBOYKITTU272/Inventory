@@ -650,10 +650,14 @@ router.post(
         review_comment: feedback || null,
       });
 
-      // Stamp rating_status on the request so UI knows it's been rated
+      // Stamp rating, feedback, and rating_status on the requests table
       const { data, error } = await supabaseAdmin
         .from('requests')
-        .update({ rating_status: 'done' })
+        .update({ 
+          rating_status: 'done',
+          rating: rating,
+          feedback: feedback || null
+        })
         .eq('id', req.params.id)
         .select()
         .single();

@@ -8,6 +8,10 @@
     "test:ui": "playwright test --ui",
     "install-browsers": "playwright install --with-deps chromium"
   },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.2",
+    "dotenv": "^16.4.5"
+  },
   "devDependencies": {
     "@playwright/test": "^1.47.0"
   }
