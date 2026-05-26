@@ -117,11 +117,16 @@ export function useAuth() {
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       console.log('[useAuth] onAuthStateChange:', _event, !!newSession);
-      setSession(newSession);
       if (newSession) {
-        await checkAal(newSession);
+        // Read AAL BEFORE setting session to avoid race condition
+        // where Protected sees session + stale aal1 and bounces to /login
+        const jwtAal = readAalFromSession(newSession);
+        if (jwtAal) setAal(jwtAal);
+        setSession(newSession);
+        if (!jwtAal) await checkAal(newSession);
         loadProfile(newSession.user.id);
       } else {
+        setSession(null);
         setProfile(null);
         setAal('aal1');
       }
