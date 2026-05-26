@@ -21,6 +21,8 @@ import ConnectionsPage from './pages/Connections.jsx';
 import OnboardingPage from './pages/Onboarding.jsx';
 import MealBookingPage from './pages/MealBooking.jsx';
 import MealHistoryPage from './pages/MealHistory.jsx';
+import MyMealBoxPage from './pages/MyMealBox.jsx';
+import MealTokenDashboardPage from './pages/MealTokenDashboard.jsx';
 import InactivityLock from './components/InactivityLock.jsx';
 import { useAuth } from './hooks/useAuth.js';
 
@@ -157,6 +159,15 @@ export default function App() {
         <Route path="/track/:id" element={<LiveTrackingPage />} />
         <Route path="/meals"         element={<MealBookingPage />} />
         <Route path="/meal-history"  element={<MealHistoryPage />} />
+        <Route path="/my-meal-box"   element={<MyMealBoxPage />} />
+        <Route
+          path="/meal-token-dashboard"
+          element={
+            <Protected allow={['office_boy', 'facility_manager', 'leadership']}>
+              <MealTokenDashboardPage />
+            </Protected>
+          }
+        />
         <Route path="/orders"   element={<OrderHistoryPage />} />
         <Route path="/settings"  element={<PreferencesPage />} />
         <Route

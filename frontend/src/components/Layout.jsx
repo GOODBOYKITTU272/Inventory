@@ -3,28 +3,30 @@ import { useAuth } from '../hooks/useAuth.js';
 import { supabase } from '../lib/supabase.js';
 
 const navByRole = {
-  facility_manager: ['/dashboard', '/daily-update', '/request', '/meals', '/orders', '/queue', '/available', '/bills', '/settings'],
-  finance:          ['/dashboard', '/finance', '/request', '/meals', '/orders', '/available', '/bills', '/bills/approve', '/settings'],
-  leadership:       ['/dashboard', '/daily-update', '/finance', '/request', '/meals', '/orders', '/queue', '/available', '/admin', '/bills', '/bills/approve', '/reports', '/connections', '/settings'],
-  staff:            ['/request', '/meals', '/orders', '/settings'],
-  office_boy:       ['/request', '/meals', '/orders', '/queue', '/bills', '/settings'],
+  facility_manager: ['/dashboard', '/daily-update', '/request', '/meals', '/my-meal-box', '/meal-token-dashboard', '/orders', '/queue', '/available', '/bills', '/settings'],
+  finance:          ['/dashboard', '/finance', '/request', '/meals', '/my-meal-box', '/orders', '/available', '/bills', '/bills/approve', '/settings'],
+  leadership:       ['/dashboard', '/daily-update', '/finance', '/request', '/meals', '/my-meal-box', '/meal-token-dashboard', '/orders', '/queue', '/available', '/admin', '/bills', '/bills/approve', '/reports', '/connections', '/settings'],
+  staff:            ['/request', '/meals', '/my-meal-box', '/orders', '/settings'],
+  office_boy:       ['/request', '/meals', '/my-meal-box', '/meal-token-dashboard', '/orders', '/queue', '/bills', '/settings'],
 };
 
 const labels = {
-  '/dashboard':     'Dashboard',
-  '/daily-update':  'Daily Update',
-  '/finance':       'Finance',
-  '/available':     "What's Available",
-  '/admin':         'Admin',
-  '/request':       'Cafeteria',
-  '/meals':         'Meals',
-  '/orders':        'Orders',
-  '/queue':         'Queue',
-  '/bills':         'Bills',
-  '/bills/approve': 'Verify Bills',
-  '/reports':       'Insights',
-  '/connections':   'Sync',
-  '/settings':      'Settings',
+  '/dashboard':             'Dashboard',
+  '/daily-update':          'Daily Update',
+  '/finance':               'Finance',
+  '/available':             "What's Available",
+  '/admin':                 'Admin',
+  '/request':               'Cafeteria',
+  '/meals':                 'Meals',
+  '/my-meal-box':           'My Meal Box',
+  '/meal-token-dashboard':  'Meal Tokens',
+  '/orders':                'Orders',
+  '/queue':                 'Queue',
+  '/bills':                 'Bills',
+  '/bills/approve':         'Verify Bills',
+  '/reports':               'Insights',
+  '/connections':           'Sync',
+  '/settings':              'Settings',
 };
 
 // display label for the role chip in the header

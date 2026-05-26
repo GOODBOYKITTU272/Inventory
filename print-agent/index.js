@@ -16,12 +16,12 @@ import net from 'node:net';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL  = process.env.SUPABASE_URL;
-const SUPABASE_KEY  = process.env.SUPABASE_ANON_KEY;
+const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 const PRINTER_IP    = process.env.PRINTER_IP || '192.168.1.100';
 const PRINTER_PORT  = parseInt(process.env.PRINTER_PORT || '9100', 10);
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error('[print-agent] SUPABASE_URL and SUPABASE_ANON_KEY are required in .env');
+  console.error('[print-agent] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in .env');
   process.exit(1);
 }
 
@@ -179,12 +179,16 @@ function printReceipt(order) {
   return sendToPrinter(receipt, `order-#${orderId}`);
 }
 
-// ── Meal Receipt Format ──────────────────────────────────────────────────────
-function formatMealReceipt(booking, profile) {
-  const choiceLabel = { veg: 'VEG', non_veg: 'NON-VEG', egg: 'EGG', skip: 'SKIP' };
-  const choiceEmoji = { veg: '[V]', non_veg: '[NV]', egg: '[E]', skip: '[S]' };
-  const name = profile?.preferred_name || profile?.full_name || 'Employee';
-  const code = profile?.employee_code || '--';
+// ── Meal Token Format (Cabin Batch / Reprint) ─────────────────────────────────
+// Used for both the auto cabin-batch print and individual reprints.
+// isDuplicate=true adds the DUPLICATE header and reprint count.
+function formatMealToken(booking, profile, isDuplicate = false) {
+  const choiceLabel = { veg: 'VEG', non_veg: 'NON-VEG', egg: 'EGG' };
+  const choiceEmoji = { veg: '🥬', non_veg: '🍗', egg: '🥚' };
+  const name     = profile?.preferred_name || profile?.full_name || 'Employee';
+  const code     = profile?.employee_code  || '--';
+  const cabin    = booking.cabin_name      || 'Unknown Cabin';
+  const token    = booking.token_number    || '---';
   const mealDate = new Date(booking.meal_date + 'T00:00:00+05:30');
   const dateStr = mealDate.toLocaleDateString('en-IN', {
     weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
@@ -305,37 +309,27 @@ function startListening() {
         }
       }
     )
-    // ── Meal bookings (INSERT or UPDATE) ──
+    // ── Meal Box: listen to meal_print_jobs INSERT ──
+    // When a new print job arrives, wait until scheduled_for time, then print all tokens.
     .on(
       'postgres_changes',
       {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
-        table: 'meal_bookings',
+        table: 'meal_print_jobs',
       },
       async (payload) => {
-        const booking = payload.new;
-        if (!booking || booking.choice === 'skip') return; // Don't print skips
+        const job = payload.new;
+        if (!job || job.status !== 'pending') return;
 
-        console.log(`[print-agent] 🍱 Meal booked: ${booking.choice} for ${booking.meal_date}`);
+        const scheduledFor = new Date(job.scheduled_for);
+        const now          = Date.now();
+        const delayMs      = Math.max(0, scheduledFor.getTime() - now);
 
-        // Fetch employee profile for name + code
-        let profile = null;
-        try {
-          const { data } = await supabase
-            .from('profiles')
-            .select('full_name, preferred_name, employee_code')
-            .eq('id', booking.user_id)
-            .maybeSingle();
-          profile = data;
-        } catch (_) {}
+        console.log(`[print-agent] 🍱 New print job: ${job.cabin_name} on ${job.meal_date} — ` +
+          `type=${job.print_type}, delay=${Math.round(delayMs / 1000)}s`);
 
-        try {
-          const receipt = formatMealReceipt(booking, profile);
-          await sendToPrinter(receipt, `meal-${booking.meal_date}-${(booking.user_id || '').slice(0, 6)}`);
-        } catch (err) {
-          console.error(`[print-agent] Failed to print meal receipt:`, err.message);
-        }
+        setTimeout(() => executePrintJob(job), delayMs);
       }
     )
     .subscribe((status) => {
@@ -344,6 +338,110 @@ function startListening() {
 
   return channel;
 }
+
+// ── Execute a meal print job ──────────────────────────────────────────────────
+async function executePrintJob(job) {
+  console.log(`[print-agent] ▶ Starting print job: ${job.cabin_name} (${job.print_type})`);
+
+  // Mark as printing
+  await supabase
+    .from('meal_print_jobs')
+    .update({ status: 'printing', started_at: new Date().toISOString() })
+    .eq('id', job.id);
+
+  try {
+    let bookings = [];
+
+    if (job.print_type === 'reprint' && job.booking_user_id) {
+      // Single reprint for one employee
+      const { data } = await supabase
+        .from('meal_bookings')
+        .select('id, user_id, choice, token_number, cabin_name, print_count, meal_date')
+        .eq('user_id', job.booking_user_id)
+        .eq('meal_date', job.meal_date)
+        .neq('choice', 'skip')
+        .maybeSingle();
+      if (data) bookings = [data];
+    } else {
+      // Cabin batch (cabin_batch or manual_cabin)
+      const { data } = await supabase
+        .from('meal_bookings')
+        .select('id, user_id, choice, token_number, cabin_name, print_count, meal_date')
+        .eq('meal_date', job.meal_date)
+        .eq('cabin_name', job.cabin_name)
+        .neq('choice', 'skip')
+        .order('token_number');
+      bookings = data || [];
+    }
+
+    if (bookings.length === 0) {
+      console.log(`[print-agent] ⚠ No bookings to print for job ${job.id}`);
+      await supabase
+        .from('meal_print_jobs')
+        .update({ status: 'completed', completed_at: new Date().toISOString(), token_count: 0 })
+        .eq('id', job.id);
+      return;
+    }
+
+    // Fetch profiles for all bookings in one query
+    const userIds = bookings.map(b => b.user_id).filter(Boolean);
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, preferred_name, employee_code')
+      .in('id', userIds);
+    const profileMap = {};
+    for (const p of (profiles || [])) profileMap[p.id] = p;
+
+    // Print each token
+    let printedCount = 0;
+    const isDuplicate = job.print_type === 'reprint';
+
+    for (const booking of bookings) {
+      const profile = profileMap[booking.user_id] || null;
+      const receipt = formatMealToken(booking, profile, isDuplicate);
+      const label   = `meal-token-${booking.token_number || booking.id.slice(0, 6)}`;
+
+      try {
+        await sendToPrinter(receipt, label);
+        printedCount++;
+
+        // Update print_count on the booking only for batch prints
+        // (reprint count is updated by the API route before inserting the job)
+        if (!isDuplicate) {
+          await supabase
+            .from('meal_bookings')
+            .update({
+              print_count:     (booking.print_count || 0) + 1,
+              last_printed_at: new Date().toISOString(),
+            })
+            .eq('id', booking.id);
+        }
+      } catch (err) {
+        console.error(`[print-agent] ❌ Failed to print ${label}:`, err.message);
+      }
+    }
+
+    // Mark job as completed
+    await supabase
+      .from('meal_print_jobs')
+      .update({
+        status:       'completed',
+        completed_at: new Date().toISOString(),
+        token_count:  printedCount,
+      })
+      .eq('id', job.id);
+
+    console.log(`[print-agent] ✅ Print job done: ${job.cabin_name} — ${printedCount}/${bookings.length} tokens printed`);
+
+  } catch (err) {
+    console.error(`[print-agent] ❌ Print job failed:`, err.message);
+    await supabase
+      .from('meal_print_jobs')
+      .update({ status: 'failed', error_message: err.message })
+      .eq('id', job.id);
+  }
+}
+
 
 // ── Auto-confirm stuck orders (safety net) ───────────────────────────────────
 // If frontend fails to call /confirm, orders stuck in 'confirming' > 60s

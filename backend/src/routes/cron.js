@@ -6,6 +6,48 @@ import { postAIReminderToTeams } from '../lib/teams.js';
 
 const router = Router();
 
+// ── Cabin print order config ──────────────────────────────────────────────────
+// Each cabin is printed with a 2-minute gap so office boy can separate batches.
+// Change order or delays here without touching any other code.
+const CABIN_PRINT_ORDER = [
+  { name: 'Balaji Cabin',       abbr: 'BALAJI', delayMinutes: 0  },
+  { name: 'Rama Krishna Cabin', abbr: 'RK',     delayMinutes: 2  },
+  { name: 'Manisha Cabin',      abbr: 'MAN',    delayMinutes: 4  },
+  { name: 'Tech Cabin',         abbr: 'TECH',   delayMinutes: 6  },
+  { name: 'Marketing Cabin',    abbr: 'MKT',    delayMinutes: 8  },
+  { name: 'Resume Cabin',       abbr: 'RES',    delayMinutes: 10 },
+];
+
+// Exported so mealPrint.js can use the same cabin list
+export { CABIN_PRINT_ORDER };
+
+// ── Helper: get IST date string "YYYY-MM-DD" ─────────────────────────────────
+function getISTDateString() {
+  const now = new Date();
+  return new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+    .toISOString().slice(0, 10);
+}
+
+// ── Helper: check if today is a working day (Mon-Fri) ────────────────────────
+function isWorkingDayToday() {
+  const now = new Date();
+  const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const day = ist.getDay();
+  return day >= 1 && day <= 5;
+}
+
+// ── Helper: generate token number ─────────────────────────────────────────────
+// Format: "28MAY-TECH-012"
+function generateTokenNumber(mealDate, cabinAbbr, sequenceNum) {
+  const d = new Date(mealDate + 'T00:00:00+05:30');
+  const day = String(d.getDate()).padStart(2, '0');
+  const monthNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const month = monthNames[d.getMonth()];
+  const seq = String(sequenceNum).padStart(3, '0');
+  return `${day}${month}-${cabinAbbr}-${seq}`;
+}
+
+
 router.post('/ai-reminders', async (req, res) => {
   const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
   const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
@@ -79,6 +121,113 @@ router.post('/ai-reminders', async (req, res) => {
       }
     })
   );
+});
+
+// ── POST /api/cron/schedule-meal-print ───────────────────────────────────────
+// Called by pg_cron at 10:59 AM IST every working day.
+// Generates tokens for all bookings grouped by cabin and inserts meal_print_jobs.
+// Print agent listens to meal_print_jobs and prints each batch at scheduled_for time.
+router.post('/schedule-meal-print', async (req, res) => {
+  const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
+  const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+
+  if (secret !== cronSecret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // Only run on working days (Mon-Fri IST)
+  if (!isWorkingDayToday()) {
+    return res.json({ ok: true, skipped: true, reason: 'Not a working day' });
+  }
+
+  const mealDate = getISTDateString();
+  console.log(`[Cron] schedule-meal-print for ${mealDate}`);
+
+  try {
+    // Fetch all non-skip bookings for today, joined with cafeteria preferences for cabin
+    const { data: bookings, error: bookErr } = await supabaseAdmin
+      .from('meal_bookings')
+      .select(`
+        id,
+        user_id,
+        choice,
+        meal_date,
+        employee_cafeteria_preferences!inner(cabin)
+      `)
+      .eq('meal_date', mealDate)
+      .neq('choice', 'skip');
+
+    if (bookErr) throw bookErr;
+    if (!bookings || bookings.length === 0) {
+      console.log(`[Cron] No bookings for ${mealDate} — skipping print job creation`);
+      return res.json({ ok: true, jobsCreated: 0, message: 'No bookings found' });
+    }
+
+    // Group bookings by cabin
+    const byCabin = {};
+    for (const b of bookings) {
+      const cabin = b.employee_cafeteria_preferences?.cabin || 'Unassigned';
+      if (!byCabin[cabin]) byCabin[cabin] = [];
+      byCabin[cabin].push(b);
+    }
+
+    // Build 11:00 AM IST as UTC for scheduled_for base time
+    // 11:00 AM IST = 05:30 UTC
+    const basePrintTimeUTC = new Date(`${mealDate}T05:30:00.000Z`);
+
+    const printJobs = [];
+    const tokenUpdates = [];
+
+    for (const cabinConfig of CABIN_PRINT_ORDER) {
+      const cabinBookings = byCabin[cabinConfig.name] || [];
+      if (cabinBookings.length === 0) continue; // Skip cabins with no bookings
+
+      const scheduledFor = new Date(basePrintTimeUTC.getTime() + cabinConfig.delayMinutes * 60 * 1000);
+
+      // Generate token numbers for each booking in this cabin
+      cabinBookings.forEach((booking, idx) => {
+        const tokenNumber = generateTokenNumber(mealDate, cabinConfig.abbr, idx + 1);
+        tokenUpdates.push({
+          id: booking.id,
+          token_number: tokenNumber,
+          cabin_name: cabinConfig.name,
+        });
+      });
+
+      printJobs.push({
+        meal_date: mealDate,
+        cabin_name: cabinConfig.name,
+        print_type: 'cabin_batch',
+        scheduled_for: scheduledFor.toISOString(),
+        status: 'pending',
+        token_count: cabinBookings.length,
+      });
+    }
+
+    // Update each booking with token_number and cabin_name
+    // Do this sequentially to avoid upsert conflicts
+    for (const update of tokenUpdates) {
+      await supabaseAdmin
+        .from('meal_bookings')
+        .update({ token_number: update.token_number, cabin_name: update.cabin_name })
+        .eq('id', update.id);
+    }
+
+    // Insert all print jobs in one batch
+    if (printJobs.length > 0) {
+      const { error: jobErr } = await supabaseAdmin
+        .from('meal_print_jobs')
+        .insert(printJobs);
+      if (jobErr) throw jobErr;
+    }
+
+    console.log(`[Cron] Created ${printJobs.length} print jobs for ${mealDate} — ${tokenUpdates.length} tokens assigned`);
+    res.json({ ok: true, mealDate, jobsCreated: printJobs.length, tokensAssigned: tokenUpdates.length });
+
+  } catch (err) {
+    console.error('[Cron] schedule-meal-print failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;

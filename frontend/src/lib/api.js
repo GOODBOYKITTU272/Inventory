@@ -87,6 +87,13 @@ export const api = {
   mealSettings:   ()        => request('/api/meals/settings'),
   rateMeal:       (date, body) => request(`/api/meals/${date}/rate`, { method: 'POST', body: JSON.stringify(body) }),
 
+  // Meal Box System
+  myMealToken:       (date)  => request(`/api/meal-print/my-token?date=${date}`),
+  mealPrintStatus:   (date)  => request(`/api/meal-print/status?date=${date}`),
+  triggerCabinPrint: (body)  => request('/api/meal-print/trigger-cabin', { method: 'POST', body: JSON.stringify(body) }),
+  reprintToken:      (body)  => request('/api/meal-print/reprint-token', { method: 'POST', body: JSON.stringify(body) }),
+  cabinBookings:     (date, cabin) => request(`/api/meal-print/cabin-bookings?date=${date}&cabin=${encodeURIComponent(cabin)}`),
+
   listMonthlyExpenses: () => request('/api/reports/monthly-expenses'),
   addMonthlyExpense: (body) => request('/api/reports/monthly-expenses', { method: 'POST', body: JSON.stringify(body) }),
   deleteMonthlyExpense: (id) => request(`/api/reports/monthly-expenses/${id}`, { method: 'DELETE' }),

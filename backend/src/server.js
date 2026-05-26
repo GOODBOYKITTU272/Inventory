@@ -23,6 +23,7 @@ import cafeteriaRouter from './routes/cafeteria.js';
 import mealsRouter from './routes/meals.js';
 import pushRouter from './routes/push.js';
 import cronRouter from './routes/cron.js';
+import mealPrintRouter from './routes/mealPrint.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -77,6 +78,7 @@ app.use('/api/bills',        billsRouter);
 app.use('/api/cafeteria',    cafeteriaRouter);
 app.use('/api/meals',        mealsRouter);
 app.use('/api/push',         pushRouter);
+app.use('/api/meal-print',   mealPrintRouter);
 
 app.use(errorHandler);
 
