@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { fileCompletion, visionCompletion } from '../lib/openai.js';
 import { postBillToTeams } from '../lib/teams.js';
 import { mapProductToCafeteria } from '../lib/stockHelper.js';
+import { classifyTelegramMessage, extractManualPurchase, checkAutoApproval, detectDuplicate, ALLOWED_SUBMITTERS } from '../lib/purchaseAI.js';
 
 const router = Router();
 
@@ -14,6 +15,232 @@ function isDuplicate(updateId) {
   recentUpdates.set(updateId, Date.now());
   setTimeout(() => recentUpdates.delete(updateId), 10 * 60 * 1000);
   return false;
+}
+
+// ── Manual purchase message buffer ───────────────────────────────────────────
+// Groups text + photos from the same chat within a 2-minute window.
+// Handles the pattern: user sends text first, then immediately sends a photo.
+const messageBuffer = new Map();
+
+function bufferMessage(chatId, { text, photoFileId, replyTo, messageId }) {
+  if (!messageBuffer.has(chatId)) {
+    messageBuffer.set(chatId, { texts: [], photoFileIds: [], replyTo, firstMsgId: messageId });
+  }
+  const group = messageBuffer.get(chatId);
+  if (text) group.texts.push(text);
+  if (photoFileId) group.photoFileIds.push(photoFileId);
+
+  // Reset timer on each new message — fires 2 min after the LAST message
+  if (group.timerId) clearTimeout(group.timerId);
+  group.timerId = setTimeout(() => {
+    messageBuffer.delete(chatId);
+    processBufferedPurchase(chatId, group).catch(e =>
+      console.error('[ManualPurchase] process error:', e.message)
+    );
+  }, 2 * 60 * 1000);
+}
+
+async function processBufferedPurchase(chatId, group) {
+  const combinedText = group.texts.join('\n').trim();
+  const replyTo = group.replyTo;
+
+  // 1. Look up registered sender
+  const { data: mapping } = await supabaseAdmin
+    .from('telegram_user_map')
+    .select('user_id')
+    .eq('telegram_chat_id', chatId)
+    .maybeSingle();
+
+  if (!mapping) {
+    await sendTelegramMessage(chatId,
+      '❌ You are not registered. Send /register <your@company.com> to link your account.',
+      replyTo
+    );
+    return;
+  }
+
+  // 2. Load profile for role + name
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('role, full_name')
+    .eq('id', mapping.user_id)
+    .maybeSingle();
+
+  const senderRole = profile?.role;
+  const senderName = profile?.full_name;
+
+  if (!ALLOWED_SUBMITTERS.includes(senderRole)) {
+    await sendTelegramMessage(chatId,
+      '❌ Your role is not authorised to submit manual purchases.',
+      replyTo
+    );
+    return;
+  }
+
+  // 3. Upload buffered photos → get public URLs
+  const photoUrls = [];
+  for (const fileId of group.photoFileIds) {
+    try {
+      const buf = await downloadTelegramFile(fileId);
+      const url = await uploadFile({
+        buffer: buf,
+        fileName: `purchase-${chatId}-${Date.now()}.jpg`,
+        mimeType: 'image/jpeg',
+      });
+      photoUrls.push(url);
+    } catch (e) {
+      console.error('[ManualPurchase] photo upload error:', e.message);
+    }
+  }
+
+  // 4. AI extraction
+  const extracted = await extractManualPurchase(combinedText, photoUrls);
+
+  // 5. If AI needs clarification — save draft and ask user
+  if (extracted.clarification_needed) {
+    await supabaseAdmin.from('manual_purchases').insert({
+      telegram_chat_id: String(chatId),
+      raw_telegram_text: combinedText,
+      sender_user_id: mapping.user_id,
+      sender_name: senderName,
+      sender_role: senderRole,
+      payment_screenshot_url: photoUrls[0] || null,
+      ai_extracted_json: extracted,
+      ai_confidence: extracted.confidence_score || 0,
+      status: 'draft_needs_clarification',
+      clarification_question: extracted.clarification_question,
+    });
+    await sendTelegramMessage(chatId,
+      `⚠️ Need more info:\n\n${extracted.clarification_question}`,
+      replyTo
+    );
+    return;
+  }
+
+  // 6. Duplicate check
+  const dupeCheck = await detectDuplicate(supabaseAdmin, {
+    telegramChatId: chatId,
+    amount: extracted.amount,
+    paymentReference: extracted.payment_reference,
+  });
+
+  // 7. Auto-approval decision
+  const hasProof = photoUrls.length > 0;
+  const approval = checkAutoApproval({
+    senderRole,
+    amount: extracted.amount,
+    category: extracted.category,
+    confidence: extracted.confidence_score,
+    hasProof,
+    duplicateRisk: dupeCheck.isDuplicate,
+  });
+
+  const status = approval.approved ? 'auto_approved' : 'pending_review';
+
+  // 8. Save to manual_purchases
+  await supabaseAdmin.from('manual_purchases').insert({
+    telegram_chat_id: String(chatId),
+    telegram_message_ids: [String(group.firstMsgId)],
+    raw_telegram_text: combinedText,
+    sender_user_id: mapping.user_id,
+    sender_name: senderName,
+    sender_role: senderRole,
+    item_name: extracted.item_name,
+    quantity: extracted.quantity,
+    unit: extracted.unit,
+    amount: extracted.amount,
+    vendor_name: extracted.vendor_name,
+    payment_method: extracted.payment_method,
+    payment_reference: extracted.payment_reference,
+    purchase_date: extracted.purchase_date,
+    category: extracted.category,
+    payment_screenshot_url: photoUrls[0] || null,
+    item_photo_url: photoUrls[1] || null,
+    ai_extracted_json: extracted,
+    ai_confidence: extracted.confidence_score,
+    status,
+    auto_approval_reason: approval.reason,
+    duplicate_risk: dupeCheck.isDuplicate,
+    duplicate_reason: dupeCheck.reason,
+  });
+
+  // 9. Reply to user
+  const itemLine = extracted.item_name
+    ? `📦 ${extracted.item_name}${extracted.quantity ? ` × ${extracted.quantity}${extracted.unit ? ' ' + extracted.unit : ''}` : ''}`
+    : '📦 Item recorded';
+  const amountLine = extracted.amount ? `💰 ₹${extracted.amount}` : '';
+  const categoryLine = extracted.category ? `🏷 ${extracted.category}` : '';
+
+  if (approval.approved) {
+    await sendTelegramMessage(chatId,
+      `✅ Purchase Auto-Approved!\n\n${itemLine}\n${amountLine}\n${categoryLine}\n\n${approval.reason}`,
+      replyTo
+    );
+  } else {
+    await sendTelegramMessage(chatId,
+      `⏳ Purchase Submitted for Review\n\n${itemLine}\n${amountLine}\n${categoryLine}\n\n📋 ${approval.reason}\n\nFinance team will review shortly.`,
+      replyTo
+    );
+  }
+}
+
+async function handleRegisterCommand(message, chatId, replyTo) {
+  const parts = (message.text || '').trim().split(/\s+/);
+  const email = parts[1]?.toLowerCase();
+
+  if (!email || !email.includes('@')) {
+    await sendTelegramMessage(chatId,
+      '❌ Usage: /register your@company.com',
+      replyTo
+    );
+    return;
+  }
+
+  // Look up Supabase auth user by email
+  const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.getUserByEmail(email);
+  if (authErr || !authData?.user) {
+    await sendTelegramMessage(chatId,
+      `❌ No account found for ${email}. Check the email or ask your admin.`,
+      replyTo
+    );
+    return;
+  }
+
+  // Load profile for role + name
+  const { data: regProfile } = await supabaseAdmin
+    .from('profiles')
+    .select('role, full_name')
+    .eq('id', authData.user.id)
+    .maybeSingle();
+
+  if (!regProfile) {
+    await sendTelegramMessage(chatId,
+      '❌ Profile not found. Ask your admin to complete your account setup.',
+      replyTo
+    );
+    return;
+  }
+
+  if (!ALLOWED_SUBMITTERS.includes(regProfile.role)) {
+    await sendTelegramMessage(chatId,
+      `❌ Your role (${regProfile.role}) cannot submit purchases via Telegram.`,
+      replyTo
+    );
+    return;
+  }
+
+  // Link Telegram chat_id → profile
+  await supabaseAdmin.from('telegram_user_map').upsert({
+    telegram_chat_id: String(chatId),
+    user_id: authData.user.id,
+    telegram_username: message.from?.username || null,
+    mapped_at: new Date().toISOString(),
+  }, { onConflict: 'telegram_chat_id' });
+
+  await sendTelegramMessage(chatId,
+    `✅ Registered!\n\nName: ${regProfile.full_name}\nRole: ${regProfile.role}\n\nYou can now send purchase details directly in this chat.`,
+    replyTo
+  );
 }
 
 const EXTRACTION_SYSTEM = `You are an Office Bill, Inventory, and Expense Extraction Assistant.
@@ -454,12 +681,53 @@ router.post('/', (req, res) => {
 
   if (!message || !chatId) return;
 
-  const file = getTelegramFile(message);
-  if (!file || !isSupportedFile(file.fileName, file.mimeType)) return;
+  const text = message.text || message.caption || '';
+  const hasPhoto = Boolean(message.photo?.length);
+  const hasDocument = Boolean(message.document);
 
-  // Process bill in background after responding
+  // /register must be handled synchronously (before the async IIFE) so the
+  // early return prevents falling into the invoice flow below.
+  if (text.toLowerCase().startsWith('/register')) {
+    handleRegisterCommand(message, chatId, replyTo).catch(e =>
+      console.error('[ManualPurchase] register error:', e.message)
+    );
+    return;
+  }
+
+  // Process in background after responding
   (async () => {
     try {
+      // Classify the message before touching files
+      const msgType = await classifyTelegramMessage(text, hasPhoto, hasDocument);
+
+      if (msgType === 'manual_no_invoice_purchase') {
+        const bestPhoto = hasPhoto
+          ? [...message.photo].sort((a, b) => (b.file_size || 0) - (a.file_size || 0))[0]
+          : null;
+        bufferMessage(String(chatId), {
+          text,
+          photoFileId: bestPhoto?.file_id || null,
+          replyTo,
+          messageId: replyTo,
+        });
+        return;
+      }
+
+      if (msgType === 'personal_or_irrelevant') return;
+
+      if (msgType === 'unclear' && !hasDocument) {
+        await sendTelegramMessage(
+          chatId,
+          '🤔 Not sure what this is. To submit a purchase, describe what you bought and the amount (e.g. "bought 2kg sugar ₹80"). To upload a bill, send the PDF or image.',
+          replyTo,
+        ).catch(() => {});
+        return;
+      }
+
+      // invoice_bill or document → existing flow (unchanged below)
+      const file = getTelegramFile(message);
+      if (!file || !isSupportedFile(file.fileName, file.mimeType)) return;
+
       const buffer = await downloadTelegramFile(file.fileId);
       const fileUrl = await uploadFile({ buffer, fileName: file.fileName, mimeType: file.mimeType });
       const { content } = await extractBill({ ...file, buffer, fileUrl });
