@@ -196,9 +196,10 @@ async function handleRegisterCommand(message, chatId, replyTo) {
     return;
   }
 
-  // Look up Supabase auth user by email
-  const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-  if (authErr || !authData?.user) {
+  // Look up Supabase auth user by email (listUsers works across all supabase-js v2 versions)
+  const { data: usersData, error: authErr } = await supabaseAdmin.auth.admin.listUsers();
+  const authUser = usersData?.users?.find(u => u.email?.toLowerCase() === email);
+  if (authErr || !authUser) {
     await sendTelegramMessage(chatId,
       `❌ No account found for ${email}. Check the email or ask your admin.`,
       replyTo
@@ -210,7 +211,7 @@ async function handleRegisterCommand(message, chatId, replyTo) {
   const { data: regProfile } = await supabaseAdmin
     .from('profiles')
     .select('role, full_name')
-    .eq('id', authData.user.id)
+    .eq('id', authUser.id)
     .maybeSingle();
 
   if (!regProfile) {
@@ -232,7 +233,7 @@ async function handleRegisterCommand(message, chatId, replyTo) {
   // Link Telegram chat_id → profile
   await supabaseAdmin.from('telegram_user_map').upsert({
     telegram_chat_id: String(chatId),
-    user_id: authData.user.id,
+    user_id: authUser.id,
     telegram_username: message.from?.username || null,
     mapped_at: new Date().toISOString(),
   }, { onConflict: 'telegram_chat_id' });
