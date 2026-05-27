@@ -61,6 +61,83 @@ function getToneMessage(tone, shift, openTimeLabel) {
   return messages[tone] || messages.Friendly;
 }
 
+function getBookingStatus(dateStr, shift = 'morning', todayDateObj) {
+  const now = todayDateObj || new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const currentHour = now.getHours() + now.getMinutes() / 60;
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  
+  const targetDate = new Date(dateStr + 'T00:00:00+05:30');
+  const todayDate = new Date(todayStr + 'T00:00:00+05:30');
+  const diffDays = Math.round((targetDate - todayDate) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return { canBook: false, canSkip: false, reason: 'past' };
+  }
+
+  function getNextWorkingDay(nowDate) {
+    const d = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate());
+    d.setDate(d.getDate() + 1);
+    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  if (shift === 'morning') {
+    const nextWD = getNextWorkingDay(todayDate);
+    const nextWDDate = new Date(nextWD + 'T00:00:00+05:30');
+    const nextWDClean = new Date(nextWDDate.getFullYear(), nextWDDate.getMonth(), nextWDDate.getDate());
+    const mealDayClean = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+
+    if (mealDayClean.getTime() !== nextWDClean.getTime()) {
+      return { canBook: false, canSkip: false, reason: mealDayClean < nextWDClean ? 'past' : 'future_locked' };
+    }
+
+    const dow = targetDate.getDay();
+    const todayDay = todayDate.getDay();
+
+    if (dow === 1 && (todayDay === 5 || todayDay === 6 || todayDay === 0)) {
+      if (todayDay === 5 && currentHour < 9) {
+        return { canBook: false, canSkip: false, reason: 'not_open_yet' };
+      }
+      if (todayDay === 0) {
+        if (currentHour >= 20) return { canBook: false, canSkip: false, reason: 'locked' };
+        if (currentHour >= 18) return { canBook: false, canSkip: true, reason: 'skip_only' };
+      }
+      return { canBook: true, canSkip: true, reason: 'open' };
+    }
+
+    if (currentHour < 9) {
+      return { canBook: false, canSkip: false, reason: 'not_open_yet' };
+    }
+    if (currentHour >= 20) {
+      return { canBook: false, canSkip: false, reason: 'locked' };
+    }
+    if (currentHour >= 18) {
+      return { canBook: false, canSkip: true, reason: 'skip_only' };
+    }
+    return { canBook: true, canSkip: true, reason: 'open' };
+  } else {
+    // Night Shift
+    if (diffDays === 1) {
+      if (currentHour >= 20) {
+        return { canBook: true, canSkip: true, reason: 'open' };
+      }
+      return { canBook: false, canSkip: false, reason: 'not_open_yet' };
+    }
+
+    if (diffDays === 0) {
+      if (currentHour >= 17) {
+        return { canBook: false, canSkip: false, reason: 'locked' };
+      }
+      if (currentHour >= 14) {
+        return { canBook: false, canSkip: true, reason: 'skip_only' };
+      }
+      return { canBook: true, canSkip: true, reason: 'open' };
+    }
+
+    return { canBook: false, canSkip: false, reason: 'future_locked' };
+  }
+}
+
 const CHOICE_UI = {
   veg:     { emoji: '🥬', label: 'Veg',     bg: 'bg-emerald-50',  border: 'border-emerald-200', text: 'text-emerald-700', ring: 'ring-emerald-400', badge: 'bg-emerald-100 text-emerald-700' },
   non_veg: { emoji: '🍗', label: 'Non-Veg', bg: 'bg-red-50',      border: 'border-red-200',     text: 'text-red-700',     ring: 'ring-red-400',     badge: 'bg-red-100 text-red-700' },
@@ -411,10 +488,11 @@ export default function MealBooking() {
 
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const b = getBookingForDate(dateStr);
-            const isPast = dateObj < today || dateObj.getTime() === today.getTime();
+                        const isPast = dateObj < today || dateObj.getTime() === today.getTime();
             const isToday = dateObj.getTime() === today.getTime();
             const isSelected = selectedDate === dateStr;
-            const isBookable = dateStr === nextWorkingDay;
+            const bStatus = getBookingStatus(dateStr, userPrefs.shift, now);
+            const isBookable = bStatus.canBook || bStatus.canSkip;
             const ui = b ? CHOICE_UI[b.choice] : null;
 
             return (
@@ -466,7 +544,10 @@ export default function MealBooking() {
             const dow = dateObj.getDay();
             const dayOpts = DAY_OPTIONS[dow] || [];
             const isPast = dateObj < today || dateObj.getTime() === today.getTime();
-            const isBookable = selectedDate === nextWorkingDay;
+            const bStatus = getBookingStatus(selectedDate, userPrefs.shift, now);
+            const canBook = bStatus.canBook;
+            const canSkip = bStatus.canSkip;
+            const isBookable = canBook || canSkip;
 
             // Past or today — view only
             if (isPast) {
@@ -528,11 +609,11 @@ export default function MealBooking() {
                     return (
                       <button
                         key={opt}
-                        disabled={booking}
+                        disabled={booking || !canBook}
                         onClick={() => requestBook(selectedDate, opt)}
                         className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
                           ${selected ? `${ui.bg} border-current ${ui.text}` : `bg-white ${ui.border} hover:${ui.bg}`}
-                          ${booking ? 'opacity-40' : ''}
+                          ${(booking || !canBook) ? 'opacity-40' : ''}
                         `}
                       >
                         <span className="text-xl">{ui.emoji}</span>
@@ -542,11 +623,11 @@ export default function MealBooking() {
                     );
                   })}
                   <button
-                    disabled={booking}
+                    disabled={booking || !canSkip}
                     onClick={() => requestBook(selectedDate, 'skip')}
                     className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
                       ${b?.choice === 'skip' ? 'bg-slate-100 border-slate-400 text-slate-600' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-500'}
-                      ${booking ? 'opacity-40' : ''}
+                      ${(booking || !canSkip) ? 'opacity-40' : ''}
                     `}
                   >
                     <span className="text-xl">🚫</span>
