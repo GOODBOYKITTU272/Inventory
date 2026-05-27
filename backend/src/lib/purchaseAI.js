@@ -15,7 +15,7 @@ export const AUTO_APPROVAL_LIMITS = {
   office_boy:       500,
 };
 
-export const ALLOWED_SUBMITTERS = ['office_boy', 'facility_manager', 'leadership'];
+export const ALLOWED_SUBMITTERS = ['office_boy', 'leadership'];
 
 export const ALLOWED_AUTO_CATEGORIES = [
   'Pantry Food',

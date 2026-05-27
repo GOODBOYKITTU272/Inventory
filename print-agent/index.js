@@ -179,9 +179,6 @@ function printReceipt(order) {
   return sendToPrinter(receipt, `order-#${orderId}`);
 }
 
-// ── Meal Token Format (Cabin Batch / Reprint) ─────────────────────────────────
-// Used for both the auto cabin-batch print and individual reprints.
-// isDuplicate=true adds the DUPLICATE header and reprint count.
 function formatMealToken(booking, profile, isDuplicate = false) {
   const choiceLabel = { veg: 'VEG', non_veg: 'NON-VEG', egg: 'EGG' };
   const choiceEmoji = { veg: '🥬', non_veg: '🍗', egg: '🥚' };
@@ -200,13 +197,31 @@ function formatMealToken(booking, profile, isDuplicate = false) {
     CMD.CENTER,
     CMD.BOLD_ON,
     CMD.DOUBLE_ON,
-    'MEAL BOOKING',
+    'APPLYWIZZ',
+    'MEAL TOKEN',
     CMD.DOUBLE_OFF,
     CMD.BOLD_OFF,
     CMD.FEED,
+  ];
+
+  if (isDuplicate) {
+    lines.push(
+      CMD.CENTER,
+      CMD.BOLD_ON,
+      '*** DUPLICATE TOKEN ***',
+      `Reprint #${(booking.print_count || 1)}`,
+      CMD.BOLD_OFF,
+      CMD.FEED
+    );
+  }
+
+  lines.push(
     LINE,
     CMD.LEFT,
+    `Token #  ${token}`,
     `Date     ${dateStr}`,
+    `Time     1:00 PM`,
+    `Cabin    ${cabin}`,
     DASH,
     CMD.BOLD_ON,
     `${choiceEmoji[booking.choice] || ''} ${choiceLabel[booking.choice] || booking.choice}`,
@@ -222,8 +237,9 @@ function formatMealToken(booking, profile, isDuplicate = false) {
     LINE,
     CMD.FEED,
     CMD.FEED,
-    CMD.PARTIAL_CUT,
-  ];
+    CMD.FEED,
+    CMD.PARTIAL_CUT
+  );
 
   return lines.join('\n');
 }

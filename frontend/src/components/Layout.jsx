@@ -3,11 +3,11 @@ import { useAuth } from '../hooks/useAuth.js';
 import { supabase } from '../lib/supabase.js';
 
 const navByRole = {
-  facility_manager: ['/dashboard', '/daily-update', '/request', '/meals', '/my-meal-box', '/meal-token-dashboard', '/orders', '/queue', '/available', '/bills', '/settings'],
-  finance:          ['/dashboard', '/finance', '/request', '/meals', '/my-meal-box', '/orders', '/available', '/bills', '/bills/approve', '/settings'],
-  leadership:       ['/dashboard', '/daily-update', '/finance', '/request', '/meals', '/my-meal-box', '/meal-token-dashboard', '/orders', '/queue', '/available', '/admin', '/bills', '/bills/approve', '/reports', '/connections', '/settings'],
+  facility_manager: ['/dashboard', '/daily-update', '/request', '/meals', '/my-meal-box', '/meal-token-dashboard', '/orders', '/queue', '/available', '/bills', '/manual-purchases', '/settings'],
+  finance:          ['/dashboard', '/finance', '/request', '/meals', '/my-meal-box', '/orders', '/available', '/bills', '/bills/approve', '/manual-purchases', '/settings'],
+  leadership:       ['/dashboard', '/daily-update', '/finance', '/request', '/meals', '/my-meal-box', '/meal-token-dashboard', '/orders', '/queue', '/available', '/admin', '/bills', '/bills/approve', '/manual-purchases', '/reports', '/connections', '/settings'],
   staff:            ['/request', '/meals', '/my-meal-box', '/orders', '/settings'],
-  office_boy:       ['/request', '/meals', '/my-meal-box', '/meal-token-dashboard', '/orders', '/queue', '/bills', '/settings'],
+  office_boy:       ['/request', '/meals', '/my-meal-box', '/meal-token-dashboard', '/orders', '/queue', '/bills', '/manual-purchases', '/settings'],
 };
 
 const labels = {
@@ -26,6 +26,7 @@ const labels = {
   '/bills/approve':         'Verify Bills',
   '/reports':               'Insights',
   '/connections':           'Sync',
+  '/manual-purchases':      'Purchases',
   '/settings':              'Settings',
 };
 

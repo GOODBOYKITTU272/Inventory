@@ -97,4 +97,11 @@ export const api = {
   listMonthlyExpenses: () => request('/api/reports/monthly-expenses'),
   addMonthlyExpense: (body) => request('/api/reports/monthly-expenses', { method: 'POST', body: JSON.stringify(body) }),
   deleteMonthlyExpense: (id) => request(`/api/reports/monthly-expenses/${id}`, { method: 'DELETE' }),
+
+  // Manual Purchases (no-invoice, submitted via Telegram)
+  listManualPurchases:   (status = 'all') => request(`/api/manual-purchases${status && status !== 'all' ? `?status=${status}` : ''}`),
+  approveManualPurchase: (id)             => request(`/api/manual-purchases/${id}/approve`, { method: 'POST' }),
+  rejectManualPurchase:  (id, reason)     => request(`/api/manual-purchases/${id}/reject`,  { method: 'POST', body: JSON.stringify({ reason }) }),
+  clarifyManualPurchase: (id, question)   => request(`/api/manual-purchases/${id}/clarify`, { method: 'POST', body: JSON.stringify({ question }) }),
+  syncManualPurchase:    (id)             => request(`/api/manual-purchases/${id}/sync`,     { method: 'POST' }),
 };

@@ -23,6 +23,7 @@ import MealBookingPage from './pages/MealBooking.jsx';
 import MealHistoryPage from './pages/MealHistory.jsx';
 import MyMealBoxPage from './pages/MyMealBox.jsx';
 import MealTokenDashboardPage from './pages/MealTokenDashboard.jsx';
+import ManualPurchasesPage from './pages/ManualPurchases.jsx';
 import InactivityLock from './components/InactivityLock.jsx';
 import { useAuth } from './hooks/useAuth.js';
 
@@ -231,6 +232,14 @@ export default function App() {
           element={
             <Protected allow={['leadership']}>
               <ConnectionsPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/manual-purchases"
+          element={
+            <Protected allow={['finance', 'leadership', 'facility_manager', 'office_boy']}>
+              <ManualPurchasesPage />
             </Protected>
           }
         />

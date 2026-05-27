@@ -243,6 +243,51 @@ async function handleRegisterCommand(message, chatId, replyTo) {
   );
 }
 
+async function handleClarificationReply(message, chatId, replyTo, text) {
+  // Only handle replies aimed at the bot itself
+  if (message.reply_to_message?.from?.is_bot !== true) return false;
+
+  // Look up the registered sender
+  const { data: mapping } = await supabaseAdmin
+    .from('telegram_user_map')
+    .select('user_id')
+    .eq('telegram_chat_id', String(chatId))
+    .maybeSingle();
+
+  if (!mapping) return false;
+
+  // Find the most recent purchase awaiting clarification from this sender
+  const { data: purchase } = await supabaseAdmin
+    .from('manual_purchases')
+    .select('id, item_name')
+    .eq('sender_user_id', mapping.user_id)
+    .eq('status', 'draft_needs_clarification')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!purchase) return false; // No pending clarification — let normal flow continue
+
+  // Save answer and advance status to pending_review
+  await supabaseAdmin
+    .from('manual_purchases')
+    .update({
+      clarification_answer: text,
+      status: 'pending_review',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', purchase.id);
+
+  const itemHint = purchase.item_name ? ` for "${purchase.item_name}"` : '';
+  await sendTelegramMessage(
+    chatId,
+    `✅ Answer received${itemHint}!\n\nYour purchase has been sent to the finance team for review.`,
+    replyTo
+  ).catch(() => {});
+
+  return true;
+}
+
 const EXTRACTION_SYSTEM = `You are an Office Bill, Inventory, and Expense Extraction Assistant.
 Extract only visible bill details from the document. Do not guess missing values.
 Return ONLY valid JSON (no markdown, no backticks) with this exact structure:
@@ -697,6 +742,12 @@ router.post('/', (req, res) => {
   // Process in background after responding
   (async () => {
     try {
+      // If the user is replying to a bot clarification question, handle that first
+      if (message.reply_to_message && text && !hasDocument) {
+        const handled = await handleClarificationReply(message, chatId, replyTo, text);
+        if (handled) return;
+      }
+
       // Classify the message before touching files
       const msgType = await classifyTelegramMessage(text, hasPhoto, hasDocument);
 
