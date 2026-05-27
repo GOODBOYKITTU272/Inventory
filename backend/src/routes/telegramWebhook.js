@@ -784,7 +784,16 @@ router.post('/', (req, res) => {
       const fileUrl = await uploadFile({ buffer, fileName: file.fileName, mimeType: file.mimeType });
       const { content } = await extractBill({ ...file, buffer, fileUrl });
       console.log('[Telegram] Raw AI response (first 500 chars):', content.slice(0, 500));
-      const parsed = JSON.parse(cleanJson(content));
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanJson(content));
+      } catch {
+        await sendTelegramMessage(chatId,
+          '📸 This doesn\'t look like a bill or invoice.\n\nIf this is a purchase without a receipt, send a message describing what you bought, the amount, and where — e.g. "bought bread ₹60 from local shop, cash".',
+          replyTo
+        ).catch(() => {});
+        return;
+      }
       console.log('[Telegram] Parsed items count:', parsed.items?.length, 'First item keys:', parsed.items?.[0] ? Object.keys(parsed.items[0]) : 'none');
 
       const duplicate = await findDuplicate(parsed);

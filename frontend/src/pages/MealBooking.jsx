@@ -4,6 +4,62 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Clock, CheckCircle2, XCircle, History } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { supabase } from '../lib/supabase.js';
+
+function getOpeningTimeLabel(mealDateStr, shift) {
+  const mealDateObj = new Date(mealDateStr + 'T00:00:00+05:30');
+  const dow = mealDateObj.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+  
+  let openDate = new Date(mealDateObj);
+  if (shift === 'morning') {
+    // Morning shift opens at 9:00 AM on the day before, except Monday which opens on Friday
+    if (dow === 1) { // Monday
+      openDate.setDate(mealDateObj.getDate() - 3); // Friday
+    } else {
+      openDate.setDate(mealDateObj.getDate() - 1); // Day before
+    }
+    const dayName = openDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+    return `${dayName} at 9:00 AM`;
+  } else {
+    // Night shift opens at 8:00 PM on the day before (since dinner is same day and they work previous night)
+    openDate.setDate(mealDateObj.getDate() - 1); // Day before
+    const dayName = openDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+    return `${dayName} at 8:00 PM`;
+  }
+}
+
+function getToneMessage(tone, shift, openTimeLabel) {
+  const isMorning = shift === 'morning';
+  
+  const messages = {
+    gen_z: isMorning 
+      ? `No cap bestie, this lunch opens on ${openTimeLabel} 🤫. Don't sleep on it! 🍱🔥`
+      : `Hold up bestie, dinner bookings unlock on ${openTimeLabel} 🌙. Stay tuned! 🍕✨`,
+    Friendly: isMorning
+      ? `This lunch isn't open for booking yet! It will open on ${openTimeLabel} 😊. See you then!`
+      : `Almost ready! You can book this dinner starting ${openTimeLabel} 🌙. Have a wonderful day!`,
+    Professional: isMorning
+      ? `Booking for this lunch is currently unavailable. It will open on ${openTimeLabel}.`
+      : `This dinner booking session is locked. The window opens on ${openTimeLabel}.`,
+    Funny: isMorning
+      ? `Patience, hungry human! 🤤 Lunch booking starts on ${openTimeLabel}. Don't eat your screen until then!`
+      : `The kitchen is sleeping! 😴 Dinner booking opens on ${openTimeLabel}. Keep those cravings in check!`,
+    'Mom Mode': isMorning
+      ? `Beta, please wait! 💝 The lunch booking isn't open yet. It will open on ${openTimeLabel}. I'll make sure you get a hot meal! 🥰`
+      : `Mera pyara baccha, dinner booking starts on ${openTimeLabel} 🌙. Don't worry, mom will remind you to book on time! 😘`,
+    boyfriend: isMorning
+      ? `Hey cutie, the kitchen isn't ready for us yet! 😉 Lunch booking opens on ${openTimeLabel}. I'll make sure we book together! 💕`
+      : `Dinner's on me, but we have to wait until ${openTimeLabel} to book it! 😘 Stay sweet, cutie! 💖`,
+    girlfriend: isMorning
+      ? `Hey handsome, don't be in such a rush! 😜 Lunch booking starts on ${openTimeLabel}. Can't wait for us to have lunch! 💖`
+      : `Patience, handsome! Dinner booking opens on ${openTimeLabel} 🌙. Make sure you book on time so you don't go hungry! 💕`,
+    Minimal: isMorning
+      ? `Lunch booking opens ${openTimeLabel}.`
+      : `Dinner booking opens ${openTimeLabel}.`
+  };
+
+  return messages[tone] || messages.Friendly;
+}
 
 const CHOICE_UI = {
   veg:     { emoji: '🥬', label: 'Veg',     bg: 'bg-emerald-50',  border: 'border-emerald-200', text: 'text-emerald-700', ring: 'ring-emerald-400', badge: 'bg-emerald-100 text-emerald-700' },
@@ -177,6 +233,7 @@ export default function MealBooking() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [booking, setBooking] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [userPrefs, setUserPrefs] = useState({ shift: 'morning', notification_tone: 'Friendly' });
 
   // Confirmation sheet state
   const [confirmData, setConfirmData] = useState(null); // { dateStr, choice, existingChoice }
@@ -185,6 +242,24 @@ export default function MealBooking() {
   const [toast, setToast] = useState(null); // { message, type }
 
   const monthStr = getMonthStr(year, month);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    supabase
+      .from('employee_cafeteria_preferences')
+      .select('shift, notification_tone')
+      .eq('user_id', profile.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setUserPrefs({
+            shift: data.shift || 'morning',
+            notification_tone: data.notification_tone || 'Friendly',
+          });
+        }
+      })
+      .catch((e) => console.error('Failed to load user preferences', e));
+  }, [profile?.id]);
 
   useEffect(() => {
     setLoading(true);
@@ -419,11 +494,13 @@ export default function MealBooking() {
 
             // Future but NOT next working day — locked
             if (!isBookable) {
+              const openTimeLabel = getOpeningTimeLabel(selectedDate, userPrefs.shift);
+              const toneMsg = getToneMessage(userPrefs.notification_tone, userPrefs.shift, openTimeLabel);
               return (
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-1">
                   <span className="text-lg">🔒</span>
                   <div className="text-sm font-semibold text-slate-500">Not available yet</div>
-                  <div className="text-xs text-slate-400">You can only book for the next working day</div>
+                  <div className="text-xs text-slate-500 font-medium leading-relaxed px-2 py-1">{toneMsg}</div>
                   {b && (
                     <div className={`mt-2 p-2 rounded-lg ${CHOICE_UI[b.choice]?.bg}`}>
                       <span className="text-sm font-semibold">{CHOICE_UI[b.choice]?.emoji} {CHOICE_UI[b.choice]?.label}</span>

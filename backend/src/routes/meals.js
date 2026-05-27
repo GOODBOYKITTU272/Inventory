@@ -60,41 +60,79 @@ function getNextWorkingDay() {
 //   6 PM – 8 PM  → skip only (cancel existing booking)
 //   After 8 PM   → locked (no changes)
 // All other dates → view only (past bookings shown but not editable)
-function getAllowedActions(mealDate) {
+function getAllowedActions(mealDate, shift = 'morning') {
   const now = getISTNow();
-  const hour = getISTHour();
+  const currentHour = getISTHour();
+  const todayStr = now.toISOString().slice(0, 10);
 
-  // Parse meal date
-  const mealDay = new Date(mealDate + 'T00:00:00+05:30');
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const mealDayClean = new Date(mealDay.getFullYear(), mealDay.getMonth(), mealDay.getDate());
+  const targetDate = new Date(mealDate + 'T00:00:00+05:30');
+  const todayDate = new Date(todayStr + 'T00:00:00+05:30');
+  const diffDays = Math.round((targetDate - todayDate) / (1000 * 60 * 60 * 24));
 
-  // If meal date is today or past → locked
-  if (mealDayClean <= today) {
+  if (diffDays < 0) {
     return { canBook: false, canSkip: false, reason: 'past' };
   }
 
-  // Calculate next working day
-  const nextWD = getNextWorkingDay();
-  const nextWDDate = new Date(nextWD + 'T00:00:00+05:30');
-  const nextWDClean = new Date(nextWDDate.getFullYear(), nextWDDate.getMonth(), nextWDDate.getDate());
+  if (shift === 'morning') {
+    // Calculate next working day
+    const nextWD = getNextWorkingDay();
+    const nextWDDate = new Date(nextWD + 'T00:00:00+05:30');
+    const nextWDClean = new Date(nextWDDate.getFullYear(), nextWDDate.getMonth(), nextWDDate.getDate());
+    const mealDayClean = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
 
-  // Only next working day is bookable — all other future dates are locked
-  if (mealDayClean.getTime() !== nextWDClean.getTime()) {
+    if (mealDayClean.getTime() !== nextWDClean.getTime()) {
+      return { canBook: false, canSkip: false, reason: mealDayClean < nextWDClean ? 'past' : 'future_locked' };
+    }
+
+    const dow = targetDate.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+    const todayDay = todayDate.getDay();
+
+    // Weekend logic for Monday's meal: opens Friday at 9 AM, closes Sunday at 8 PM.
+    if (dow === 1 && (todayDay === 5 || todayDay === 6 || todayDay === 0)) {
+      if (todayDay === 5 && currentHour < 9) {
+        return { canBook: false, canSkip: false, reason: 'not_open_yet' };
+      }
+      if (todayDay === 0) {
+        if (currentHour >= 20) return { canBook: false, canSkip: false, reason: 'locked' };
+        if (currentHour >= 18) return { canBook: false, canSkip: true, reason: 'skip_only' };
+      }
+      return { canBook: true, canSkip: true, reason: 'open' };
+    }
+
+    // Weekday logic (Mon-Thu) for next working day
+    if (currentHour < 9) {
+      return { canBook: false, canSkip: false, reason: 'not_open_yet' };
+    }
+    if (currentHour >= 20) {
+      return { canBook: false, canSkip: false, reason: 'locked' };
+    }
+    if (currentHour >= 18) {
+      return { canBook: false, canSkip: true, reason: 'skip_only' };
+    }
+    return { canBook: true, canSkip: true, reason: 'open' };
+  } else {
+    // Night Shift (Dinner) - books for same day's dinner
+    // Opens: 8:00 PM the day before (diffDays = 1, hour >= 20)
+    // Closes: 2:00 PM same day (diffDays = 0, hour >= 14 for booking, hour >= 17 for skip)
+    if (diffDays === 1) {
+      if (currentHour >= 20) {
+        return { canBook: true, canSkip: true, reason: 'open' };
+      }
+      return { canBook: false, canSkip: false, reason: 'not_open_yet' };
+    }
+
+    if (diffDays === 0) {
+      if (currentHour >= 17) {
+        return { canBook: false, canSkip: false, reason: 'locked' };
+      }
+      if (currentHour >= 14) {
+        return { canBook: false, canSkip: true, reason: 'skip_only' };
+      }
+      return { canBook: true, canSkip: true, reason: 'open' };
+    }
+
     return { canBook: false, canSkip: false, reason: 'future_locked' };
   }
-
-  // Next working day — apply cutoff rules
-  // Before 6 PM → full booking
-  if (hour < 18) {
-    return { canBook: true, canSkip: true, reason: 'open' };
-  }
-  // 6 PM – 8 PM → only skip
-  if (hour < 20) {
-    return { canBook: false, canSkip: true, reason: 'skip_only' };
-  }
-  // After 8 PM → locked
-  return { canBook: false, canSkip: false, reason: 'locked' };
 }
 
 // ── GET /api/meals/options?date=2026-05-21 ────────────────────────────────────
@@ -108,8 +146,15 @@ router.get('/options', async (req, res, next) => {
       return res.json({ working_day: false, options: [], booking: null });
     }
 
+    const { data: prefs } = await supabaseAdmin
+      .from('employee_cafeteria_preferences')
+      .select('shift')
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+    const userShift = prefs?.shift || 'morning';
+
     const options = getOptionsForDate(date);
-    const actions = getAllowedActions(date);
+    const actions = getAllowedActions(date, userShift);
 
     // Get user's current booking
     const { data: booking } = await supabaseAdmin
@@ -147,7 +192,14 @@ router.post('/book', async (req, res, next) => {
       return res.status(400).json({ error: 'Meal booking not available for this date' });
     }
 
-    const actions = getAllowedActions(date);
+    const { data: prefs } = await supabaseAdmin
+      .from('employee_cafeteria_preferences')
+      .select('shift')
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+    const userShift = prefs?.shift || 'morning';
+
+    const actions = getAllowedActions(date, userShift);
 
     if (choice === 'skip') {
       // Skip allowed if canSkip

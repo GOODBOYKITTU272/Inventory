@@ -60,9 +60,9 @@ export async function classifyTelegramMessage(text, hasPhoto, hasDocument) {
     return 'manual_no_invoice_purchase';
   }
 
-  // Photo only, no text → need AI to classify
+  // Photo only, no text → treat as manual purchase; vision AI in the pipeline will read the image
   if (hasPhoto && !text) {
-    return 'needs_ai_classification';
+    return 'manual_no_invoice_purchase';
   }
 
   // Text only, no strong signals → use AI

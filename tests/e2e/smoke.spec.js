@@ -9,15 +9,12 @@ import { test, expect } from '@playwright/test';
  * To test signed-in flows reliably, generate a Supabase session JWT for a
  * facility_manager test user, save it to tests/e2e/.auth/state.json, then point
  * playwright.config.js -> use.storageState at that file.
- */
-
-test('login page renders', async ({ page }) => {
+ */test('login page renders', async ({ page }) => {
   await page.goto('/login');
-  await expect(page.getByText(/Office Pantry/i)).toBeVisible();
+  await expect(page.getByText(/Pantry Online/i)).toBeVisible();
   await expect(page.getByPlaceholder(/you@applywizz\.ai/i)).toBeVisible();
   await expect(page.getByRole('button', { name: /Continue/i })).toBeVisible();
 });
-
 test('protected route redirects to login when signed out', async ({ page }) => {
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/login/);

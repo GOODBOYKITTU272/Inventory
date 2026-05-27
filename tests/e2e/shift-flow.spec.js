@@ -156,14 +156,10 @@ async function createTestOrder(page, orderId, orderDetails) {
     }
   });
 }
-
-/**
- * Helper 4: Asserts whether the feedback form and rating star buttons are visible or hidden.
- */
 async function assertRatingDisplayed(page, expectedVisible) {
   if (expectedVisible) {
-    // Wait for the rating modal delay in the frontend
-    await page.waitForTimeout(1500);
+    // Wait for the rating modal delay in the frontend using virtual clock
+    await page.clock.runFor(1500);
     await expect(page.getByText(/Hope it hit the spot/i)).toBeVisible();
     await expect(page.locator('button:has-text("10")')).toBeVisible();
   } else {
