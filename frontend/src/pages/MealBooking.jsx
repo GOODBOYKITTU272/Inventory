@@ -6,24 +6,75 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { supabase } from '../lib/supabase.js';
 
+function getISTParts(dateObj = new Date()) {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(dateObj);
+    const m = {};
+    for (const p of parts) {
+      m[p.type] = p.value;
+    }
+    return {
+      year: parseInt(m.year, 10),
+      month: parseInt(m.month, 10) - 1, // 0-indexed
+      day: parseInt(m.day, 10),
+      hour: parseInt(m.hour, 10),
+      minute: parseInt(m.minute, 10),
+      second: parseInt(m.second, 10)
+    };
+  } catch (e) {
+    console.error('Error formatting IST parts, falling back to local system:', e);
+    return {
+      year: dateObj.getFullYear(),
+      month: dateObj.getMonth(),
+      day: dateObj.getDate(),
+      hour: dateObj.getHours(),
+      minute: dateObj.getMinutes(),
+      second: dateObj.getSeconds()
+    };
+  }
+}
+
 function getOpeningTimeLabel(mealDateStr, shift) {
-  const mealDateObj = new Date(mealDateStr + 'T00:00:00+05:30');
-  const dow = mealDateObj.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+  const [year, month, day] = mealDateStr.split('-').map(Number);
+  const mealDateObj = new Date(Date.UTC(year, month - 1, day));
+  const dow = mealDateObj.getUTCDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
   
   let openDate = new Date(mealDateObj);
   if (shift === 'morning') {
     // Morning shift opens at 9:00 AM on the day before, except Monday which opens on Friday
     if (dow === 1) { // Monday
-      openDate.setDate(mealDateObj.getDate() - 3); // Friday
+      openDate.setUTCDate(mealDateObj.getUTCDate() - 3); // Friday
     } else {
-      openDate.setDate(mealDateObj.getDate() - 1); // Day before
+      openDate.setUTCDate(mealDateObj.getUTCDate() - 1); // Day before
     }
-    const dayName = openDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+    const formatter = new Intl.DateTimeFormat('en-IN', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'Asia/Kolkata'
+    });
+    const dayName = formatter.format(openDate);
     return `${dayName} at 9:00 AM`;
   } else {
     // Night shift opens at 8:00 PM on the day before (since dinner is same day and they work previous night)
-    openDate.setDate(mealDateObj.getDate() - 1); // Day before
-    const dayName = openDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+    openDate.setUTCDate(mealDateObj.getUTCDate() - 1); // Day before
+    const formatter = new Intl.DateTimeFormat('en-IN', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'Asia/Kolkata'
+    });
+    const dayName = formatter.format(openDate);
     return `${dayName} at 8:00 PM`;
   }
 }
@@ -62,38 +113,48 @@ function getToneMessage(tone, shift, openTimeLabel) {
 }
 
 function getBookingStatus(dateStr, shift = 'morning', todayDateObj) {
-  const now = todayDateObj || new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const currentHour = now.getHours() + now.getMinutes() / 60;
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const nowObj = todayDateObj || new Date();
   
-  const targetDate = new Date(dateStr + 'T00:00:00+05:30');
-  const todayDate = new Date(todayStr + 'T00:00:00+05:30');
-  const diffDays = Math.round((targetDate - todayDate) / (1000 * 60 * 60 * 24));
+  if (isNaN(nowObj.getTime())) {
+    return { canBook: false, canSkip: false, reason: 'error' };
+  }
+
+  const parts = getISTParts(nowObj);
+  const currentHour = parts.hour + parts.minute / 60;
+
+  const [tYear, tMonth, tDay] = dateStr.split('-').map(Number);
+  if (!tYear || !tMonth || !tDay) {
+    return { canBook: false, canSkip: false, reason: 'error' };
+  }
+
+  const targetDateUTC = Date.UTC(tYear, tMonth - 1, tDay);
+  const todayDateUTC = Date.UTC(parts.year, parts.month, parts.day);
+  const diffDays = Math.round((targetDateUTC - todayDateUTC) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
     return { canBook: false, canSkip: false, reason: 'past' };
   }
 
-  function getNextWorkingDay(nowDate) {
-    const d = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate());
-    d.setDate(d.getDate() + 1);
-    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  function getNextWorkingDay(y, m, d) {
+    const temp = new Date(Date.UTC(y, m, d));
+    temp.setUTCDate(temp.getUTCDate() + 1);
+    while (temp.getUTCDay() === 0 || temp.getUTCDay() === 6) {
+      temp.setUTCDate(temp.getUTCDate() + 1);
+    }
+    return `${temp.getUTCFullYear()}-${String(temp.getUTCMonth() + 1).padStart(2, '0')}-${String(temp.getUTCDate()).padStart(2, '0')}`;
   }
 
   if (shift === 'morning') {
-    const nextWD = getNextWorkingDay(todayDate);
-    const nextWDDate = new Date(nextWD + 'T00:00:00+05:30');
-    const nextWDClean = new Date(nextWDDate.getFullYear(), nextWDDate.getMonth(), nextWDDate.getDate());
-    const mealDayClean = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-
-    if (mealDayClean.getTime() !== nextWDClean.getTime()) {
-      return { canBook: false, canSkip: false, reason: mealDayClean < nextWDClean ? 'past' : 'future_locked' };
+    const nextWD = getNextWorkingDay(parts.year, parts.month, parts.day);
+    if (dateStr !== nextWD) {
+      return { canBook: false, canSkip: false, reason: dateStr < nextWD ? 'past' : 'future_locked' };
     }
 
-    const dow = targetDate.getDay();
-    const todayDay = todayDate.getDay();
+    const targetDateObj = new Date(Date.UTC(tYear, tMonth - 1, tDay));
+    const dow = targetDateObj.getUTCDay();
+    const todayDay = new Date(Date.UTC(parts.year, parts.month, parts.day)).getUTCDay();
 
+    // Weekend logic for Monday's meal: opens Friday at 9 AM, closes Sunday at 8 PM.
     if (dow === 1 && (todayDay === 5 || todayDay === 6 || todayDay === 0)) {
       if (todayDay === 5 && currentHour < 9) {
         return { canBook: false, canSkip: false, reason: 'not_open_yet' };

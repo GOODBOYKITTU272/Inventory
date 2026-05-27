@@ -14,19 +14,48 @@ const DAY_OPTIONS = {
   5: ['veg', 'non_veg'],        // Friday: Veg / Non-Veg
 };
 
-function getISTNow() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-}
-
-function getISTHour() {
-  const now = new Date();
-  const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  return ist.getHours() + ist.getMinutes() / 60;
+function getISTParts(dateObj = new Date()) {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(dateObj);
+    const m = {};
+    for (const p of parts) {
+      m[p.type] = p.value;
+    }
+    return {
+      year: parseInt(m.year, 10),
+      month: parseInt(m.month, 10) - 1, // 0-indexed
+      day: parseInt(m.day, 10),
+      hour: parseInt(m.hour, 10),
+      minute: parseInt(m.minute, 10),
+      second: parseInt(m.second, 10)
+    };
+  } catch (e) {
+    console.error('Error formatting IST parts, falling back to local system:', e);
+    return {
+      year: dateObj.getFullYear(),
+      month: dateObj.getMonth(),
+      day: dateObj.getDate(),
+      hour: dateObj.getHours(),
+      minute: dateObj.getMinutes(),
+      second: dateObj.getSeconds()
+    };
+  }
 }
 
 function getMealDateDay(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00+05:30');
-  return d.getDay(); // 0=Sun ... 6=Sat
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCDay(); // 0=Sun ... 6=Sat
 }
 
 function isWorkingDay(dateStr) {
@@ -39,53 +68,48 @@ function getOptionsForDate(dateStr) {
   return DAY_OPTIONS[day] || [];
 }
 
-// Get the next working day (Mon-Fri) from today
-function getNextWorkingDay() {
-  const now = getISTNow();
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  d.setDate(d.getDate() + 1); // start from tomorrow
-  while (d.getDay() === 0 || d.getDay() === 6) {
-    d.setDate(d.getDate() + 1); // skip weekends
+// Get the next working day (Mon-Fri) from today in IST
+function getNextWorkingDay(nowDate = new Date()) {
+  const p = getISTParts(nowDate);
+  const d = new Date(Date.UTC(p.year, p.month, p.day));
+  d.setUTCDate(d.getUTCDate() + 1); // start from tomorrow
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) {
+    d.setUTCDate(d.getUTCDate() + 1); // skip weekends
   }
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
 
 // Determine what actions are allowed right now for a given meal_date
-// RULE: Only the NEXT WORKING DAY is bookable. No advance booking.
-// Cutoff times (for next working day):
-//   Before 6 PM  → full booking (choose Veg/Non-Veg/Egg/Skip)
-//   6 PM – 8 PM  → skip only (cancel existing booking)
-//   After 8 PM   → locked (no changes)
-// All other dates → view only (past bookings shown but not editable)
-function getAllowedActions(mealDate, shift = 'morning') {
-  const now = getISTNow();
-  const currentHour = getISTHour();
-  const todayStr = now.toISOString().slice(0, 10);
+function getAllowedActions(mealDate, shift = 'morning', mockDate) {
+  const parts = getISTParts(mockDate || new Date());
+  const currentHour = parts.hour + parts.minute / 60;
+  const todayStr = `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 
-  const targetDate = new Date(mealDate + 'T00:00:00+05:30');
-  const todayDate = new Date(todayStr + 'T00:00:00+05:30');
-  const diffDays = Math.round((targetDate - todayDate) / (1000 * 60 * 60 * 24));
+  const [tYear, tMonth, tDay] = mealDate.split('-').map(Number);
+  if (!tYear || !tMonth || !tDay) {
+    return { canBook: false, canSkip: false, reason: 'error' };
+  }
+
+  const targetDateUTC = Date.UTC(tYear, tMonth - 1, tDay);
+  const todayDateUTC = Date.UTC(parts.year, parts.month, parts.day);
+  const diffDays = Math.round((targetDateUTC - todayDateUTC) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
     return { canBook: false, canSkip: false, reason: 'past' };
   }
 
   if (shift === 'morning') {
-    // Calculate next working day
-    const nextWD = getNextWorkingDay();
-    const nextWDDate = new Date(nextWD + 'T00:00:00+05:30');
-    const nextWDClean = new Date(nextWDDate.getFullYear(), nextWDDate.getMonth(), nextWDDate.getDate());
-    const mealDayClean = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-
-    if (mealDayClean.getTime() !== nextWDClean.getTime()) {
-      return { canBook: false, canSkip: false, reason: mealDayClean < nextWDClean ? 'past' : 'future_locked' };
+    const nextWD = getNextWorkingDay(mockDate || new Date());
+    if (mealDate !== nextWD) {
+      return { canBook: false, canSkip: false, reason: mealDate < nextWD ? 'past' : 'future_locked' };
     }
 
-    const dow = targetDate.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
-    const todayDay = todayDate.getDay();
+    const targetDateObj = new Date(Date.UTC(tYear, tMonth - 1, tDay));
+    const dow = targetDateObj.getUTCDay();
+    const todayDay = new Date(Date.UTC(parts.year, parts.month, parts.day)).getUTCDay();
 
     // Weekend logic for Monday's meal: opens Friday at 9 AM, closes Sunday at 8 PM.
     if (dow === 1 && (todayDay === 5 || todayDay === 6 || todayDay === 0)) {
@@ -99,7 +123,6 @@ function getAllowedActions(mealDate, shift = 'morning') {
       return { canBook: true, canSkip: true, reason: 'open' };
     }
 
-    // Weekday logic (Mon-Thu) for next working day
     if (currentHour < 9) {
       return { canBook: false, canSkip: false, reason: 'not_open_yet' };
     }
@@ -112,8 +135,6 @@ function getAllowedActions(mealDate, shift = 'morning') {
     return { canBook: true, canSkip: true, reason: 'open' };
   } else {
     // Night Shift (Dinner) - books for same day's dinner
-    // Opens: 8:00 PM the day before (diffDays = 1, hour >= 20)
-    // Closes: 2:00 PM same day (diffDays = 0, hour >= 14 for booking, hour >= 17 for skip)
     if (diffDays === 1) {
       if (currentHour >= 20) {
         return { canBook: true, canSkip: true, reason: 'open' };
@@ -373,18 +394,21 @@ router.post('/:date/rate', async (req, res, next) => {
     }
 
     // Only allow rating for today or yesterday (IST)
-    const now = getISTNow();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+    const parts = getISTParts();
+    const todayDateUTC = Date.UTC(parts.year, parts.month, parts.day);
 
-    const mealDate = new Date(date + 'T00:00:00+05:30');
-    const mealDateClean = new Date(mealDate.getFullYear(), mealDate.getMonth(), mealDate.getDate());
+    const [mYear, mMonth, mDay] = date.split('-').map(Number);
+    if (!mYear || !mMonth || !mDay) {
+      return res.status(400).json({ error: 'Invalid meal date format' });
+    }
+    const mealDateUTC = Date.UTC(mYear, mMonth - 1, mDay);
 
-    if (mealDateClean < yesterday) {
+    const diffDays = Math.round((mealDateUTC - todayDateUTC) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < -1) {
       return res.status(400).json({ error: 'Can only rate meals from today or yesterday' });
     }
-    if (mealDateClean > today) {
+    if (diffDays > 0) {
       return res.status(400).json({ error: 'Cannot rate a future meal' });
     }
 
