@@ -5,7 +5,16 @@ import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, LogOut, BellRin
 import { useAuth } from '../hooks/useAuth.js';
 import { isPushSupported, getPushStatus, subscribeToPush, unsubscribeFromPush } from '../lib/push.js';
 
-const TONES = ['Professional', 'Friendly', 'Funny', 'Mom Mode', 'Minimal'];
+const TONES = [
+  { value: 'Professional', label: 'Professional' },
+  { value: 'Friendly',     label: 'Friendly' },
+  { value: 'Funny',        label: 'Funny' },
+  { value: 'Mom Mode',     label: '💝 Mom Mode' },
+  { value: 'Minimal',      label: 'Minimal' },
+  { value: 'gen_z',        label: 'Gen-Z' },
+  { value: 'boyfriend',    label: 'Boyfriend 💖' },
+  { value: 'girlfriend',   label: 'Girlfriend 💖' }
+];
 
 export default function Preferences() {
   const { profile, session } = useAuth();
@@ -348,22 +357,31 @@ export default function Preferences() {
         <div className="space-y-3 pt-4 border-t border-slate-100">
           <h2 className="text-base font-semibold">AI Personality Tone</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {TONES.map((tone) => (
+            {TONES.map((t) => (
               <button
-                key={tone}
-                onClick={() => setPrefs((p) => ({ ...p, notification_tone: tone }))}
+                key={t.value}
+                onClick={() => setPrefs((p) => ({ ...p, notification_tone: t.value }))}
                 className={`p-3 rounded-xl border text-sm font-medium transition-all text-center ${
-                  prefs.notification_tone === tone
+                  prefs.notification_tone === t.value
                     ? 'bg-brand text-white border-brand shadow-md'
                     : 'bg-white text-slate-600 border-slate-200 hover:border-brand/40'
                 }`}
               >
-                {tone === 'Mom Mode' && '💝 '}{tone}
+                {t.label}
               </button>
             ))}
           </div>
           {prefs.notification_tone === 'Mom Mode' && (
             <p className="text-xs text-brand italic">Mom Mode is warm and caring — the most "at-home" office experience.</p>
+          )}
+          {prefs.notification_tone === 'boyfriend' && (
+            <p className="text-xs text-brand italic">Boyfriend mode is sweet, caring, and protective. 💕</p>
+          )}
+          {prefs.notification_tone === 'girlfriend' && (
+            <p className="text-xs text-brand italic">Girlfriend mode is playful, cute, and loving. 💖</p>
+          )}
+          {prefs.notification_tone === 'gen_z' && (
+            <p className="text-xs text-brand italic">Gen-Z mode is no cap, aesthetic, and lowkey savage. 🔥</p>
           )}
         </div>
 
