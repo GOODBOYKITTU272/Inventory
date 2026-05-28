@@ -151,11 +151,17 @@ export async function extractManualPurchase(text, imageUrls) {
   }
 
   try {
-    // Use vision completion for multi-modal (text + images)
+    // Use vision completion for multi-modal (text + image)
+    // visionCompletion signature: { system, user: string, imageUrl: string }
     if (imageUrls?.length) {
+      const userText = text
+        ? `Message from office staff: "${text}"`
+        : 'Extract purchase details from this photo of the item.';
+
       const { content } = await visionCompletion({
         system: EXTRACTION_PROMPT,
-        user: userParts,
+        user: userText,
+        imageUrl: imageUrls[0],
         model: 'gpt-4o',
         temperature: 0.1,
       });
