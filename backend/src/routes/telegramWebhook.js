@@ -227,7 +227,10 @@ async function handleCallbackQuery(callbackQuery) {
 
       confirmationState.set(chatId, { ...state, step: nextStep, waitingFor: null });
 
-      const values = [null, purchase.item_name, `${purchase.quantity}${purchase.unit || ''}`, purchase.amount];
+      const qtyDisplay = purchase.quantity != null
+        ? `${purchase.quantity}${purchase.unit || ''}`
+        : null;
+      const values = [null, purchase.item_name, qtyDisplay, purchase.amount];
       await sendConfirmationStep(chatId, nextStep, purchaseId, values[nextStep], replyTo);
     } else {
       await finalisePurchase(chatId, purchaseId, state.replyTo);
