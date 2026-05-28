@@ -110,7 +110,7 @@ async function processBufferedPurchase(chatId, group) {
   }
 
   // 6. Save as pending_confirmation — awaiting step-by-step confirmation
-  const { data: savedPurchase } = await supabaseAdmin
+  const { data: savedPurchase, error: saveError } = await supabaseAdmin
     .from('manual_purchases')
     .insert({
       telegram_chat_id: String(chatId),
@@ -140,7 +140,8 @@ async function processBufferedPurchase(chatId, group) {
     .select('id')
     .single();
 
-  if (!savedPurchase) {
+  if (saveError || !savedPurchase) {
+    console.error('[ManualPurchase] DB insert error:', saveError?.message, '|', saveError?.details, '|', saveError?.hint);
     await sendTelegramMessage(chatId, '❌ Could not save purchase. Please try again.', replyTo);
     return;
   }
