@@ -414,7 +414,7 @@ async function handleRestockCommand(message, chatId, replyTo) {
   }
 
   const text = (message.text || message.caption || '').trim();
-  const match = text.match(/^\/restock\s+(.+?)\s+(\d+(\.\d+)?)$/i);
+  const match = text.match(/^\/restock\s+(.+?)\s+(\d+(\.\d+)?)\s*([a-zA-Z]+)?$/i);
   if (!match) {
     await sendTelegramMessage(chatId,
       '❌ Usage: /restock <item name> <quantity>\nExample: /restock Milk 5',
