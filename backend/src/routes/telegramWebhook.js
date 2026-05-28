@@ -914,12 +914,24 @@ router.post('/', (req, res) => {
         const bestPhoto = hasPhoto
           ? [...message.photo].sort((a, b) => (b.file_size || 0) - (a.file_size || 0))[0]
           : null;
-        bufferMessage(String(chatId), {
-          text,
-          photoFileId: bestPhoto?.file_id || null,
-          replyTo,
-          messageId: replyTo,
-        });
+
+        if (hasPhoto) {
+          // Photo present — process immediately, no buffer needed
+          processBufferedPurchase(String(chatId), {
+            texts: text ? [text] : [],
+            photoFileIds: bestPhoto?.file_id ? [bestPhoto.file_id] : [],
+            replyTo,
+            firstMsgId: replyTo,
+          }).catch(e => console.error('[ManualPurchase] process error:', e.message));
+        } else {
+          // Text only — buffer briefly in case photo follows
+          bufferMessage(String(chatId), {
+            text,
+            photoFileId: null,
+            replyTo,
+            messageId: replyTo,
+          });
+        }
         return;
       }
 
