@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { getAIDecision } from '../lib/recommendations.js';
 import { sendPushToUsers } from './push.js';
 import { postAIReminderToTeams } from '../lib/teams.js';
+import { checkAndNotifyLowStock } from '../lib/stockAlerts.js';
 
 const router = Router();
 
@@ -227,6 +228,23 @@ router.post('/schedule-meal-print', async (req, res) => {
   } catch (err) {
     console.error('[Cron] schedule-meal-print failed:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/cron/stock-alerts — daily safety net or triggered checks
+router.post('/stock-alerts', async (req, res, next) => {
+  try {
+    const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
+    const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+
+    if (secret !== cronSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    await checkAndNotifyLowStock(supabaseAdmin, process.env.TELEGRAM_BOT_TOKEN);
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
   }
 });
 

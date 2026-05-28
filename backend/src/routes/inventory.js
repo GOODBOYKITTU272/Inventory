@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
+import { checkAndNotifyLowStock } from '../lib/stockAlerts.js';
 
 const router = Router();
 
@@ -66,6 +67,7 @@ router.patch(
         .single();
       if (error) throw error;
       res.json(data);
+      checkAndNotifyLowStock(supabaseAdmin, process.env.TELEGRAM_BOT_TOKEN).catch(e => console.error('[StockAlerts] alert error:', e.message));
     } catch (e) { next(e); }
   },
 );
@@ -159,6 +161,7 @@ router.post(
         transactions_logged:    transactions.length,
         prices_updated:         productCostUpdates.length,
       });
+      checkAndNotifyLowStock(supabaseAdmin, process.env.TELEGRAM_BOT_TOKEN).catch(e => console.error('[StockAlerts] alert error:', e.message));
     } catch (e) { next(e); }
   },
 );

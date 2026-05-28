@@ -382,6 +382,167 @@ async function handleRegisterCommand(message, chatId, replyTo) {
   );
 }
 
+async function handleRestockCommand(message, chatId, replyTo) {
+  // 1. Look up registered sender
+  const { data: mapping } = await supabaseAdmin
+    .from('telegram_user_map')
+    .select('user_id')
+    .eq('telegram_chat_id', String(chatId))
+    .maybeSingle();
+
+  if (!mapping) {
+    await sendTelegramMessage(chatId,
+      '❌ You are not registered. Send /register <your@company.com> to link your account.',
+      replyTo
+    );
+    return;
+  }
+
+  // 2. Load profile for role checks
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('role, full_name')
+    .eq('id', mapping.user_id)
+    .maybeSingle();
+
+  if (!profile || !['facility_manager', 'leadership'].includes(profile.role)) {
+    await sendTelegramMessage(chatId,
+      '❌ You are not authorized to use the /restock command.',
+      replyTo
+    );
+    return;
+  }
+
+  const text = (message.text || message.caption || '').trim();
+  const match = text.match(/^\/restock\s+(.+?)\s+(\d+(\.\d+)?)$/i);
+  if (!match) {
+    await sendTelegramMessage(chatId,
+      '❌ Usage: /restock <item name> <quantity>\nExample: /restock Milk 5',
+      replyTo
+    );
+    return;
+  }
+
+  const itemName = match[1].trim();
+  const qty = parseFloat(match[2]);
+
+  if (qty <= 0) {
+    await sendTelegramMessage(chatId,
+      '❌ Restock quantity must be greater than zero.',
+      replyTo
+    );
+    return;
+  }
+
+  // 3. Search product table
+  const { data: prod, error: prodErr } = await supabaseAdmin
+    .from('products')
+    .select('id, name, cost_per_unit, shelf_life_days, unit')
+    .ilike('name', `%${itemName}%`)
+    .eq('active', true)
+    .limit(1)
+    .maybeSingle();
+
+  if (prodErr || !prod) {
+    await sendTelegramMessage(chatId,
+      `❌ Product matching '${itemName}' not found. Check spelling.`,
+      replyTo
+    );
+    return;
+  }
+
+  // Perishable safeguard check
+  const today = new Date();
+  const options = { timeZone: 'Asia/Kolkata' };
+  const istDate = new Date(today.toLocaleString('en-US', options));
+  const dayOfWeek = istDate.getDay();
+  const isWeekendUpcoming = dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0;
+  let warningMessage = '';
+  const isBread = prod.name.toLowerCase().includes('bread') || prod.name.toLowerCase().includes('brd');
+  const isPerishable = isBread || (prod.shelf_life_days && prod.shelf_life_days <= 4);
+  if (isPerishable && isWeekendUpcoming) {
+    let dailyUsageRate = 1.0;
+    if (isBread) {
+      dailyUsageRate = 1.5;
+    }
+    
+    const shelfLife = prod.shelf_life_days || 4;
+    let workingDaysLeft = 0;
+    for (let i = 1; i <= shelfLife; i++) {
+      const nextDay = new Date(istDate.getTime() + i * 24 * 60 * 60 * 1000);
+      const day = nextDay.getDay();
+      if (day >= 1 && day <= 5) {
+        workingDaysLeft++;
+      }
+    }
+    
+    const expectedCons = dailyUsageRate * workingDaysLeft;
+    if (qty > expectedCons) {
+      const wasted = (qty - expectedCons).toFixed(1);
+      const expiresOnDayName = new Date(istDate.getTime() + shelfLife * 24 * 60 * 60 * 1000)
+        .toLocaleDateString('en-US', { weekday: 'long' });
+        
+      warningMessage = `\n\n⚠️ *Perishable Warning:* Today is Friday/Weekend. ${prod.name} expires in ${shelfLife} days. Over the weekend, the office is closed (0 headcount). With morning shift (70 people) and evening shift (20 people), you will only consume ~${expectedCons.toFixed(1)} ${prod.unit || 'units'} before expiration on ${expiresOnDayName}. *Restocking ${qty} ${prod.unit || 'units'} could waste ~${wasted} ${prod.unit || 'units'}.*`;
+    }
+  }
+
+  // 4. Update current_stock
+  const { data: inv, error: invErr } = await supabaseAdmin
+    .from('inventory')
+    .select('current_stock')
+    .eq('product_id', prod.id)
+    .maybeSingle();
+
+  if (invErr) {
+    await sendTelegramMessage(chatId, `❌ Database error: ${invErr.message}`, replyTo);
+    return;
+  }
+
+  const currentVal = inv ? Number(inv.current_stock) : 0;
+  const newVal = currentVal + qty;
+
+  if (inv) {
+    const { error: updErr } = await supabaseAdmin
+      .from('inventory')
+      .update({ current_stock: newVal, last_updated_by: mapping.user_id })
+      .eq('product_id', prod.id);
+    if (updErr) {
+      await sendTelegramMessage(chatId, `❌ Database update error: ${updErr.message}`, replyTo);
+      return;
+    }
+  } else {
+    const { error: insErr } = await supabaseAdmin
+      .from('inventory')
+      .insert({ product_id: prod.id, current_stock: newVal, min_threshold: 0, last_updated_by: mapping.user_id });
+    if (insErr) {
+      await sendTelegramMessage(chatId, `❌ Database insert error: ${insErr.message}`, replyTo);
+      return;
+    }
+  }
+
+  // 5. Log transaction
+  const { error: txErr } = await supabaseAdmin.from('transactions').insert({
+    product_id: prod.id,
+    type: 'add',
+    quantity: qty,
+    unit_cost: prod.cost_per_unit || 0,
+    total_cost: Number((qty * (prod.cost_per_unit || 0)).toFixed(2)),
+    facility_manager_id: mapping.user_id,
+    notes: 'restocked via Telegram bot'
+  });
+
+  if (txErr) {
+    console.error('[StockAlerts] txn log error:', txErr.message);
+  }
+
+  await sendTelegramMessage(chatId,
+    `✅ *${prod.name} restocked!*\nNew stock: *${newVal} ${prod.unit || 'units'}* (added ${qty})${warningMessage}`,
+    replyTo,
+    null,
+    'Markdown'
+  );
+}
+
 async function handleClarificationReply(message, chatId, replyTo, text) {
   // Only handle replies aimed at the bot itself
   if (message.reply_to_message?.from?.is_bot !== true) return false;
@@ -562,12 +723,13 @@ async function telegramRequest(method, body) {
   return res.json();
 }
 
-async function sendTelegramMessage(chatId, text, replyToMessageId, replyMarkup = null) {
+async function sendTelegramMessage(chatId, text, replyToMessageId, replyMarkup = null, parseMode = null) {
   return telegramRequest('sendMessage', {
     chat_id: chatId,
     text,
     reply_to_message_id: replyToMessageId,
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    ...(parseMode ? { parse_mode: parseMode } : {}),
   });
 }
 
@@ -892,6 +1054,13 @@ router.post('/', (req, res) => {
   if (text.toLowerCase().startsWith('/register')) {
     handleRegisterCommand(message, chatId, replyTo).catch(e =>
       console.error('[ManualPurchase] register error:', e.message)
+    );
+    return;
+  }
+
+  if (text.toLowerCase().startsWith('/restock')) {
+    handleRestockCommand(message, chatId, replyTo).catch(e =>
+      console.error('[ManualPurchase] restock error:', e.message)
     );
     return;
   }
