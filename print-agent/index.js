@@ -48,12 +48,74 @@ const LINE  = '================================';
 const DASH  = '--------------------------------';
 const WIDTH = 32; // usable chars for 80mm at default font
 
+function stripEmojis(str) {
+  if (!str) return '';
+  return str.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').trim();
+}
+
+const TONE_QUOTATIONS = {
+  'Mom Mode': [
+    "Beta, phone side pe rakho aur garam garam piyo!",
+    "Kaam toh chalta rahega beta, health pehle! Dhyan rakhna.",
+    "Beta, time pe khaya karo aur thanda mat hone dena.",
+    "Aap bohot mehnat karte ho beta, thoda break le lo!"
+  ],
+  'gen_z': [
+    "This is your main character moment. Slay!",
+    "Work hard, but make it look easy. No cap.",
+    "Fueling your hustle. Go get that bread!",
+    "Stay hydrated, stay hydrated, stay hydrated. Period."
+  ],
+  'Funny': [
+    "Refueling complete. Brain reboot in 3... 2... 1...",
+    "Warning: Productivity level critical. Deploying caffeine!",
+    "Pantry wisdom: Chai piyo, kaam jiyo, boss se bacho!",
+    "Error 404: Sleep not found. Restoring coffee levels."
+  ],
+  'boyfriend': [
+    "Hey cutie, got you this to keep you going. You're doing great!",
+    "Babe, don't stress. You're the smartest person in the room!",
+    "Proud of how hard you work. Eat/drink up, babe!",
+    "Thinking of you! Take a quick breath and enjoy this."
+  ],
+  'girlfriend': [
+    "Hey handsome, made sure you get this! Don't work too hard.",
+    "You got this, love! Rooting for you from the sidelines.",
+    "Special delivery for my favorite coworker. Miss me?",
+    "Eat/drink up, handsome! Sending you a virtual hug."
+  ],
+  'Professional': [
+    "Focus on the process, and the results will follow.",
+    "Efficiency is doing things right; effectiveness is doing the right things.",
+    "Your dedication is appreciated. Have a productive day ahead.",
+    "Excellence is not an act, but a habit. Keep up the great work."
+  ],
+  'Minimal': [
+    "Keep moving forward.",
+    "Focus on what matters.",
+    "Stay consistent.",
+    "Simple is better."
+  ],
+  'Friendly': [
+    "Hope this brings a smile to your face today!",
+    "Take a deep breath and enjoy your break. You deserve it!",
+    "Wishing you a wonderful and productive day ahead!",
+    "Cheers to small moments of joy in a busy workday!"
+  ]
+};
+
+function getQuoteForTone(tone) {
+  const quotes = TONE_QUOTATIONS[tone] || TONE_QUOTATIONS['Friendly'];
+  const randomIndex = Math.floor(Math.random() * quotes.length);
+  return quotes[randomIndex];
+}
+
 // ── Format Receipt ───────────────────────────────────────────────────────────
 function formatReceipt(order) {
   const qty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
-  const item = order.parsed_item || order.raw_text || 'Unknown Item';
-  const employee = order.parsed_employee_name || 'Unknown';
-  const location = order.parsed_location || 'Not specified';
+  const item = stripEmojis(order.parsed_item || order.raw_text || 'Unknown Item');
+  const employee = stripEmojis(order.parsed_employee_name || 'Unknown');
+  const location = stripEmojis(order.parsed_location || 'Not specified');
   const orderId = (order.id || '').slice(0, 8).toUpperCase();
 
   // Format date in IST
@@ -69,7 +131,7 @@ function formatReceipt(order) {
 
   // Parse note from instruction (remove the prefix like "Jagan needs 1x ...")
   const noteMatch = order.instruction?.match(/Note:\s*(.+?)\.?$/i);
-  const note = noteMatch?.[1] || '';
+  const note = stripEmojis(noteMatch?.[1] || '');
 
   const lines = [
     CMD.INIT,
@@ -98,6 +160,16 @@ function formatReceipt(order) {
     lines.push(`  Note: ${note}`);
   }
 
+  const tone = order.notification_tone || 'Friendly';
+  const quote = stripEmojis(getQuoteForTone(tone));
+  if (quote) {
+    lines.push(
+      DASH,
+      CMD.CENTER,
+      quote
+    );
+  }
+
   lines.push(
     DASH,
     CMD.CENTER,
@@ -119,9 +191,9 @@ function formatReceipt(order) {
 // No office boy delivery — just prints for inventory/audit trail.
 function formatNightReceipt(order) {
   const qty      = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
-  const item     = order.parsed_item || order.raw_text || 'Unknown Item';
-  const employee = order.parsed_employee_name || 'Unknown';
-  const location = order.parsed_location || 'Not specified';
+  const item     = stripEmojis(order.parsed_item || order.raw_text || 'Unknown Item');
+  const employee = stripEmojis(order.parsed_employee_name || 'Unknown');
+  const location = stripEmojis(order.parsed_location || 'Not specified');
   const orderId  = (order.id || '').slice(0, 8).toUpperCase();
 
   const dateStr = new Date(order.created_at || Date.now()).toLocaleString('en-IN', {
@@ -155,6 +227,19 @@ function formatNightReceipt(order) {
     CMD.BOLD_ON,
     `  ${qty}x ${item}`,
     CMD.BOLD_OFF,
+  ];
+
+  const tone = order.notification_tone || 'Friendly';
+  const quote = stripEmojis(getQuoteForTone(tone));
+  if (quote) {
+    lines.push(
+      DASH,
+      CMD.CENTER,
+      quote
+    );
+  }
+
+  lines.push(
     DASH,
     CMD.CENTER,
     CMD.BOLD_ON,
@@ -167,7 +252,7 @@ function formatNightReceipt(order) {
     CMD.FEED,
     CMD.FEED,
     CMD.PARTIAL_CUT,
-  ];
+  );
 
   return lines.join('\n');
 }
@@ -182,10 +267,10 @@ function printReceipt(order) {
 function formatMealToken(booking, profile, isDuplicate = false) {
   const choiceLabel = { veg: 'VEG', non_veg: 'NON-VEG', egg: 'EGG' };
   const choiceEmoji = { veg: '🥬', non_veg: '🍗', egg: '🥚' };
-  const name     = profile?.preferred_name || profile?.full_name || 'Employee';
-  const code     = profile?.employee_code  || '--';
-  const cabin    = booking.cabin_name      || 'Unknown Cabin';
-  const token    = booking.token_number    || '---';
+  const name     = stripEmojis(profile?.preferred_name || profile?.full_name || 'Employee');
+  const code     = stripEmojis(profile?.employee_code  || '--');
+  const cabin    = stripEmojis(booking.cabin_name      || 'Unknown Cabin');
+  const token    = stripEmojis(booking.token_number    || '---');
   const mealDate = new Date(booking.meal_date + 'T00:00:00+05:30');
   const dateStr = mealDate.toLocaleDateString('en-IN', {
     weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
@@ -224,7 +309,7 @@ function formatMealToken(booking, profile, isDuplicate = false) {
     `Cabin    ${cabin}`,
     DASH,
     CMD.BOLD_ON,
-    `${choiceEmoji[booking.choice] || ''} ${choiceLabel[booking.choice] || booking.choice}`,
+    stripEmojis(`${choiceEmoji[booking.choice] || ''} ${choiceLabel[booking.choice] || booking.choice}`),
     CMD.BOLD_OFF,
     DASH,
     `Name     ${name}`,

@@ -150,6 +150,57 @@ async function parseWithGPT({ rawText, submitterName }) {
   return { parsed, model, usage };
 }
 
+const QUICK_ORDER_INSTRUCTION_TEMPLATES = {
+  'Mom Mode': [
+    (name, item, qty, loc, notes) => `Beta ${name} needs ${qty}x ${item}${loc}. Please deliver with love!${notes}`,
+    (name, item, qty, loc, notes) => `Aapke pyare bache ${name} ke liye ${qty}x ${item}${loc} jaldi bhej do. ${notes}`,
+    (name, item, qty, loc, notes) => `Beta ${name} is working hard and needs ${qty}x ${item}${loc}. Deliver it hot!${notes}`
+  ],
+  'gen_z': [
+    (name, item, qty, loc, notes) => `${name} wants ${qty}x ${item}${loc}. Drop it ASAP, it's urgent!${notes}`,
+    (name, item, qty, loc, notes) => `Vibe check! ${name} needs ${qty}x ${item}${loc} immediately. No cap.${notes}`,
+    (name, item, qty, loc, notes) => `Emergency fuel for ${name}: ${qty}x ${item}${loc}. Slay!${notes}`
+  ],
+  'Funny': [
+    (name, item, qty, loc, notes) => `Emergency refueling: ${qty}x ${item}${loc} for ${name}! Please save them!${notes}`,
+    (name, item, qty, loc, notes) => `Critical energy alert! Deploy ${qty}x ${item}${loc} to ${name} immediately!${notes}`,
+    (name, item, qty, loc, notes) => `Brain crash imminent! Rush ${qty}x ${item}${loc} to ${name} now!${notes}`
+  ],
+  'boyfriend': [
+    (name, item, qty, loc, notes) => `Babe ${name} needs ${qty}x ${item}${loc} right now. Deliver it promptly!${notes}`,
+    (name, item, qty, loc, notes) => `Hey, please deliver ${qty}x ${item}${loc} for my favorite ${name}!${notes}`,
+    (name, item, qty, loc, notes) => `My sweet ${name} needs ${qty}x ${item}${loc}. Bring it soon! 💕${notes}`
+  ],
+  'girlfriend': [
+    (name, item, qty, loc, notes) => `Hey, please deliver ${qty}x ${item}${loc} to ${name}. Thank you!${notes}`,
+    (name, item, qty, loc, notes) => `Deliver ${qty}x ${item}${loc} to ${name} with extra care!${notes}`,
+    (name, item, qty, loc, notes) => `Special ${qty}x ${item}${loc} for handsome ${name}. Go deliver it! 💖${notes}`
+  ],
+  'Professional': [
+    (name, item, qty, loc, notes) => `Deliver ${qty}x ${item}${loc} for ${name}. Please deliver promptly.${notes}`,
+    (name, item, qty, loc, notes) => `Request for ${qty}x ${item}${loc} by ${name}. Processing delivery.${notes}`
+  ],
+  'Minimal': [
+    (name, item, qty, loc, notes) => `${qty}x ${item}${loc} for ${name}.${notes}`,
+    (name, item, qty, loc, notes) => `${name}: ${qty}x ${item}${loc}.${notes}`
+  ],
+  'Friendly': [
+    (name, item, qty, loc, notes) => `🚀 ${name} needs ${qty}x ${item}${loc}. Please deliver promptly!${notes}`,
+    (name, item, qty, loc, notes) => `✨ Fresh ${qty}x ${item}${loc} for ${name}. Deliver with a smile!${notes}`,
+    (name, item, qty, loc, notes) => `🎉 Let's get ${qty}x ${item}${loc} to ${name}! Thanks for the help!${notes}`
+  ]
+};
+
+async function generateQuickOrderInstruction(user, item, qty, location, notes) {
+  const firstName = user.preferred_name || (user.full_name || user.email || 'Someone').split(' ')[0];
+  const userTone = await getUserTone(user.id);
+  const templates = QUICK_ORDER_INSTRUCTION_TEMPLATES[userTone] || QUICK_ORDER_INSTRUCTION_TEMPLATES['Friendly'];
+  const fn = templates[Math.floor(Math.random() * templates.length)];
+  const locPart = location ? ` to ${location}` : '';
+  const notePart = notes ? ` Note: ${notes}.` : '';
+  return fn(firstName, item, qty, locPart, notePart);
+}
+
 const createSchema = z.object({
   raw_text: z.string().min(3).max(500),
 });
@@ -160,10 +211,7 @@ router.post('/', async (req, res, next) => {
     const { quick_item, quick_location, quick_quantity = 1, quick_instruction = '', quick_bread_type = '' } = req.body;
     if (quick_item) {
       const qty = parseInt(quick_quantity, 10) || 1;
-      const firstName = req.user.preferred_name || (req.user.full_name || req.user.email || 'Someone').split(' ')[0];
-      const locPart  = quick_location ? ` to ${quick_location}` : '';
-      const notePart = quick_instruction ? ` Note: ${quick_instruction}.` : '';
-      const instruction = `🚀 ${firstName} needs ${qty}x ${quick_item}${locPart}. Please deliver promptly!${notePart}`;
+      const instruction = await generateQuickOrderInstruction(req.user, quick_item, qty, quick_location, quick_instruction);
       const category = ITEM_CATEGORY[quick_item.toLowerCase()] || 'other';
 
       // ── Stock check & decrement ───────────────────────────────────
