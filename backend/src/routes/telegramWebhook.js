@@ -100,15 +100,10 @@ async function processBufferedPurchase(chatId, group) {
   // 4. AI extraction
   const extracted = await extractManualPurchase(combinedText, photoUrls);
 
-  // 5. Check for missing critical fields
-  const missingFields = [];
-  if (!extracted.item_name) missingFields.push('item name');
-  if (!extracted.quantity && !extracted.unit) missingFields.push('weight or volume');
-  if (!extracted.amount) missingFields.push('price paid');
-
-  if (missingFields.length > 0) {
+  // 5. If AI extracted nothing at all, ask user to describe manually
+  if (!extracted.item_name && !extracted.quantity && !extracted.amount) {
     await sendTelegramMessage(chatId,
-      `❓ I can see a product but couldn't read: ${missingFields.join(', ')}.\n\nPlease type:\n"Item name, weight, price"\n\nExample: Bread, 400g, ₹60`,
+      `❓ Could not read this image clearly.\n\nPlease type what you bought:\n"Item name, weight, price"\n\nExample: Bread, 400g, ₹60`,
       replyTo
     );
     return;
@@ -163,20 +158,39 @@ async function processBufferedPurchase(chatId, group) {
 
 async function sendConfirmationStep(chatId, step, purchaseId, value, replyTo) {
   const stepConfig = {
-    1: { label: 'Item Name',       emoji: '📦', prefix: '' },
-    2: { label: 'Weight / Volume', emoji: '⚖️', prefix: '' },
-    3: { label: 'Price Paid',      emoji: '💰', prefix: '₹' },
+    1: { label: 'Item Name',       emoji: '📦', prefix: '',  fieldKey: 'item_name', prompt: 'Type the item name\n\nExample: Bread' },
+    2: { label: 'Weight / Volume', emoji: '⚖️', prefix: '',  fieldKey: 'quantity',  prompt: 'Type the weight or volume\n\nExample: 400g  or  1L  or  6 pieces' },
+    3: { label: 'Price Paid',      emoji: '💰', prefix: '₹', fieldKey: 'amount',    prompt: 'Type the price you paid\n\nExample: 60' },
   };
-  const { label, emoji, prefix } = stepConfig[step];
+  const { label, emoji, prefix, fieldKey, prompt } = stepConfig[step];
+  const hasValue = value != null && String(value).trim() !== '' && value !== 'null';
+
+  if (!hasValue) {
+    // Value missing — skip Yes/No, directly ask the user to type it
+    const state = confirmationState.get(String(chatId)) || {};
+    confirmationState.set(String(chatId), { ...state, waitingFor: fieldKey });
+    await sendTelegramMessage(
+      chatId,
+      `Step ${step} of 3 · ${label}\n\n${emoji} ${prompt}`,
+      replyTo
+    );
+    return;
+  }
+
+  // Value detected — show with Yes / No buttons
   const displayValue = prefix ? `${prefix}${value}` : value;
-  const text = `Step ${step} of 3 · ${label}\n\n${emoji} ${displayValue}\n\nIs this correct?`;
   const keyboard = {
     inline_keyboard: [[
       { text: '✅ Yes', callback_data: `c${step}_yes:${purchaseId}` },
       { text: '✏️ No, correct it', callback_data: `c${step}_no:${purchaseId}` },
     ]],
   };
-  await sendTelegramMessage(chatId, text, replyTo, keyboard);
+  await sendTelegramMessage(
+    chatId,
+    `Step ${step} of 3 · ${label}\n\n${emoji} ${displayValue}\n\nIs this correct?`,
+    replyTo,
+    keyboard
+  );
 }
 
 async function handleCallbackQuery(callbackQuery) {
