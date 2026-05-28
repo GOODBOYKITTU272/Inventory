@@ -103,9 +103,10 @@ and/or a photo of the item bought.
 Extract these fields from whatever is available. Return ONLY valid JSON:
 
 {
-  "item_name": "string — what was bought",
+  "item_name": "string — COMMON name only: Bread, Milk, Oil, Sugar. NOT the brand. NOT pack size.",
+  "brand_name": "string or null — brand name only if clearly visible: Modern, Amul, Fortune, Tata",
   "quantity": number or null,
-  "unit": "string — pcs/kg/packet/bottle/etc or null",
+  "unit": "g|kg|ml|L|pieces|packets — use g for solid weight, ml for liquid volume, pieces for countable items",
   "amount": number — total amount paid (MUST be a number, not string),
   "vendor_name": "string or null — shop name if visible",
   "payment_method": "PhonePe|GPay|Paytm|Cash|Unknown",
@@ -118,6 +119,9 @@ Extract these fields from whatever is available. Return ONLY valid JSON:
 }
 
 Rules:
+- item_name must be a simple common noun: "Bread" not "Modern Atta Bread 400g". "Milk" not "Amul Full Cream Milk 500ml".
+- brand_name is separate: if packet shows "Amul Milk", item_name="Milk", brand_name="Amul".
+- unit detection: if product is solid (bread, biscuits, flour), use g or kg. If liquid (milk, juice, oil), use ml or L. If countable (eggs, pens), use pieces.
 - If amount is not visible in text or screenshot, set clarification_needed=true and ask for amount.
 - If item is unclear, ask what the item is.
 - Read payment app screenshots carefully for amount, UPI reference, and date.
@@ -269,4 +273,31 @@ export async function detectDuplicate(supabase, { telegramChatId, amount, paymen
   }
 
   return { isDuplicate: false, reason: null };
+}
+
+// ── Parse user correction text during step-by-step confirmation ───────────────
+// fieldType: 'item_name' | 'quantity' | 'amount'
+// Returns an object with the corrected field(s), or null if unparseable.
+
+export function parseUserCorrection(fieldType, text) {
+  const clean = (text || '').trim();
+  if (!clean) return null;
+
+  if (fieldType === 'item_name') {
+    return { item_name: clean };
+  }
+
+  if (fieldType === 'quantity') {
+    const match = clean.match(/^(\d+(?:\.\d+)?)\s*(g|kg|ml|l|L|pieces?|packets?|units?)?/i);
+    if (!match) return null;
+    const unit = (match[2] || 'pieces').toLowerCase().replace(/s$/, '');
+    return { quantity: parseFloat(match[1]), unit };
+  }
+
+  if (fieldType === 'amount') {
+    const digits = clean.replace(/[₹rRsS\s,]/g, '').match(/\d+(?:\.\d+)?/);
+    return digits ? { amount: parseFloat(digits[0]) } : null;
+  }
+
+  return null;
 }

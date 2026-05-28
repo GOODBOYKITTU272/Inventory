@@ -14,6 +14,7 @@ const TABS = [
 ];
 
 const STATUS_STYLE = {
+  pending_confirmation:      'bg-sky-100 text-sky-800',
   draft_needs_clarification: 'bg-amber-100 text-amber-800',
   pending_review:            'bg-blue-100 text-blue-800',
   auto_approved:             'bg-emerald-100 text-emerald-800',
@@ -23,6 +24,7 @@ const STATUS_STYLE = {
 };
 
 const STATUS_LABEL = {
+  pending_confirmation:      'Confirming',
   draft_needs_clarification: 'Needs Clarification',
   pending_review:            'Pending Review',
   auto_approved:             'Auto-Approved',
@@ -93,6 +95,11 @@ function PurchaseCard({
           {p.item_name || (
             <span className="text-slate-400 font-normal italic">Item not extracted</span>
           )}
+          {p.brand_name && (
+            <span className="ml-1.5 text-slate-500 font-normal text-sm">
+              ({p.brand_name})
+            </span>
+          )}
           {p.quantity != null && (
             <span className="ml-2 text-slate-500 font-normal text-sm">
               × {p.quantity}{p.unit ? ` ${p.unit}` : ''}
@@ -151,6 +158,18 @@ function PurchaseCard({
                   />
                 </a>
               ))}
+            </div>
+          )}
+
+          {/* Brand */}
+          {p.brand_name && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Brand
+              </p>
+              <p className="text-sm text-slate-700 bg-white border border-slate-100 rounded-xl p-3">
+                {p.brand_name}
+              </p>
             </div>
           )}
 

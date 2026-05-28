@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { fileCompletion, visionCompletion } from '../lib/openai.js';
 import { postBillToTeams } from '../lib/teams.js';
 import { mapProductToCafeteria } from '../lib/stockHelper.js';
-import { classifyTelegramMessage, extractManualPurchase, checkAutoApproval, detectDuplicate, ALLOWED_SUBMITTERS } from '../lib/purchaseAI.js';
+import { classifyTelegramMessage, extractManualPurchase, checkAutoApproval, detectDuplicate, ALLOWED_SUBMITTERS, parseUserCorrection } from '../lib/purchaseAI.js';
 
 const router = Router();
 
@@ -21,6 +21,10 @@ function isDuplicate(updateId) {
 // Groups text + photos from the same chat within a 2-minute window.
 // Handles the pattern: user sends text first, then immediately sends a photo.
 const messageBuffer = new Map();
+
+// Tracks step-by-step confirmation state per chat (in-memory, lost on restart)
+// chatId → { purchaseId, step, waitingFor, replyTo }
+const confirmationState = new Map();
 
 function bufferMessage(chatId, { text, photoFileId, replyTo, messageId }) {
   if (!messageBuffer.has(chatId)) {
@@ -96,92 +100,208 @@ async function processBufferedPurchase(chatId, group) {
   // 4. AI extraction
   const extracted = await extractManualPurchase(combinedText, photoUrls);
 
-  // 5. If AI needs clarification — save draft and ask user
-  if (extracted.clarification_needed) {
-    await supabaseAdmin.from('manual_purchases').insert({
-      telegram_chat_id: String(chatId),
-      raw_telegram_text: combinedText,
-      sender_user_id: mapping.user_id,
-      sender_name: senderName,
-      sender_role: senderRole,
-      payment_screenshot_url: photoUrls[0] || null,
-      ai_extracted_json: extracted,
-      ai_confidence: extracted.confidence_score || 0,
-      status: 'draft_needs_clarification',
-      clarification_question: extracted.clarification_question,
-    });
+  // 5. Check for missing critical fields
+  const missingFields = [];
+  if (!extracted.item_name) missingFields.push('item name');
+  if (!extracted.quantity && !extracted.unit) missingFields.push('weight or volume');
+  if (!extracted.amount) missingFields.push('price paid');
+
+  if (missingFields.length > 0) {
     await sendTelegramMessage(chatId,
-      `⚠️ Need more info:\n\n${extracted.clarification_question}`,
+      `❓ I can see a product but couldn't read: ${missingFields.join(', ')}.\n\nPlease type:\n"Item name, weight, price"\n\nExample: Bread, 400g, ₹60`,
       replyTo
     );
     return;
   }
 
-  // 6. Duplicate check
+  // 6. Save as pending_confirmation — awaiting step-by-step confirmation
+  const { data: savedPurchase } = await supabaseAdmin
+    .from('manual_purchases')
+    .insert({
+      telegram_chat_id: String(chatId),
+      telegram_message_ids: [String(group.firstMsgId)],
+      raw_telegram_text: combinedText,
+      sender_user_id: mapping.user_id,
+      sender_name: senderName,
+      sender_role: senderRole,
+      item_name: extracted.item_name,
+      brand_name: extracted.brand_name || null,
+      quantity: extracted.quantity,
+      unit: extracted.unit,
+      amount: extracted.amount,
+      vendor_name: extracted.vendor_name,
+      payment_method: extracted.payment_method,
+      payment_reference: extracted.payment_reference,
+      purchase_date: extracted.purchase_date,
+      category: extracted.category,
+      payment_screenshot_url: photoUrls[0] || null,
+      item_photo_url: photoUrls[1] || null,
+      ai_extracted_json: extracted,
+      ai_confidence: extracted.confidence_score,
+      status: 'pending_confirmation',
+      confirmation_step: 'step_1',
+      duplicate_risk: false,
+    })
+    .select('id')
+    .single();
+
+  if (!savedPurchase) {
+    await sendTelegramMessage(chatId, '❌ Could not save purchase. Please try again.', replyTo);
+    return;
+  }
+
+  // 7. Store confirmation state and send Step 1
+  confirmationState.set(String(chatId), {
+    purchaseId: savedPurchase.id,
+    step: 1,
+    waitingFor: null,
+    replyTo,
+  });
+
+  await sendConfirmationStep(chatId, 1, savedPurchase.id, extracted.item_name, replyTo);
+}
+
+async function sendConfirmationStep(chatId, step, purchaseId, value, replyTo) {
+  const stepConfig = {
+    1: { label: 'Item Name',       emoji: '📦', prefix: '' },
+    2: { label: 'Weight / Volume', emoji: '⚖️', prefix: '' },
+    3: { label: 'Price Paid',      emoji: '💰', prefix: '₹' },
+  };
+  const { label, emoji, prefix } = stepConfig[step];
+  const displayValue = prefix ? `${prefix}${value}` : value;
+  const text = `Step ${step} of 3 · ${label}\n\n${emoji} ${displayValue}\n\nIs this correct?`;
+  const keyboard = {
+    inline_keyboard: [[
+      { text: '✅ Yes', callback_data: `c${step}_yes:${purchaseId}` },
+      { text: '✏️ No, correct it', callback_data: `c${step}_no:${purchaseId}` },
+    ]],
+  };
+  await sendTelegramMessage(chatId, text, replyTo, keyboard);
+}
+
+async function handleCallbackQuery(callbackQuery) {
+  const chatId   = String(callbackQuery.message?.chat?.id);
+  const data     = callbackQuery.data || '';
+  const queryId  = callbackQuery.id;
+  const replyTo  = callbackQuery.message?.message_id;
+
+  await answerCallbackQuery(queryId);
+
+  const match = data.match(/^c([123])_(yes|no):(.+)$/);
+  if (!match) return;
+
+  const step       = parseInt(match[1]);
+  const action     = match[2];
+  const purchaseId = match[3];
+
+  const state = confirmationState.get(chatId);
+  if (!state || state.purchaseId !== purchaseId) return;
+
+  if (action === 'yes') {
+    if (step < 3) {
+      const nextStep = step + 1;
+      const { data: purchase } = await supabaseAdmin
+        .from('manual_purchases')
+        .select('item_name, quantity, unit, amount')
+        .eq('id', purchaseId)
+        .single();
+
+      await supabaseAdmin.from('manual_purchases')
+        .update({ confirmation_step: `step_${nextStep}` })
+        .eq('id', purchaseId);
+
+      confirmationState.set(chatId, { ...state, step: nextStep, waitingFor: null });
+
+      const values = [null, purchase.item_name, `${purchase.quantity}${purchase.unit || ''}`, purchase.amount];
+      await sendConfirmationStep(chatId, nextStep, purchaseId, values[nextStep], replyTo);
+    } else {
+      await finalisePurchase(chatId, purchaseId, state.replyTo);
+      confirmationState.delete(chatId);
+    }
+  } else {
+    const fieldMap  = { 1: 'item_name', 2: 'quantity', 3: 'amount' };
+    const prompts   = {
+      1: '📦 What is the correct item name?\n\nType it (e.g. "Milk")',
+      2: '⚖️ What is the correct weight or volume?\n\nType it (e.g. "500g" or "1L")',
+      3: '💰 What did you actually pay?\n\nType the amount (e.g. "55")',
+    };
+    confirmationState.set(chatId, { ...state, waitingFor: fieldMap[step] });
+    await sendTelegramMessage(chatId, prompts[step], replyTo);
+  }
+}
+
+async function finalisePurchase(chatId, purchaseId, replyTo) {
+  const { data: purchase } = await supabaseAdmin
+    .from('manual_purchases')
+    .select('*')
+    .eq('id', purchaseId)
+    .single();
+
+  if (!purchase) return;
+
+  const approval = checkAutoApproval({
+    senderRole:    purchase.sender_role,
+    amount:        purchase.amount,
+    category:      purchase.category,
+    confidence:    purchase.ai_confidence,
+    hasProof:      !!(purchase.item_photo_url || purchase.payment_screenshot_url),
+    duplicateRisk: false,
+  });
+
   const dupeCheck = await detectDuplicate(supabaseAdmin, {
     telegramChatId: chatId,
-    amount: extracted.amount,
-    paymentReference: extracted.payment_reference,
+    amount:         purchase.amount,
+    paymentReference: purchase.payment_reference,
   });
 
-  // 7. Auto-approval decision
-  const hasProof = photoUrls.length > 0;
-  const approval = checkAutoApproval({
-    senderRole,
-    amount: extracted.amount,
-    category: extracted.category,
-    confidence: extracted.confidence_score,
-    hasProof,
-    duplicateRisk: dupeCheck.isDuplicate,
-  });
+  const finalStatus = (approval.approved && !dupeCheck.isDuplicate) ? 'auto_approved' : 'pending_review';
 
-  const status = approval.approved ? 'auto_approved' : 'pending_review';
-
-  // 8. Save to manual_purchases
-  await supabaseAdmin.from('manual_purchases').insert({
-    telegram_chat_id: String(chatId),
-    telegram_message_ids: [String(group.firstMsgId)],
-    raw_telegram_text: combinedText,
-    sender_user_id: mapping.user_id,
-    sender_name: senderName,
-    sender_role: senderRole,
-    item_name: extracted.item_name,
-    quantity: extracted.quantity,
-    unit: extracted.unit,
-    amount: extracted.amount,
-    vendor_name: extracted.vendor_name,
-    payment_method: extracted.payment_method,
-    payment_reference: extracted.payment_reference,
-    purchase_date: extracted.purchase_date,
-    category: extracted.category,
-    payment_screenshot_url: photoUrls[0] || null,
-    item_photo_url: photoUrls[1] || null,
-    ai_extracted_json: extracted,
-    ai_confidence: extracted.confidence_score,
-    status,
+  await supabaseAdmin.from('manual_purchases').update({
+    status:               finalStatus,
+    confirmation_step:    'done',
     auto_approval_reason: approval.reason,
-    duplicate_risk: dupeCheck.isDuplicate,
-    duplicate_reason: dupeCheck.reason,
-  });
+    duplicate_risk:       dupeCheck.isDuplicate,
+    duplicate_reason:     dupeCheck.reason,
+  }).eq('id', purchaseId);
 
-  // 9. Reply to user
-  const itemLine = extracted.item_name
-    ? `📦 ${extracted.item_name}${extracted.quantity ? ` × ${extracted.quantity}${extracted.unit ? ' ' + extracted.unit : ''}` : ''}`
-    : '📦 Item recorded';
-  const amountLine = extracted.amount ? `💰 ₹${extracted.amount}` : '';
-  const categoryLine = extracted.category ? `🏷 ${extracted.category}` : '';
+  const brandSuffix = purchase.brand_name ? ` (${purchase.brand_name})` : '';
+  const unitStr     = purchase.unit || '';
 
-  if (approval.approved) {
+  const msg = (finalStatus === 'auto_approved')
+    ? `✅ Purchase Confirmed!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n🏷 ${purchase.category || ''}\n\nAuto-approved. Recorded successfully.`
+    : `⏳ Purchase Submitted!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n\nSent to finance team for review.`;
+
+  await sendTelegramMessage(chatId, msg, replyTo);
+}
+
+async function handleConfirmationCorrection(chatId, text, replyTo) {
+  const state = confirmationState.get(chatId);
+  if (!state || !state.waitingFor) return false;
+
+  const parsed = parseUserCorrection(state.waitingFor, text);
+  if (!parsed) {
     await sendTelegramMessage(chatId,
-      `✅ Purchase Auto-Approved!\n\n${itemLine}\n${amountLine}\n${categoryLine}\n\n${approval.reason}`,
+      '❓ Could not understand that. Please try again.\nExamples: "Bread"  "500g"  "55"',
       replyTo
     );
-  } else {
-    await sendTelegramMessage(chatId,
-      `⏳ Purchase Submitted for Review\n\n${itemLine}\n${amountLine}\n${categoryLine}\n\n📋 ${approval.reason}\n\nFinance team will review shortly.`,
-      replyTo
-    );
+    return true;
   }
+
+  await supabaseAdmin.from('manual_purchases')
+    .update(parsed)
+    .eq('id', state.purchaseId);
+
+  const fieldToStep = { item_name: 1, quantity: 2, amount: 3 };
+  const step = fieldToStep[state.waitingFor];
+  confirmationState.set(chatId, { ...state, waitingFor: null });
+
+  let displayValue;
+  if (state.waitingFor === 'item_name') displayValue = parsed.item_name;
+  if (state.waitingFor === 'quantity')  displayValue = `${parsed.quantity}${parsed.unit || ''}`;
+  if (state.waitingFor === 'amount')    displayValue = parsed.amount;
+
+  await sendConfirmationStep(chatId, step, state.purchaseId, displayValue, replyTo);
+  return true;
 }
 
 async function handleRegisterCommand(message, chatId, replyTo) {
@@ -424,12 +544,22 @@ async function telegramRequest(method, body) {
   return res.json();
 }
 
-async function sendTelegramMessage(chatId, text, replyToMessageId) {
+async function sendTelegramMessage(chatId, text, replyToMessageId, replyMarkup = null) {
   return telegramRequest('sendMessage', {
     chat_id: chatId,
     text,
     reply_to_message_id: replyToMessageId,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
+}
+
+async function answerCallbackQuery(callbackQueryId, text = '') {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
+  }).catch(e => console.error('[Telegram] answerCallbackQuery error:', e.message));
 }
 
 async function downloadTelegramFile(fileId) {
@@ -721,6 +851,14 @@ router.post('/', (req, res) => {
   // Skip if this update was already processed
   if (isDuplicate(req.body?.update_id)) return;
 
+  // Handle inline keyboard button press
+  if (req.body.callback_query) {
+    handleCallbackQuery(req.body.callback_query).catch(e =>
+      console.error('[Telegram] callback_query error:', e.message)
+    );
+    return;
+  }
+
   const message = req.body?.message || req.body?.channel_post;
   const chatId = message?.chat?.id;
   const replyTo = message?.message_id;
@@ -746,6 +884,12 @@ router.post('/', (req, res) => {
       // If the user is replying to a bot clarification question, handle that first
       if (message.reply_to_message && text && !hasDocument) {
         const handled = await handleClarificationReply(message, chatId, replyTo, text);
+        if (handled) return;
+      }
+
+      // Handle correction text during step-by-step confirmation
+      if (text && !hasPhoto && !hasDocument) {
+        const handled = await handleConfirmationCorrection(String(chatId), text, replyTo);
         if (handled) return;
       }
 
