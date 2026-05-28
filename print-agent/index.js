@@ -53,61 +53,58 @@ function stripEmojis(str) {
   return str.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').trim();
 }
 
-const TONE_QUOTATIONS = {
-  'Mom Mode': [
-    "Beta, phone side pe rakho aur garam garam piyo!",
-    "Kaam toh chalta rahega beta, health pehle! Dhyan rakhna.",
-    "Beta, time pe khaya karo aur thanda mat hone dena.",
-    "Aap bohot mehnat karte ho beta, thoda break le lo!"
-  ],
-  'gen_z': [
-    "This is your main character moment. Slay!",
-    "Work hard, but make it look easy. No cap.",
-    "Fueling your hustle. Go get that bread!",
-    "Stay hydrated, stay hydrated, stay hydrated. Period."
-  ],
-  'Funny': [
-    "Refueling complete. Brain reboot in 3... 2... 1...",
-    "Warning: Productivity level critical. Deploying caffeine!",
-    "Pantry wisdom: Chai piyo, kaam jiyo, boss se bacho!",
-    "Error 404: Sleep not found. Restoring coffee levels."
-  ],
-  'boyfriend': [
-    "Hey cutie, got you this to keep you going. You're doing great!",
-    "Babe, don't stress. You're the smartest person in the room!",
-    "Proud of how hard you work. Eat/drink up, babe!",
-    "Thinking of you! Take a quick breath and enjoy this."
-  ],
-  'girlfriend': [
-    "Hey handsome, made sure you get this! Don't work too hard.",
-    "You got this, love! Rooting for you from the sidelines.",
-    "Special delivery for my favorite coworker. Miss me?",
-    "Eat/drink up, handsome! Sending you a virtual hug."
-  ],
-  'Professional': [
-    "Focus on the process, and the results will follow.",
-    "Efficiency is doing things right; effectiveness is doing the right things.",
-    "Your dedication is appreciated. Have a productive day ahead.",
-    "Excellence is not an act, but a habit. Keep up the great work."
-  ],
-  'Minimal': [
-    "Keep moving forward.",
-    "Focus on what matters.",
-    "Stay consistent.",
-    "Simple is better."
-  ],
-  'Friendly': [
-    "Hope this brings a smile to your face today!",
-    "Take a deep breath and enjoy your break. You deserve it!",
-    "Wishing you a wonderful and productive day ahead!",
-    "Cheers to small moments of joy in a busy workday!"
-  ]
-};
+function getQuote(order) {
+  const name = stripEmojis(order.parsed_employee_name || order.submitter_name || 'Employee');
+  const item = stripEmojis(order.parsed_item || order.raw_text || 'Refreshment');
 
-function getQuoteForTone(tone) {
-  const quotes = TONE_QUOTATIONS[tone] || TONE_QUOTATIONS['Friendly'];
-  const randomIndex = Math.floor(Math.random() * quotes.length);
-  return quotes[randomIndex];
+  const quotes = {
+    girlfriend: [
+      `You got this, love! Rooting for you from the sidelines, ${name}. 💕`,
+      `Special delivery for my favorite coworker ${name}. Enjoy your ${item}! 😘`,
+      `Hey handsome, made sure you get this ${item}! Miss me?`,
+      `You make this office so much better, ${name}. Have a good break!`,
+    ],
+    boyfriend: [
+      `Proud of how hard you work, ${name}. Eat/drink up! 💕`,
+      `Don't stress, babe. This ${item} is coming with extra love.`,
+      `Thinking of you! Take a quick break and enjoy your ${item}, ${name}.`,
+      `Hey cutie, got you this ${item} to keep you going! You got this.`,
+    ],
+    "Mom Mode": [
+      `Beta ${name}, phone side pe rakho aur garam garam ${item} piyo!`,
+      `Beta ${name}, time pe khaya/piya karo aur thanda mat hone dena.`,
+      `Beta ${name}, aap bohot mehnat karte ho! Thoda break le lo.`,
+      `Kaam toh chalta rahega beta, health pehle! Dhyan rakhna.`,
+    ],
+    Funny: [
+      `Refueling complete. ${name}'s brain reboot in 3... 2... 1...`,
+      `Warning: ${name}'s productivity level critical. Deploying ${item}!`,
+      `Error 404: Sleep not found. Restoring ${name}'s energy levels.`,
+      `Pantry wisdom: Chai piyo, kaam jiyo, boss se bacho!`,
+    ],
+    Professional: [
+      `Focus on the process, ${name}, and the results will follow.`,
+      `Your dedication is appreciated. Have a productive day ahead, ${name}.`,
+      `Excellence is not an act, but a habit. Keep up the great work.`,
+      `Fueling the daily deliverables with a fresh ${item}.`,
+    ],
+    Minimal: [
+      `Keep moving forward, ${name}.`,
+      `Focus on what matters.`,
+      `Stay consistent.`,
+      `Enjoy your ${item}.`,
+    ],
+    Friendly: [
+      `Hope this ${item} brings a smile to your face today, ${name}! 😊`,
+      `Take a deep breath and enjoy your break, ${name}. You deserve it!`,
+      `Wishing you a wonderful and productive day ahead!`,
+      `Cheers to small moments of joy in a busy workday, ${name}!`,
+    ],
+  };
+
+  const tone = order.notification_tone || 'Friendly';
+  const list = quotes[tone] || quotes.Friendly;
+  return stripEmojis(list[Math.floor(Math.random() * list.length)]);
 }
 
 // ── Format Receipt ───────────────────────────────────────────────────────────
@@ -160,8 +157,7 @@ function formatReceipt(order) {
     lines.push(`  Note: ${note}`);
   }
 
-  const tone = order.notification_tone || 'Friendly';
-  const quote = stripEmojis(getQuoteForTone(tone));
+  const quote = getQuote(order);
   if (quote) {
     lines.push(
       DASH,
@@ -229,8 +225,7 @@ function formatNightReceipt(order) {
     CMD.BOLD_OFF,
   ];
 
-  const tone = order.notification_tone || 'Friendly';
-  const quote = stripEmojis(getQuoteForTone(tone));
+  const quote = getQuote(order);
   if (quote) {
     lines.push(
       DASH,
