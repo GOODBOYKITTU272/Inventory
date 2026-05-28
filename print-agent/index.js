@@ -241,12 +241,14 @@ function formatNightReceipt(order) {
 
   lines.push(
     DASH,
+    CMD.FEED,
     CMD.CENTER,
     CMD.BOLD_ON,
     '*** NIGHT SHIFT ***',
     'RECORDED ONLY',
     CMD.BOLD_OFF,
-    'No delivery active at night.',
+    'No delivery - Self Pickup',
+    'Applywizz Office Pantry',
     LINE,
     CMD.FEED,
     CMD.FEED,
