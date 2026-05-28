@@ -74,7 +74,10 @@ create policy "requests_update_staff"
   with check (public.current_user_role() in ('office_boy', 'facility_manager', 'leadership'));
 
 -- 4. View joining requests with submitter name for the queue
-create or replace view public.v_request_queue as
+-- Drop first so reruns after later migrations do not fail when the request
+-- table has gained columns that would change the view's column order.
+drop view if exists public.v_request_queue cascade;
+create view public.v_request_queue as
 select
   r.*,
   p.full_name as submitter_name

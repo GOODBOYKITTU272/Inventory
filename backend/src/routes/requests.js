@@ -214,14 +214,7 @@ router.post('/', async (req, res, next) => {
       const instruction = await generateQuickOrderInstruction(req.user, quick_item, qty, quick_location, quick_instruction);
       const category = ITEM_CATEGORY[quick_item.toLowerCase()] || 'other';
 
-      // ── Stock check & decrement ───────────────────────────────────
-      try {
-        await deductStockForRequest(req.user, quick_item, qty, quick_instruction, quick_bread_type);
-      } catch (err) {
-        return res.status(400).json({ error: err.message });
-      }
-
-      const breadPart = quick_bread_type ? ` [bread:${quick_bread_type}]` : '';
+      // Normalize delivery mode before composing raw_text.
       let deliveryMode = req.body.delivery_mode;
       if (!deliveryMode) {
         if (req.body.fulfillmentType === 'pickup') deliveryMode = 'self_pickup';
@@ -232,10 +225,21 @@ router.post('/', async (req, res, next) => {
         deliveryMode = 'get_it_here';
       }
 
+      const locPart = deliveryMode === 'self_pickup' || !quick_location ? '' : ` to ${quick_location}`;
+      const breadPart = quick_bread_type ? ` [bread:${quick_bread_type}]` : '';
+      const rawText = `${qty}x ${quick_item}${locPart}${breadPart}`;
+
+      // Stock check and decrement happens after local formatting succeeds.
+      try {
+        await deductStockForRequest(req.user, quick_item, qty, quick_instruction, quick_bread_type);
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+
       const { data: qData, error: qErr } = await supabaseAdmin
         .from('requests')
         .insert({
-          raw_text:              `${qty}x ${quick_item}${locPart}${breadPart}`,
+          raw_text:              rawText,
           category,
           parsed_item:           quick_item,
           parsed_location:       deliveryMode === 'self_pickup' ? null : (quick_location || null),

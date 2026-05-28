@@ -17,7 +17,7 @@ router.get('/users', async (_req, res, next) => {
   try {
     const { data: profiles, error: pErr } = await supabaseAdmin
       .from('profiles')
-      .select('id, full_name, role, created_at')
+      .select('id, full_name, role, preferred_name, created_at')
       .order('created_at', { ascending: true });
     if (pErr) throw pErr;
 
@@ -52,6 +52,26 @@ router.patch('/users/:id/role', async (req, res, next) => {
     const { data, error } = await supabaseAdmin
       .from('profiles')
       .update({ role })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PATCH /api/admin/users/:id/preferred-name  - change a user's preferred name
+router.patch('/users/:id/preferred-name', async (req, res, next) => {
+  try {
+    const schema = z.object({
+      preferred_name: z.string().trim().min(1).max(50).nullable(),
+    });
+    const { preferred_name } = schema.parse(req.body);
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .update({ preferred_name })
       .eq('id', req.params.id)
       .select()
       .single();

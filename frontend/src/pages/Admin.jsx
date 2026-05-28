@@ -51,6 +51,22 @@ export default function Admin() {
     finally { setBusy(false); }
   }
 
+  async function onChangePreferredName(user, value) {
+    const preferredName = value.trim();
+    if (preferredName === (user.preferred_name || '')) return;
+
+    setBusy(true); setErr(''); setOkMsg('');
+    try {
+      await api.setUserPreferredName(user.id, preferredName || null);
+      setOkMsg(`Preferred name updated for ${user.full_name || user.email || 'user'}.`);
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onInvite(e) {
     e.preventDefault();
     if (!inviteName.trim()) { setErr('Full name is required.'); return; }
@@ -112,6 +128,7 @@ export default function Admin() {
             <thead>
               <tr className="text-left text-slate-500 border-b">
                 <th className="py-2 pr-3">Name</th>
+                <th className="py-2 pr-3">Preferred Name</th>
                 <th className="py-2 pr-3">Email</th>
                 <th className="py-2 pr-3">Role</th>
                 <th className="py-2 pr-3">Change to</th>
@@ -126,6 +143,18 @@ export default function Admin() {
                     <td className="py-2 pr-3 font-medium text-slate-900">
                       {u.full_name || '-'}
                       {isMe && <span className="ml-2 text-xs text-slate-400">(you)</span>}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <input
+                        type="text"
+                        className="input py-1 px-2 text-xs w-28"
+                        defaultValue={u.preferred_name || ''}
+                        disabled={busy}
+                        onBlur={(e) => onChangePreferredName(u, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                        }}
+                      />
                     </td>
                     <td className="py-2 pr-3 text-slate-700">{u.email || '-'}</td>
                     <td className="py-2 pr-3"><RolePill role={u.role} /></td>

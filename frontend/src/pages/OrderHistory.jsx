@@ -181,7 +181,7 @@ function OrderCard({ order, onTap, onReorder, onCancel }) {
 
       {/* Action strip */}
       <div className="border-t border-slate-50 pt-3 flex items-center justify-between">
-        <span className="text-[10px] text-slate-300 font-mono">#{order.id?.slice(0, 8)}</span>
+        <span className="text-[10px] text-slate-300 font-mono">#{order.user_order_number || order.id?.slice(0, 8)}</span>
         
         {canCancel ? (
           <button

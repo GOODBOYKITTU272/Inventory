@@ -51,6 +51,7 @@ export const api = {
 
   listUsers:    ()                => request('/api/admin/users'),
   setUserRole:  (userId, role)    => request(`/api/admin/users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+  setUserPreferredName: (userId, preferredName) => request(`/api/admin/users/${userId}/preferred-name`, { method: 'PATCH', body: JSON.stringify({ preferred_name: preferredName }) }),
   createUser:   (body)            => request('/api/admin/users/create', { method: 'POST', body: JSON.stringify(body) }),
   inviteUser:   (body)            => request('/api/admin/users/invite', { method: 'POST', body: JSON.stringify(body) }),
 

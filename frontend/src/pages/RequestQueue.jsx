@@ -44,7 +44,7 @@ function DeliveryBadge({ mode }) {
 const RECEIPT_WIDTH = '80mm';
 
 function buildReceiptHTML(order) {
-  const orderId = (order.id || '').slice(0, 8).toUpperCase();
+  const orderId = order.user_order_number || (order.id || '').slice(0, 8).toUpperCase();
   const item = order.parsed_item || order.raw_text || 'Unknown Item';
   const employee = order.submitter_name || order.parsed_employee_name || 'Employee';
   const location = order.parsed_location || 'Not specified';

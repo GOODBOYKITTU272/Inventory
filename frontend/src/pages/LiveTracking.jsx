@@ -613,7 +613,7 @@ function OrderView({ req, onRate, onRefresh }) {
           </div>
           <div className="text-right shrink-0">
             <div className="text-[10px] text-slate-400 uppercase">Request ID</div>
-            <div className="font-mono text-xs text-slate-600">{req.id?.slice(0, 8)}</div>
+            <div className="font-mono text-xs text-slate-600">{req.user_order_number || req.id?.slice(0, 8)}</div>
           </div>
         </div>
         {req.instruction && (
