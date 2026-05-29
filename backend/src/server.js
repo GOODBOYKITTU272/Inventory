@@ -33,9 +33,16 @@ app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173')
+const configuredOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173')
   .split(',')
   .map((o) => o.trim().replace(/\/$/, ''));
+
+const allowedOrigins = [
+  ...new Set([
+    ...configuredOrigins,
+    'https://snackify.applywizz.ai',
+  ]),
+];
 
 if (process.env.NODE_ENV !== 'production') {
   allowedOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173');
