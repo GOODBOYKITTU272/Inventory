@@ -557,7 +557,7 @@ function CodeInput({ value, onChange }) {
       placeholder="000000"
       value={value}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
-      className="w-full rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.5em] font-mono text-white placeholder-white/15 focus:outline-none transition-all"
+      className="w-full max-w-[15rem] mx-auto block rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.25em] font-mono text-white placeholder-white/15 focus:outline-none transition-all"
       style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
     />
   );

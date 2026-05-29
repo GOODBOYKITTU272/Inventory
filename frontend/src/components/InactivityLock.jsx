@@ -200,9 +200,11 @@ export default function InactivityLock({ children }) {
 
                   <input
                     ref={inputRef}
-                    type="number"
+                    type="text"
                     inputMode="numeric"
+                    pattern="[0-9]*"
                     maxLength={6}
+                    autoComplete="one-time-code"
                     value={totpCode}
                     onChange={e => {
                       const val = e.target.value.replace(/\D/g, '').slice(0, 6);
@@ -211,7 +213,7 @@ export default function InactivityLock({ children }) {
                     }}
                     onKeyDown={handleKeyDown}
                     placeholder="000000"
-                    className="w-44 mx-auto block text-center text-3xl font-mono tracking-[0.5em] bg-white/10 border border-white/20 text-white rounded-xl py-3 px-4 outline-none focus:border-brand focus:ring-2 focus:ring-brand/40 placeholder:text-white/20"
+                    className="w-full max-w-[15rem] mx-auto block text-center text-3xl font-mono tracking-[0.25em] bg-white/10 border border-white/20 text-white rounded-xl py-3 px-4 outline-none focus:border-brand focus:ring-2 focus:ring-brand/40 placeholder:text-white/20"
                   />
 
                   {error && (
