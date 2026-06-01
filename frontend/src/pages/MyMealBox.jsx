@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Ticket, Printer, RefreshCw, Clock, CheckCircle2, AlertCircle, ChevronLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 
 // ── IST date helper ───────────────────────────────────────────────────────────
@@ -19,7 +19,11 @@ const CHOICE_CONFIG = {
 
 export default function MyMealBox() {
   const navigate   = useNavigate();
+  const [params]   = useSearchParams();
   const today      = getISTDate();
+  const dateParam  = params.get('date');
+  const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(dateParam || '') ? dateParam : today;
+  const isToday = selectedDate === today;
 
   const [data,      setData]      = useState(null);   // { booking, canReprint, reprintWindowMessage }
   const [loading,   setLoading]   = useState(true);
@@ -34,14 +38,14 @@ export default function MyMealBox() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await api.myMealToken(today);
+      const result = await api.myMealToken(selectedDate);
       setData(result);
     } catch (e) {
       showToast(e.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [today]);
+  }, [selectedDate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -49,7 +53,7 @@ export default function MyMealBox() {
     if (printing) return;
     setPrinting(true);
     try {
-      await api.reprintToken({ date: today });
+      await api.reprintToken({ date: selectedDate });
       showToast('🖨️ Reprint sent to printer! Collect your token shortly.', 'success');
       await load(); // Refresh to show updated print_count
     } catch (e) {
@@ -118,7 +122,9 @@ export default function MyMealBox() {
           </div>
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', margin: 0 }}>My Meal Box</h1>
-            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0 }}>Today's lunch token</p>
+            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0 }}>
+              {isToday ? "Today's lunch token" : 'Meal ticket for selected date'}
+            </p>
           </div>
         </div>
 
@@ -158,7 +164,7 @@ export default function MyMealBox() {
             >
               <div style={{ fontSize: 48, marginBottom: 16 }}>🍽️</div>
               <p style={{ color: '#0F172A', fontWeight: 600, fontSize: 16, marginBottom: 8 }}>
-                No meal booked for today
+                {isToday ? 'No meal booked for today' : 'No meal booked for this date'}
               </p>
               <p style={{ color: '#94A3B8', fontSize: 13, marginBottom: 24 }}>
                 Book your meal for tomorrow before 6 PM
@@ -211,7 +217,7 @@ export default function MyMealBox() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 1 }}>
-                        Today's Meal
+                        {isToday ? "Today's Meal" : 'Meal Ticket'}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                         <span style={{ fontSize: 28 }}>{choice?.emoji}</span>
@@ -249,7 +255,7 @@ export default function MyMealBox() {
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 1 }}>Date</div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', marginTop: 4 }}>
-                        {new Date(today + 'T00:00:00+05:30').toLocaleDateString('en-IN', {
+                        {new Date(selectedDate + 'T00:00:00+05:30').toLocaleDateString('en-IN', {
                           weekday: 'short', day: '2-digit', month: 'short',
                         })}
                       </div>
@@ -341,21 +347,35 @@ export default function MyMealBox() {
 
                   {/* Token not yet assigned */}
                   {!booking.token_number && (
-                    <div style={{
-                      background: '#FFF7ED', border: '1.5px solid #FED7AA',
-                      borderRadius: 12, padding: '14px 16px',
-                      display: 'flex', alignItems: 'flex-start', gap: 10,
-                    }}>
-                      <Clock size={16} color="#F97316" style={{ marginTop: 1 }} />
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#7C2D12' }}>
-                          Token assigned at 11:00 AM
-                        </div>
-                        <div style={{ fontSize: 11, color: '#C2410C', marginTop: 2 }}>
-                          Tokens are generated and printed cabin-wise starting 11:00 AM.
-                          Come back after 11 AM to see your token number.
+                    <div style={{ display: 'grid', gap: 12 }}>
+                      <div style={{
+                        background: '#FFF7ED', border: '1.5px solid #FED7AA',
+                        borderRadius: 12, padding: '14px 16px',
+                        display: 'flex', alignItems: 'flex-start', gap: 10,
+                      }}>
+                        <Clock size={16} color="#F97316" style={{ marginTop: 1 }} />
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#7C2D12' }}>
+                            Token pending
+                          </div>
+                          <div style={{ fontSize: 11, color: '#C2410C', marginTop: 2 }}>
+                            Token will be generated at print time. Reprint unlocks after a token number exists.
+                          </div>
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        disabled
+                        style={{
+                          width: '100%', padding: '14px',
+                          background: '#E2E8F0',
+                          color: '#64748B', border: 'none', borderRadius: 14,
+                          fontSize: 14, fontWeight: 700, cursor: 'not-allowed',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        }}
+                      >
+                        <Printer size={16} /> Reprint Ticket
+                      </button>
                     </div>
                   )}
                 </div>

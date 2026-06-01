@@ -87,7 +87,7 @@ const OOS_BY_TONE = {
 };
 
 function getOosMessage(tone, itemName) {
-  return "Currently unavailable";
+  return "Out of stock";
 }
 
 // ── Low stock messages by tone ────────────────────────────────────────────────
@@ -114,6 +114,127 @@ const STAGE_INFO = {
 // Items that get a customization prompt
 const BREAD_ITEMS = ['bread + peanut butter', 'bread + jam'];
 const isBreadItem = (name) => BREAD_ITEMS.includes((name || '').toLowerCase());
+
+const SANDWICH_SPREADS = [
+  {
+    key: 'peanut_butter',
+    displayName: 'Peanut Butter Sandwich',
+    spreadLabel: 'Peanut Butter',
+    emoji: '🥜',
+    oneSideAmount: '20g',
+    bothSidesAmount: '40g',
+    oneSideCalories: 268,
+    bothSidesCalories: 386,
+    matches: (text) => text.includes('peanut butter'),
+  },
+  {
+    key: 'pineapple_jam',
+    displayName: 'Pineapple Jam Sandwich',
+    spreadLabel: 'Pineapple Jam',
+    emoji: '🍍',
+    oneSideAmount: '15g',
+    bothSidesAmount: '30g',
+    oneSideCalories: 190,
+    bothSidesCalories: 230,
+    matches: (text) => text.includes('pineapple') && text.includes('jam'),
+  },
+  {
+    key: 'mix_fruit_jam',
+    displayName: 'Mix Fruit Jam Sandwich',
+    spreadLabel: 'Jam',
+    emoji: '🍓',
+    oneSideAmount: '15g',
+    bothSidesAmount: '30g',
+    oneSideCalories: 190,
+    bothSidesCalories: 230,
+    matches: (text) => text.includes('jam') && (
+      text.includes('mix fruit') ||
+      text.includes('mixed fruit') ||
+      text.includes('fruit jam') ||
+      text.trim() === 'jam'
+    ),
+  },
+];
+
+function itemSearchText(itemOrName) {
+  if (!itemOrName) return '';
+  if (typeof itemOrName === 'string') return itemOrName.toLowerCase();
+  return [
+    itemOrName.item_name,
+    itemOrName.display_name,
+    itemOrName.frontend_name,
+    itemOrName.sandwich_type,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function getSandwichSpreadConfig(itemOrName) {
+  const text = itemSearchText(itemOrName);
+  return SANDWICH_SPREADS.find((config) => config.matches(text)) || null;
+}
+
+function isSandwichSpreadItem(itemOrName) {
+  return Boolean(getSandwichSpreadConfig(itemOrName));
+}
+
+function getItemDisplayName(item) {
+  const sandwichConfig = getSandwichSpreadConfig(item);
+  return sandwichConfig?.displayName || item?.frontend_name || item?.display_name || item?.item_name || '';
+}
+
+function getOrderItemName(item) {
+  return isSandwichSpreadItem(item) ? getItemDisplayName(item) : item.item_name;
+}
+
+function normalizeDependencies(dependencies) {
+  return Array.isArray(dependencies) ? dependencies : [];
+}
+
+function hasBreadDependency(item) {
+  return normalizeDependencies(item?.dependencies).some((dep) => String(dep).toLowerCase() === 'bread');
+}
+
+function withBreadDependency(item) {
+  if (!isSandwichSpreadItem(item) || hasBreadDependency(item)) return item;
+  return { ...item, dependencies: [...normalizeDependencies(item.dependencies), 'Bread'] };
+}
+
+function enrichItemsWithSandwichSpreads(rawItems) {
+  const baseItems = (rawItems || []).map((item) => {
+    const config = getSandwichSpreadConfig(item);
+    if (!config) return item;
+    return withBreadDependency({
+      ...item,
+      category: item.category || 'food',
+      emoji: item.emoji || config.emoji,
+      frontend_name: config.displayName,
+      sides_option: true,
+      _sandwich_spread: true,
+    });
+  });
+
+  const missingSpreadCards = SANDWICH_SPREADS
+    .filter((config) => !baseItems.some((item) => getSandwichSpreadConfig(item)?.key === config.key))
+    .map((config) => ({
+      id: `_missing_${config.key}`,
+      item_name: config.displayName,
+      display_name: config.displayName,
+      frontend_name: config.displayName,
+      category: 'food',
+      emoji: config.emoji,
+      description: 'Requires bread',
+      tags: [],
+      available: true,
+      orderable: false,
+      stock_today: 0,
+      stock_servings: 0,
+      dependencies: ['Bread'],
+      sides_option: true,
+      _missing_stock: true,
+      _sandwich_spread: true,
+    }));
+
+  return [...baseItems, ...missingSpreadCards];
+}
 
 // ── Preferences Summary Card (Swiggy/Zomato style) ──────────────────────────
 
@@ -280,8 +401,7 @@ function ActiveOrderBanner({ order, onPress }) {
 function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, breadAvailable, needsMilk }) {
   const inCart = qty > 0;
   const blockedByBread = needsBread && !breadAvailable;
-  // Use frontend_name > display_name > item_name (cleanest name first)
-  const displayName = item.frontend_name || item.display_name || item.item_name;
+  const displayName = getItemDisplayName(item);
   const cal = item.calories_per_serving;
 
   if (needsMilk) {
@@ -308,7 +428,7 @@ function ItemChip({ item, qty, outOfStock, onAdd, onRemove, tone, needsBread, br
           {item.calories_per_serving !== null && item.calories_per_serving !== undefined && (
             <div className="text-[10px] text-slate-400 font-normal mt-0.5">{item.calories_per_serving} kcal</div>
           )}
-          <div className="text-[10px] text-amber-600 font-bold mt-1">🍞 No Bread</div>
+          <div className="text-[10px] text-amber-600 font-bold mt-1">Out of stock / No Bread</div>
         </div>
       </div>
     );
@@ -506,12 +626,14 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
   const [remember, setRemember] = useState(false);
 
   const chosenBread = availableBreads.find(b => b.id === selectedBread);
+  const spreadConfig = getSandwichSpreadConfig(item) || SANDWICH_SPREADS[2];
+  const displayName = getItemDisplayName(item);
+  const spreadName = spreadConfig.spreadLabel;
 
   function confirm() {
     const breadName = chosenBread?.item_name || '';
     const breadDisplay = chosenBread?.display_name || breadName;
-    const sidesLabel = sides === 'both' ? 'both sides' : 'one side';
-    const instruction = `${sidesLabel}, ${breadDisplay}`;
+    const instruction = `Spread on ${sides === 'both' ? 'both slices' : 'one slice'}, ${breadDisplay}. Uses 2 bread slices`;
     onConfirm({
       instruction,
       breadType: breadName,
@@ -537,9 +659,9 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
       >
         <div className="flex items-center justify-between mb-5">
           <div>
-            <div className="text-xl">{item.emoji || '🍓'}</div>
-            <h2 className="font-extrabold text-slate-900">{item.display_name || item.item_name}</h2>
-            <p className="text-xs text-slate-400">Choose your bread & style</p>
+            <div className="text-xl">{item.emoji || spreadConfig.emoji}</div>
+            <h2 className="font-extrabold text-slate-900">{displayName}</h2>
+            <p className="text-xs text-slate-400">Choose bread and spread</p>
           </div>
           <button onClick={onClose} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200">
             <X size={15} />
@@ -587,41 +709,34 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
         {/* 2. Sides picker */}
         <div className="mb-5">
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-            How many sides?
+            Spread choice
           </label>
-          {(() => {
-            const isPB = (item.item_name || '').toLowerCase().includes('peanut butter') || (item.item_name || '').toLowerCase().includes('pb');
-            const spreadName = isPB ? 'PB' : 'Jam';
-            const oneSideGrams = isPB ? '20g' : '15g';
-            const bothSidesGrams = isPB ? '40g' : '30g';
-            const oneSideCals = isPB ? 268 : 190;
-            const bothSidesCals = isPB ? 386 : 230;
-
-            return (
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setSides('one')}
-                  className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
-                    sides === 'one' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
-                  }`}
-                >
-                  <span className="text-2xl">🍞</span>
-                  One Side
-                  <span className="text-[10px] opacity-75 font-normal">{oneSideGrams} {spreadName} ({oneSideCals} kcal)</span>
-                </button>
-                <button
-                  onClick={() => setSides('both')}
-                  className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
-                    sides === 'both' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
-                  }`}
-                >
-                  <span className="text-2xl">🥪</span>
-                  Both Sides
-                  <span className="text-[10px] opacity-75 font-normal">{bothSidesGrams} {spreadName} ({bothSidesCals} kcal)</span>
-                </button>
-              </div>
-            );
-          })()}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setSides('one')}
+              className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
+                sides === 'one' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
+              }`}
+            >
+              <span className="text-2xl">🍞</span>
+              Spread on one slice
+              <span className="text-[10px] opacity-75 font-normal">
+                2 bread slices + {spreadConfig.oneSideAmount} {spreadName} ({spreadConfig.oneSideCalories} kcal)
+              </span>
+            </button>
+            <button
+              onClick={() => setSides('both')}
+              className={`flex-1 py-4 rounded-2xl border-2 font-bold text-sm transition-all flex flex-col items-center gap-1 ${
+                sides === 'both' ? 'bg-brand text-white border-brand' : 'border-slate-200 text-slate-600 hover:border-brand/30'
+              }`}
+            >
+              <span className="text-2xl">🥪</span>
+              Spread on both slices
+              <span className="text-[10px] opacity-75 font-normal">
+                2 bread slices + {spreadConfig.bothSidesAmount} {spreadName} ({spreadConfig.bothSidesCalories} kcal)
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* 3. Remember toggle */}
@@ -647,8 +762,7 @@ function JamCustomSheet({ item, savedPref, onConfirm, onClose, breadItems }) {
           className="w-full h-12 bg-brand text-white rounded-2xl font-bold text-sm shadow-lg shadow-brand/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-40"
         >
           Add to order ({(() => {
-            const isPB = (item.item_name || '').toLowerCase().includes('peanut butter') || (item.item_name || '').toLowerCase().includes('pb');
-            return sides === 'both' ? (isPB ? 386 : 230) : (isPB ? 268 : 190);
+            return sides === 'both' ? spreadConfig.bothSidesCalories : spreadConfig.oneSideCalories;
           })()} kcal) ✓
         </button>
       </motion.div>
@@ -834,7 +948,7 @@ function OrderSheet({ cart, customizations, items, onClose, onConfirm, busy, sav
                 <div className="flex items-start gap-2 min-w-0">
                   <span className="text-lg shrink-0">{item.emoji || '☕'}</span>
                   <div className="min-w-0">
-                    <div className="font-medium text-slate-800 text-sm">{item.display_name || item.item_name}</div>
+                    <div className="font-medium text-slate-800 text-sm">{getItemDisplayName(item)}</div>
                     {customNote && (
                       <div className="text-[11px] text-slate-400 mt-0.5 italic">{customNote}</div>
                     )}
@@ -1065,7 +1179,7 @@ export default function Cafeteria() {
     const name = (i.item_name || '').toLowerCase();
     const tags = Array.isArray(i.tags) ? i.tags.map(t => t.toLowerCase()) : [];
     // Exclude items that DEPEND on bread (like Jam, PB) — those have 'bread' in their dependencies
-    const dependsOnBread = Array.isArray(i.dependencies) && i.dependencies.some(d => d.toLowerCase() === 'bread');
+    const dependsOnBread = hasBreadDependency(i);
     return (name.includes('bread') || name.includes('brd') || tags.includes('bread'))
       && !dependsOnBread;
   });
@@ -1194,7 +1308,7 @@ export default function Cafeteria() {
       });
     }
 
-    return [...filtered, ...virtual];
+    return enrichItemsWithSandwichSpreads([...filtered, ...virtual]);
   }
 
 
@@ -1288,8 +1402,11 @@ export default function Cafeteria() {
   }
 
   function handleAdd(item) {
-    if (item.sides_option) {
-      // Show jam sides customization sheet
+    if (isSandwichSpreadItem(item)) {
+      // Sandwich spreads must choose bread and one-slice/both-slices spread.
+      setJamTarget(item);
+    } else if (item.sides_option) {
+      // Show sides customization sheet for other side-configured items.
       setJamTarget(item);
     } else if (isBreadItem(item.item_name)) {
       // Show bread customization sheet
@@ -1385,8 +1502,9 @@ export default function Cafeteria() {
       for (const { item, qty, customNote } of cartItems) {
         const instruction = [customNote, note].filter(Boolean).join('. ');
         const breadType = customizations[`${item.id}__bread`] || '';
+        const quickItem = getOrderItemName(item);
         const r = await api.quickOrder({
-          quick_item:        item.item_name,
+          quick_item:        quickItem,
           quick_location:    delivery_mode === 'self_pickup' ? null : location,
           quick_quantity:    qty,
           quick_instruction: instruction,
@@ -1477,6 +1595,7 @@ export default function Cafeteria() {
   // Helper to map any item to the clean 6 display categories
   function getDisplayCategory(item) {
     const nameL = (item.item_name || '').toLowerCase();
+    if (isSandwichSpreadItem(item)) return 'food_pantry';
     
     // 6. Accessories
     if (nameL.includes('stirrer') || nameL.includes('paper cup') || nameL.includes('sugar sachet') || nameL.includes('sugar free')) {
@@ -1520,9 +1639,14 @@ export default function Cafeteria() {
   }
 
   // ── Group items by category ────────────────────────────────────────────────────
-  // Include milk-blocked items (_needs_milk) so they show as greyed-out cards.
-  // Exclude only items that are truly hidden (orderable:false without _needs_milk).
-  const visibleItems = items.filter((item) => item.orderable !== false || item._needs_milk);
+  // Include greyed-out dependency-backed items so users understand why they cannot order.
+  // Exclude only items that are truly hidden backing stock rows.
+  const visibleItems = items.filter((item) => (
+    item.orderable !== false ||
+    item._needs_milk ||
+    item._missing_stock ||
+    isSandwichSpreadItem(item)
+  ));
   const grouped = visibleItems.reduce((acc, item) => {
     const cat = getDisplayCategory(item);
     if (!acc[cat]) acc[cat] = [];
@@ -1645,7 +1769,7 @@ export default function Cafeteria() {
               const obMarkedOut   = stockToday !== null && stockToday !== undefined && stockToday <= 0;
               const servingsOut   = stockServings !== null && stockServings !== undefined && stockServings <= 0;
               const isOut = obMarkedOut || servingsOut;
-              const hasBreadDep = Array.isArray(item.dependencies) && item.dependencies.some(d => d.toLowerCase() === 'bread');
+              const hasBreadDep = hasBreadDependency(item) || isSandwichSpreadItem(item);
               // Milk-blocked: item is in stock physically but milk is OOS → show card greyed out
               const isMilkBlocked = item._needs_milk && item.orderable === false;
               return (

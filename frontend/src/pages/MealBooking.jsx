@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Clock, CheckCircle2, XCircle, History } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, CheckCircle2, XCircle, History, Ticket } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { supabase } from '../lib/supabase.js';
@@ -425,6 +425,10 @@ export default function MealBooking() {
     return bookings.find(b => b.meal_date === dateStr);
   }
 
+  function openMealTicket(dateStr) {
+    navigate(`/my-meal-box?date=${dateStr}`);
+  }
+
   function getNextWorkingDay() {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     d.setDate(d.getDate() + 1);
@@ -613,16 +617,28 @@ export default function MealBooking() {
             // Past or today — view only
             if (isPast) {
               return (
-                <div className={`p-4 rounded-xl flex items-center gap-3 ${b ? `${CHOICE_UI[b.choice]?.bg} border ${CHOICE_UI[b.choice]?.border}` : 'bg-slate-50 border border-slate-200'}`}>
+                <div className={`p-4 rounded-xl flex items-center justify-between gap-3 ${b ? `${CHOICE_UI[b.choice]?.bg} border ${CHOICE_UI[b.choice]?.border}` : 'bg-slate-50 border border-slate-200'}`}>
                   {b ? (
                     <>
-                      <span className="text-2xl">{CHOICE_UI[b.choice]?.emoji}</span>
-                      <div>
-                        <span className="font-bold text-sm">{CHOICE_UI[b.choice]?.label}</span>
-                        {b.booked_at && <div className="text-[10px] text-slate-400 mt-0.5">
-                          Booked at {new Date(b.booked_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
-                        </div>}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-2xl">{CHOICE_UI[b.choice]?.emoji}</span>
+                        <div>
+                          <span className="font-bold text-sm">{CHOICE_UI[b.choice]?.label}</span>
+                          {b.booked_at && <div className="text-[10px] text-slate-400 mt-0.5">
+                            Booked at {new Date(b.booked_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+                          </div>}
+                        </div>
                       </div>
+                      {b.choice !== 'skip' && (
+                        <button
+                          type="button"
+                          onClick={() => openMealTicket(selectedDate)}
+                          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/80 border border-slate-200 text-xs font-bold text-brand hover:bg-white"
+                        >
+                          <Ticket size={13} />
+                          View Ticket
+                        </button>
+                      )}
                     </>
                   ) : (
                     <>
@@ -661,6 +677,16 @@ export default function MealBooking() {
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${CHOICE_UI[b.choice]?.badge}`}>
                       Current: {CHOICE_UI[b.choice]?.emoji} {CHOICE_UI[b.choice]?.label}
                     </span>
+                  )}
+                  {b && b.choice !== 'skip' && (
+                    <button
+                      type="button"
+                      onClick={() => openMealTicket(selectedDate)}
+                      className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand/10 text-brand text-xs font-bold hover:bg-brand/15"
+                    >
+                      <Ticket size={13} />
+                      View Ticket
+                    </button>
                   )}
                 </div>
                 <div className="flex gap-2">

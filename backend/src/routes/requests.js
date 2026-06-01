@@ -33,6 +33,7 @@ const ITEM_CATEGORY = {
   'ccd coffee': 'beverage', 'regular tea': 'beverage', 'lemon tea': 'beverage',
   'water bottle': 'beverage', 'water': 'beverage', 'tea': 'beverage', 'coffee': 'beverage',
   'bread + peanut butter': 'food', 'bread + jam': 'food', 'bread': 'food',
+  'peanut butter sandwich': 'food', 'mix fruit jam sandwich': 'food', 'pineapple jam sandwich': 'food',
   'biscuits': 'snack', 'black coffee': 'beverage',
   'stationery': 'stationery', 'cleaning': 'cleaning',
   'maintenance': 'maintenance', 'meeting room setup': 'other',
@@ -43,6 +44,96 @@ const ITEM_CATEGORY = {
   'strong tea': 'beverage', 'black tea': 'beverage', 'dip tea': 'beverage',
   'milk': 'beverage',
 };
+
+const SANDWICH_SPREADS = [
+  {
+    displayName: 'Peanut Butter Sandwich',
+    lookupPatterns: ['peanut butter'],
+    matches: (text) => text.includes('peanut butter'),
+  },
+  {
+    displayName: 'Pineapple Jam Sandwich',
+    lookupPatterns: ['pineapple jam'],
+    matches: (text) => text.includes('pineapple') && text.includes('jam'),
+  },
+  {
+    displayName: 'Mix Fruit Jam Sandwich',
+    lookupPatterns: ['mix fruit jam', 'mixed fruit jam', 'fruit jam', 'jam'],
+    matches: (text) => text.includes('jam') && (
+      text.includes('mix fruit') ||
+      text.includes('mixed fruit') ||
+      text.includes('fruit jam') ||
+      text.trim() === 'jam'
+    ),
+  },
+];
+
+function orderSearchText(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value.toLowerCase();
+  return [
+    value.item_name,
+    value.display_name,
+    value.frontend_name,
+    value.sandwich_type,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function getSandwichSpreadConfig(value) {
+  const text = orderSearchText(value);
+  return SANDWICH_SPREADS.find((config) => config.matches(text)) || null;
+}
+
+function isSandwichSpread(value) {
+  return Boolean(getSandwichSpreadConfig(value));
+}
+
+function displayOrderItemName(itemName, itemRow = null) {
+  return getSandwichSpreadConfig(itemName)?.displayName ||
+    getSandwichSpreadConfig(itemRow)?.displayName ||
+    itemRow?.frontend_name ||
+    itemRow?.display_name ||
+    itemName;
+}
+
+function hasBreadDependency(dependencies) {
+  return Array.isArray(dependencies) && dependencies.some((dep) => String(dep).toLowerCase() === 'bread');
+}
+
+function isBreadName(name) {
+  const n = String(name || '').toLowerCase();
+  return n === 'bread' || n.includes('bread') || n.includes('brd');
+}
+
+async function findCafeteriaItemForOrder(itemName, columns) {
+  const exact = String(itemName || '').trim();
+  if (!exact) return null;
+
+  for (const column of ['item_name', 'display_name', 'frontend_name']) {
+    const { data } = await supabaseAdmin
+      .from('cafeteria_items')
+      .select(columns)
+      .ilike(column, exact)
+      .limit(1);
+    if (data?.[0]) return data[0];
+  }
+
+  const sandwichConfig = getSandwichSpreadConfig(itemName);
+  if (!sandwichConfig) return null;
+
+  for (const pattern of sandwichConfig.lookupPatterns) {
+    for (const column of ['item_name', 'display_name', 'frontend_name']) {
+      const { data } = await supabaseAdmin
+        .from('cafeteria_items')
+        .select(columns)
+        .ilike(column, `%${pattern}%`)
+        .limit(1);
+      if (data?.[0]) return data[0];
+    }
+  }
+
+  return null;
+}
 
 // Map virtual menu drink names → array of backing ingredients with servings per cup.
 // This drives BOTH stock checks AND stock deductions.
@@ -212,7 +303,7 @@ router.post('/', async (req, res, next) => {
     if (quick_item) {
       const qty = parseInt(quick_quantity, 10) || 1;
       const instruction = await generateQuickOrderInstruction(req.user, quick_item, qty, quick_location, quick_instruction);
-      const category = ITEM_CATEGORY[quick_item.toLowerCase()] || 'other';
+      const category = ITEM_CATEGORY[quick_item.toLowerCase()] || (isSandwichSpread(quick_item) ? 'food' : 'other');
 
       // Normalize delivery mode before composing raw_text.
       let deliveryMode = req.body.delivery_mode;
@@ -825,13 +916,16 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
   // ── Regular (non-virtual) item path ──────────────────────────────────────
 
   // 1b. Fetch the real DB row for this item
-  const { data: itemRow } = await supabaseAdmin
-    .from('cafeteria_items')
-    .select('id, item_name, stock_today, stock_servings, sides_option, dependencies')
-    .ilike('item_name', itemName)
-    .maybeSingle();
+  const itemRow = await findCafeteriaItemForOrder(
+    itemName,
+    'id, item_name, display_name, frontend_name, stock_today, stock_servings, sides_option, dependencies'
+  );
 
   if (!itemRow) {
+    if (isSandwichSpread(itemName)) {
+      const userTone = await getUserTone(user.id);
+      throw new Error(getOOSMessage(userTone, displayOrderItemName(itemName)));
+    }
     // Item not found in DB — allow order through but skip stock deduction
     return;
   }
@@ -853,33 +947,47 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
     }
   }
 
-  // 3. Determine sides multiplier and needed main servings
-  const isBothSides = /both\s*side/i.test(instruction);
-  const sidesMultiplier = (itemRow.sides_option && isBothSides) ? 2 : 1;
+  // 3. Determine sides multiplier and needed main servings.
+  // Sandwiches always use 2 bread slices; both-sides only doubles the spread serving.
+  const displayItemName = displayOrderItemName(itemName, itemRow);
+  const isSandwich = isSandwichSpread(itemName) || isSandwichSpread(itemRow);
+  const isBothSides = /both\s*(side|slice)/i.test(instruction);
+  const sidesMultiplier = ((itemRow.sides_option || isSandwich) && isBothSides) ? 2 : 1;
   const neededForMain = (itemRow.stock_servings !== null) ? (qty * sidesMultiplier) : qty;
 
   const effectiveStock = itemRow.stock_servings ?? itemRow.stock_today;
   if (effectiveStock !== null && effectiveStock !== undefined && effectiveStock < neededForMain) {
     const userTone = await getUserTone(user.id);
-    const msgs = getOOSMessage(userTone, itemName);
+    const msgs = getOOSMessage(userTone, displayItemName);
     throw new Error(msgs);
   }
 
   // 4. Check dependencies (like bread)
-  const deps = itemRow.dependencies;
+  const baseDeps = Array.isArray(itemRow.dependencies) ? itemRow.dependencies : [];
+  const requiresBread = isSandwich || hasBreadDependency(baseDeps);
+  if (requiresBread && !breadType) {
+    const userTone = await getUserTone(user.id);
+    throw new Error(getDependencyMessage(userTone, displayItemName, 'Bread'));
+  }
+  const deps = requiresBread && !hasBreadDependency(baseDeps) ? [...baseDeps, 'Bread'] : baseDeps;
   const depUpdates = [];
   if (Array.isArray(deps) && deps.length > 0) {
     for (const depName of deps) {
-      const lookupName = (depName.toLowerCase() === 'bread' && breadType) ? breadType : depName;
-      const { data: depItem } = await supabaseAdmin
-        .from('cafeteria_items')
-        .select('id, item_name, stock_today, stock_servings')
-        .ilike('item_name', lookupName)
-        .maybeSingle();
+      const lookupName = (String(depName).toLowerCase() === 'bread' && breadType) ? breadType : depName;
+      const depItem = await findCafeteriaItemForOrder(
+        lookupName,
+        'id, item_name, display_name, frontend_name, stock_today, stock_servings'
+      );
 
-      if (!depItem) continue;
+      if (!depItem) {
+        if (String(depName).toLowerCase() === 'bread') {
+          const userTone = await getUserTone(user.id);
+          throw new Error(getDependencyMessage(userTone, displayItemName, 'Bread'));
+        }
+        continue;
+      }
 
-      const isBread = depItem.item_name.toLowerCase().includes('bread') || depItem.item_name === 'Bread' || depItem.item_name === 'MDRN AT SHK BRD400G';
+      const isBread = isBreadName(depItem.item_name) || isBreadName(depName);
       const neededDepServings = isBread ? qty * 2 : qty * sidesMultiplier;
 
       const depStock = depItem.stock_today;
@@ -888,12 +996,12 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
       if (depServings !== null && depServings < neededDepServings) {
         const userTone = await getUserTone(user.id);
         const displayDep = depItem.display_name || depItem.item_name;
-        throw new Error(getDependencyMessage(userTone, itemName, displayDep));
+        throw new Error(getDependencyMessage(userTone, displayItemName, displayDep));
       }
       if (depStock !== null && depServings === null && depStock < neededDepServings) {
         const userTone = await getUserTone(user.id);
         const displayDep = depItem.display_name || depItem.item_name;
-        throw new Error(getDependencyMessage(userTone, itemName, displayDep));
+        throw new Error(getDependencyMessage(userTone, displayItemName, displayDep));
       }
 
       const depUpdate = { id: depItem.id, fields: {} };
@@ -938,8 +1046,7 @@ async function restoreStockForRequest(order) {
 
   const itemName = order.parsed_item;
   const rawQty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
-  const isBoth = /both\s*side/i.test(order.instruction || '');
-  const sidesM = isBoth ? 2 : 1;
+  const isBoth = /both\s*(side|slice)/i.test(order.instruction || '');
 
   const nameLower = (itemName || '').toLowerCase();
   const virtualIngredients = VIRTUAL_DRINK_MAP[nameLower];
@@ -985,11 +1092,10 @@ async function restoreStockForRequest(order) {
 
   // ── Regular (non-virtual) restore path ───────────────────────────────────
 
-  const { data: itemRow } = await supabaseAdmin
-    .from('cafeteria_items')
-    .select('id, item_name, stock_today, stock_servings, sides_option, dependencies')
-    .ilike('item_name', itemName)
-    .maybeSingle();
+  const itemRow = await findCafeteriaItemForOrder(
+    itemName,
+    'id, item_name, display_name, frontend_name, stock_today, stock_servings, sides_option, dependencies'
+  );
 
   if (!itemRow) {
     return;
@@ -1011,6 +1117,9 @@ async function restoreStockForRequest(order) {
     }
   }
 
+  const isSandwich = isSandwichSpread(itemName) || isSandwichSpread(itemRow);
+  const sidesM = ((itemRow.sides_option || isSandwich) && isBoth) ? 2 : 1;
+
   // 2. Restore main item servings/stock
   const neededForMain = (itemRow.stock_servings !== null) ? (rawQty * sidesM) : rawQty;
   const restoreMain = {};
@@ -1026,20 +1135,21 @@ async function restoreStockForRequest(order) {
   // 3. Restore dependencies
   const staffBreadMatch = order.raw_text?.match(/\[bread:(.+?)\]/);
   const breadType = staffBreadMatch ? staffBreadMatch[1] : null;
-  const deps = itemRow.dependencies;
+  const baseDeps = Array.isArray(itemRow.dependencies) ? itemRow.dependencies : [];
+  const requiresBread = isSandwich || hasBreadDependency(baseDeps);
+  const deps = requiresBread && !hasBreadDependency(baseDeps) ? [...baseDeps, 'Bread'] : baseDeps;
 
   if (Array.isArray(deps) && deps.length > 0) {
     for (const depName of deps) {
-      const lookupName = (depName.toLowerCase() === 'bread' && breadType) ? breadType : depName;
-      const { data: depItem } = await supabaseAdmin
-        .from('cafeteria_items')
-        .select('id, item_name, stock_today, stock_servings')
-        .ilike('item_name', lookupName)
-        .maybeSingle();
+      const lookupName = (String(depName).toLowerCase() === 'bread' && breadType) ? breadType : depName;
+      const depItem = await findCafeteriaItemForOrder(
+        lookupName,
+        'id, item_name, display_name, frontend_name, stock_today, stock_servings'
+      );
 
       if (!depItem) continue;
 
-      const isBread = depItem.item_name.toLowerCase().includes('bread') || depItem.item_name === 'Bread' || depItem.item_name === 'MDRN AT SHK BRD400G';
+      const isBread = isBreadName(depItem.item_name) || isBreadName(depName);
       const neededDepServings = isBread ? rawQty * 2 : rawQty * sidesM;
 
       const restoreDep = {};

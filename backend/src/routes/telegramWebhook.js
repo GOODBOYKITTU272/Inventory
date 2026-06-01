@@ -942,12 +942,23 @@ async function saveBill({ parsed, fileUrl }) {
     }
 
     // 4. Upsert into cafeteria_items (for quick ordering on frontend)
-    const { cafeteriaItemName, servings, isOrderable, category: mappedCat } = mapProductToCafeteria(itemName, qty, item.unit);
-    const displayName = generateDisplayName(cafeteriaItemName);
+    const {
+      cafeteriaItemName,
+      servings,
+      isOrderable,
+      category: mappedCat,
+      displayName: mappedDisplayName,
+      frontendName,
+      sidesOption,
+      dependencies,
+      emoji: mappedEmoji,
+      sandwichType,
+    } = mapProductToCafeteria(itemName, qty, item.unit);
+    const displayName = mappedDisplayName || generateDisplayName(cafeteriaItemName);
 
     const { data: existingCafe } = await supabaseAdmin
       .from('cafeteria_items')
-      .select('id, stock_today, stock_servings')
+      .select('id, stock_today, stock_servings, display_name')
       .ilike('item_name', cafeteriaItemName)
       .maybeSingle();
 
@@ -961,6 +972,11 @@ async function saveBill({ parsed, fileUrl }) {
         stock_servings: newServings,
         available: true
       };
+      if (frontendName) updateData.frontend_name = frontendName;
+      if (sidesOption) updateData.sides_option = true;
+      if (dependencies?.length) updateData.dependencies = dependencies;
+      if (mappedEmoji) updateData.emoji = mappedEmoji;
+      if (sandwichType && sandwichType !== 'regular') updateData.sandwich_type = sandwichType;
 
       if (cafeteriaItemName === 'Bread' || cafeteriaItemName === 'MDRN AT SHK BRD400G') {
         updateData.orderable = false;
@@ -968,7 +984,9 @@ async function saveBill({ parsed, fileUrl }) {
         updateData.orderable = isOrderable;
       }
 
-      if (!existingCafe.display_name) {
+      if (mappedDisplayName) {
+        updateData.display_name = mappedDisplayName;
+      } else if (!existingCafe.display_name) {
         updateData.display_name = (cafeteriaItemName === 'Bread') ? 'Milk Bread' :
                                  (cafeteriaItemName === 'MDRN AT SHK BRD400G' ? 'Atta Bread' : displayName);
       }
@@ -985,12 +1003,16 @@ async function saveBill({ parsed, fileUrl }) {
         .insert({
           item_name: cafeteriaItemName,
           display_name: isBread ? (cafeteriaItemName === 'Bread' ? 'Milk Bread' : 'Atta Bread') : displayName,
-          emoji: emoji,
+          frontend_name: frontendName || null,
+          emoji: mappedEmoji || emoji,
           category: mappedCat || cafeCat || 'other',
           available: true,
           stock_today: qty,
           stock_servings: servings,
           orderable: isBread ? false : isOrderable,
+          sides_option: Boolean(sidesOption),
+          dependencies: dependencies || [],
+          sandwich_type: sandwichType || 'regular',
         });
     }
   }

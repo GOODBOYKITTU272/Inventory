@@ -273,7 +273,18 @@ router.patch(
             });
 
             // Sync with cafeteria_items
-            const { cafeteriaItemName, servings, isOrderable, category: cafeCat } = mapProductToCafeteria(item.item_name, qty, item.unit);
+            const {
+              cafeteriaItemName,
+              servings,
+              isOrderable,
+              category: cafeCat,
+              displayName,
+              frontendName,
+              sidesOption,
+              dependencies,
+              emoji,
+              sandwichType,
+            } = mapProductToCafeteria(item.item_name, qty, item.unit);
 
             const { data: existingCafe } = await supabaseAdmin
               .from('cafeteria_items')
@@ -290,6 +301,12 @@ router.patch(
                 stock_servings: newServings,
                 available: true
               };
+              if (displayName) updateData.display_name = displayName;
+              if (frontendName) updateData.frontend_name = frontendName;
+              if (sidesOption) updateData.sides_option = true;
+              if (dependencies?.length) updateData.dependencies = dependencies;
+              if (emoji) updateData.emoji = emoji;
+              if (sandwichType && sandwichType !== 'regular') updateData.sandwich_type = sandwichType;
 
               if (cafeteriaItemName === 'Bread' || cafeteriaItemName === 'MDRN AT SHK BRD400G') {
                 updateData.orderable = false;
@@ -307,13 +324,17 @@ router.patch(
                 .from('cafeteria_items')
                 .insert({
                   item_name: cafeteriaItemName,
-                  display_name: isBread ? (cafeteriaItemName === 'Bread' ? 'Milk Bread' : 'Atta Bread') : cafeteriaItemName,
-                  emoji: '📦',
+                  display_name: isBread ? (cafeteriaItemName === 'Bread' ? 'Milk Bread' : 'Atta Bread') : (displayName || cafeteriaItemName),
+                  frontend_name: frontendName || null,
+                  emoji: emoji || '📦',
                   category: cafeCat,
                   available: true,
                   stock_today: qty,
                   stock_servings: servings,
                   orderable: isBread ? false : isOrderable,
+                  sides_option: Boolean(sidesOption),
+                  dependencies: dependencies || [],
+                  sandwich_type: sandwichType || 'regular',
                 });
             }
           }
