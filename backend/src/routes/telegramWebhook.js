@@ -5,6 +5,7 @@ import { postBillToTeams } from '../lib/teams.js';
 import { mapProductToCafeteria } from '../lib/stockHelper.js';
 import { classifyTelegramMessage, extractManualPurchase, checkAutoApproval, detectDuplicate, ALLOWED_SUBMITTERS, parseUserCorrection } from '../lib/purchaseAI.js';
 import { applyPurchaseToInventory } from '../lib/applyPurchase.js';
+import { runStockTake, applyStockTake, discardStockTake } from '../lib/stockTake.js';
 
 const router = Router();
 
@@ -202,6 +203,36 @@ async function handleCallbackQuery(callbackQuery) {
   const replyTo  = callbackQuery.message?.message_id;
 
   await answerCallbackQuery(queryId);
+
+  // ── Photo stock-take: Confirm / Discard ──────────────────────────────────
+  const stMatch = data.match(/^st_(confirm|discard):(.+)$/);
+  if (stMatch) {
+    const stAction = stMatch[1];
+    const stockTakeId = stMatch[2];
+
+    const profile = await getProfileForChat(chatId);
+    if (!profile || !STOCKTAKE_APPROVERS.includes(profile.role)) {
+      await sendTelegramMessage(chatId,
+        '❌ Only facility managers or leadership can confirm a stock-take.', replyTo);
+      return;
+    }
+
+    if (stAction === 'discard') {
+      const r = await discardStockTake(supabaseAdmin, { stockTakeId, confirmedBy: profile.userId });
+      await sendTelegramMessage(chatId,
+        r.alreadyDone ? 'ℹ️ This stock-take was already processed.' : '🗑 Stock-take discarded. Nothing changed.',
+        replyTo);
+      return;
+    }
+
+    const result = await applyStockTake(supabaseAdmin, { stockTakeId, confirmedBy: profile.userId });
+    await sendTelegramMessage(chatId,
+      result.alreadyDone
+        ? 'ℹ️ This stock-take was already processed.'
+        : `✅ Stock-take applied — ${result.applied} item(s) adjusted${result.skipped ? `, ${result.skipped} unchanged` : ''}.`,
+      replyTo);
+    return;
+  }
 
   const match = data.match(/^c([123])_(yes|no):(.+)$/);
   if (!match) return;
@@ -566,6 +597,103 @@ async function handleRestockCommand(message, chatId, replyTo) {
     null,
     'Markdown'
   );
+}
+
+// Roles allowed to START a stock-take (send the photo).
+const STOCKTAKE_SUBMITTERS = ['office_boy', 'facility_manager', 'leadership'];
+// Roles allowed to CONFIRM/DISCARD an applied stock-take.
+const STOCKTAKE_APPROVERS = ['facility_manager', 'leadership'];
+
+// Look up the profile linked to a Telegram chat. Returns null if unregistered.
+async function getProfileForChat(chatId) {
+  const { data: mapping } = await supabaseAdmin
+    .from('telegram_user_map')
+    .select('user_id')
+    .eq('telegram_chat_id', String(chatId))
+    .maybeSingle();
+  if (!mapping) return null;
+
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('role, full_name')
+    .eq('id', mapping.user_id)
+    .maybeSingle();
+  if (!profile) return null;
+
+  return { userId: mapping.user_id, role: profile.role, name: profile.full_name };
+}
+
+function formatStockTakeMessage(diff, unmatched) {
+  const lines = diff.map((r) => {
+    const arrow = r.delta === 0 ? '＝' : r.delta > 0 ? '🔺' : '🔻';
+    const deltaStr = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
+    return `${arrow} *${r.name}* — system ${r.system}, counted ${r.counted} (${deltaStr} ${r.unit})`;
+  });
+  let msg = `📸 *Photo Stock-take*\n\n${lines.join('\n')}`;
+  if (unmatched.length) {
+    msg += `\n\n⚠️ Couldn't match: ${unmatched.join(', ')}`;
+  }
+  msg += `\n\n_AI estimate — confirm to apply, or discard._`;
+  return msg;
+}
+
+async function handleStockTakeCommand(message, chatId, replyTo) {
+  const profile = await getProfileForChat(chatId);
+  if (!profile) {
+    await sendTelegramMessage(chatId,
+      '❌ You are not registered. Send /register <your@company.com> to link your account.',
+      replyTo);
+    return;
+  }
+  if (!STOCKTAKE_SUBMITTERS.includes(profile.role)) {
+    await sendTelegramMessage(chatId,
+      '❌ Your role is not authorised to run a stock-take.', replyTo);
+    return;
+  }
+
+  if (!message.photo?.length) {
+    await sendTelegramMessage(chatId,
+      '📸 To do a stock-take, send /stocktake as the *caption* of a clear shelf photo.',
+      replyTo, null, 'Markdown');
+    return;
+  }
+
+  // Largest photo size = best resolution for counting.
+  const best = [...message.photo].sort((a, b) => (b.file_size || 0) - (a.file_size || 0))[0];
+  let photoUrl;
+  try {
+    const buf = await downloadTelegramFile(best.file_id);
+    photoUrl = await uploadFile({
+      buffer: buf,
+      fileName: `stocktake-${chatId}-${Date.now()}.jpg`,
+      mimeType: 'image/jpeg',
+    });
+  } catch (e) {
+    console.error('[StockTake] photo upload error:', e.message);
+    await sendTelegramMessage(chatId, '❌ Could not read that photo. Please try again.', replyTo);
+    return;
+  }
+
+  const { id, diff, unmatched } = await runStockTake(supabaseAdmin, {
+    photoUrls: [photoUrl],
+    createdBy: profile.userId,
+    createdByName: profile.name,
+  });
+
+  if (!id || diff.length === 0) {
+    await sendTelegramMessage(chatId,
+      `🤔 Couldn't count any known products in that photo.${unmatched.length ? `\n\nSaw but couldn't match: ${unmatched.join(', ')}` : ''}\n\nTry a clearer, well-lit shelf photo.`,
+      replyTo);
+    return;
+  }
+
+  const keyboard = {
+    inline_keyboard: [[
+      { text: '✅ Confirm', callback_data: `st_confirm:${id}` },
+      { text: '🗑 Discard', callback_data: `st_discard:${id}` },
+    ]],
+  };
+  await sendTelegramMessage(chatId, formatStockTakeMessage(diff, unmatched), replyTo, keyboard, 'Markdown');
 }
 
 async function handleClarificationReply(message, chatId, replyTo, text) {
@@ -1108,6 +1236,13 @@ router.post('/', (req, res) => {
   if (text.toLowerCase().startsWith('/restock')) {
     handleRestockCommand(message, chatId, replyTo).catch(e =>
       console.error('[ManualPurchase] restock error:', e.message)
+    );
+    return;
+  }
+
+  if (text.toLowerCase().startsWith('/stocktake')) {
+    handleStockTakeCommand(message, chatId, replyTo).catch(e =>
+      console.error('[StockTake] command error:', e.message)
     );
     return;
   }
