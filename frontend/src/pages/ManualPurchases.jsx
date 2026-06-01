@@ -44,10 +44,10 @@ function confBarColor(score) {
 
 function PurchaseCard({
   p, expanded, onToggle,
-  canApprove, canClarify, canSync, busy,
+  canApprove, canClarify, busy,
   clarifyActive, clarifyText, onClarifyToggle, onClarifyChange, onClarifySubmit,
   rejectActive,  rejectReason, onRejectToggle, onRejectReasonChange, onRejectSubmit,
-  onApprove, onSync,
+  onApprove,
 }) {
   const confPct = Math.round((p.ai_confidence || 0) * 100);
 
@@ -55,8 +55,7 @@ function PurchaseCard({
   const canApproveThis = canApprove && ['pending_review', 'auto_approved'].includes(p.status);
   const canRejectThis  = canApprove && ['pending_review', 'auto_approved'].includes(p.status);
   const canClarifyThis = canClarify && ['pending_review', 'draft_needs_clarification'].includes(p.status);
-  const canSyncThis    = canSync    && ['approved', 'auto_approved'].includes(p.status) && !p.synced_to_inventory;
-  const hasActions     = canApproveThis || canRejectThis || canClarifyThis || canSyncThis;
+  const hasActions     = canApproveThis || canRejectThis || canClarifyThis;
 
   return (
     <div className={`card overflow-hidden transition-all ${
@@ -225,22 +224,13 @@ function PurchaseCard({
           {hasActions && (
             <div className="pt-1 space-y-3">
               <div className="flex flex-wrap gap-2">
-                {canSyncThis && (
-                  <button
-                    onClick={onSync}
-                    disabled={busy}
-                    className="btn-secondary text-sm border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-50"
-                  >
-                    🔄 Sync to Inventory
-                  </button>
-                )}
                 {canApproveThis && !rejectActive && (
                   <button
                     onClick={onApprove}
                     disabled={busy}
                     className="btn-primary text-sm disabled:opacity-50"
                   >
-                    {busy ? '…' : '✓ Approve'}
+                    {busy ? '…' : '✓ Approve & Stock'}
                   </button>
                 )}
                 {canClarifyThis && !clarifyActive && !rejectActive && (
@@ -340,7 +330,6 @@ export default function ManualPurchases() {
 
   const canApprove = ['finance', 'leadership'].includes(profile?.role);
   const canClarify = ['finance', 'leadership', 'facility_manager'].includes(profile?.role);
-  const canSync    = ['finance', 'leadership'].includes(profile?.role);
 
   useEffect(() => {
     load();
@@ -365,6 +354,7 @@ export default function ManualPurchases() {
   }
 
   async function handleApprove(id) {
+    if (!window.confirm('Approve and add this purchase to inventory?')) return;
     setBusyId(id);
     try {
       await api.approveManualPurchase(id);
@@ -399,19 +389,6 @@ export default function ManualPurchases() {
       await api.clarifyManualPurchase(id, clarifyText.trim());
       setClarifyId(null);
       setClarifyText('');
-      await load();
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function handleSync(id) {
-    if (!window.confirm('Sync this purchase to inventory and finance records?')) return;
-    setBusyId(id);
-    try {
-      await api.syncManualPurchase(id);
       await load();
     } catch (e) {
       alert(e.message);
@@ -528,7 +505,6 @@ export default function ManualPurchases() {
               onToggle={() => toggleExpand(p.id)}
               canApprove={canApprove}
               canClarify={canClarify}
-              canSync={canSync}
               busy={busyId === p.id}
               clarifyActive={clarifyId === p.id}
               clarifyText={clarifyId === p.id ? clarifyText : ''}
@@ -541,7 +517,6 @@ export default function ManualPurchases() {
               onRejectReasonChange={setRejectReason}
               onRejectSubmit={() => handleReject(p.id)}
               onApprove={() => handleApprove(p.id)}
-              onSync={() => handleSync(p.id)}
             />
           ))}
         </div>

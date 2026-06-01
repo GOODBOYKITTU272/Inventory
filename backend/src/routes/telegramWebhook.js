@@ -4,6 +4,7 @@ import { fileCompletion, visionCompletion } from '../lib/openai.js';
 import { postBillToTeams } from '../lib/teams.js';
 import { mapProductToCafeteria } from '../lib/stockHelper.js';
 import { classifyTelegramMessage, extractManualPurchase, checkAutoApproval, detectDuplicate, ALLOWED_SUBMITTERS, parseUserCorrection } from '../lib/purchaseAI.js';
+import { applyPurchaseToInventory } from '../lib/applyPurchase.js';
 
 const router = Router();
 
@@ -272,22 +273,46 @@ async function finalisePurchase(chatId, purchaseId, replyTo) {
     paymentReference: purchase.payment_reference,
   });
 
-  const finalStatus = (approval.approved && !dupeCheck.isDuplicate) ? 'auto_approved' : 'pending_review';
+  const isClear = approval.approved && !dupeCheck.isDuplicate;
 
   await supabaseAdmin.from('manual_purchases').update({
-    status:               finalStatus,
+    status:               isClear ? 'auto_approved' : 'pending_review',
     confirmation_step:    'done',
     auto_approval_reason: approval.reason,
     duplicate_risk:       dupeCheck.isDuplicate,
     duplicate_reason:     dupeCheck.reason,
   }).eq('id', purchaseId);
 
+  // Clear purchase → push straight to inventory + finance (no web step needed).
+  // Duplicate / unclear → stays 'pending_review' for leadership/finance to review.
+  let syncedOk = false;
+  if (isClear) {
+    try {
+      await applyPurchaseToInventory(purchase, { writeFinance: true });
+      await supabaseAdmin.from('manual_purchases').update({
+        synced_to_inventory: true,
+        synced_to_finance:   true,
+        synced_at:           new Date().toISOString(),
+        status:              'synced_to_inventory',
+      }).eq('id', purchaseId);
+      syncedOk = true;
+    } catch (syncErr) {
+      // Leave status 'auto_approved' so the web Sync can retry later.
+      console.error(`[ManualPurchase] Telegram auto-sync failed for #${purchaseId.slice(0, 8)}:`, syncErr.message);
+    }
+  }
+
   const brandSuffix = purchase.brand_name ? ` (${purchase.brand_name})` : '';
   const unitStr     = purchase.unit || '';
 
-  const msg = (finalStatus === 'auto_approved')
-    ? `✅ Purchase Confirmed!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n🏷 ${purchase.category || ''}\n\nAuto-approved. Recorded successfully.`
-    : `⏳ Purchase Submitted!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n\nSent to finance team for review.`;
+  let msg;
+  if (isClear && syncedOk) {
+    msg = `✅ Purchase Confirmed & Added to Stock!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n🏷 ${purchase.category || ''}\n\nAuto-approved and inventory updated.`;
+  } else if (isClear) {
+    msg = `✅ Purchase Confirmed!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n\nAuto-approved. Stock update pending — finance will sync it.`;
+  } else {
+    msg = `⏳ Purchase Submitted!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n\nSent to finance team for review.`;
+  }
 
   await sendTelegramMessage(chatId, msg, replyTo);
 }
