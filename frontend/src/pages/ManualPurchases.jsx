@@ -353,7 +353,12 @@ export default function ManualPurchases() {
       const res = await api.listManualPurchases(activeTab);
       setPurchases(res.purchases || []);
     } catch (e) {
-      setError(e.message);
+      // Show a friendlier message when the network call completely fails
+      // (e.g. VITE_API_BASE_URL not set, Render is asleep, or no internet)
+      const msg = e.message === 'Failed to fetch'
+        ? 'Could not connect to the server. Please check your internet connection or try again in a moment.'
+        : e.message;
+      setError(msg);
     } finally {
       setLoading(false);
     }

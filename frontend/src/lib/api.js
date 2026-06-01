@@ -18,8 +18,14 @@ async function request(path, opts = {}) {
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`;
     try {
-      const body = await res.json();
-      if (body?.error) msg = body.error;
+      // Only parse as JSON if the response actually is JSON.
+      // This prevents a confusing secondary error when Vercel returns
+      // the SPA index.html (HTML) instead of a real backend JSON response.
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const body = await res.json();
+        if (body?.error) msg = body.error;
+      }
     } catch {}
     throw new Error(msg);
   }
