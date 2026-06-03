@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase.js';
+import { api } from '../lib/api.js';
 
 const ALLOWED_DOMAIN = 'applywizz.ai';
 const HIDDEN_PASSWORD = 'Applywizz@2026';
@@ -56,46 +57,30 @@ export default function Login() {
     setBusy(true);
 
     try {
-      let { error: signInErr } = await supabase.auth.signInWithPassword({
+      // Gate 1: the email must be a real, enabled user in the company directory.
+      // The backend (Microsoft Graph) decides this; we also create the account
+      // server-side there if it doesn't exist yet. No open self-registration.
+      try {
+        await api.verifyEmail(trimmed);
+      } catch (gateErr) {
+        setErr(gateErr.message || 'This email is not allowed to sign in.');
+        setBusy(false);
+        submitting.current = false;
+        return;
+      }
+
+      // Gate 2: sign in. The account is guaranteed to exist by verifyEmail above,
+      // so a failure here is a real error (not a "create account" case).
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
         email: trimmed,
         password: HIDDEN_PASSWORD,
       });
 
       if (signInErr) {
-        const msg = signInErr.message?.toLowerCase() || '';
-
-        if (msg.includes('invalid login') || msg.includes('invalid email') || msg.includes('user not found') || msg.includes('invalid credentials')) {
-          console.log('[Login] Account not found, creating...');
-          const { error: signUpErr } = await supabase.auth.signUp({
-            email: trimmed,
-            password: HIDDEN_PASSWORD,
-            options: { data: { full_name: trimmed.split('@')[0] } },
-          });
-
-          if (signUpErr) {
-            setErr('Could not create account: ' + signUpErr.message);
-            setBusy(false);
-            submitting.current = false;
-            return;
-          }
-
-          const { error: postErr } = await supabase.auth.signInWithPassword({
-            email: trimmed,
-            password: HIDDEN_PASSWORD,
-          });
-
-          if (postErr) {
-            setErr('Account created but sign-in failed: ' + postErr.message);
-            setBusy(false);
-            submitting.current = false;
-            return;
-          }
-        } else {
-          setErr('Could not sign in: ' + signInErr.message);
-          setBusy(false);
-          submitting.current = false;
-          return;
-        }
+        setErr('Could not sign in: ' + signInErr.message);
+        setBusy(false);
+        submitting.current = false;
+        return;
       }
 
       console.log('[Login] Signed in, checking MFA...');

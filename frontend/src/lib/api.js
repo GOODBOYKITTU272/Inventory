@@ -35,6 +35,8 @@ async function request(path, opts = {}) {
 
 export const api = {
   startEmailLogin: (email)        => request('/api/auth/start-email-login', { method: 'POST', body: JSON.stringify({ email }) }),
+  // Gate login: confirm the email is a real user in the Azure directory before sign-in.
+  verifyEmail:     (email)        => request('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ email }) }),
 
   listProducts:    ()             => request('/api/products'),
   createProduct:   (body)         => request('/api/products', { method: 'POST', body: JSON.stringify(body) }),
