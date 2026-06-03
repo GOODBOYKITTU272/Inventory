@@ -111,4 +111,8 @@ export const api = {
   rejectManualPurchase:  (id, reason)     => request(`/api/manual-purchases/${id}/reject`,  { method: 'POST', body: JSON.stringify({ reason }) }),
   clarifyManualPurchase: (id, question)   => request(`/api/manual-purchases/${id}/clarify`, { method: 'POST', body: JSON.stringify({ question }) }),
   syncManualPurchase:    (id)             => request(`/api/manual-purchases/${id}/sync`,     { method: 'POST' }),
+
+  // Predictive ordering (Feature #9)
+  forecasts:   () => request('/api/forecasts'),
+  runForecast: () => request('/api/forecasts/run', { method: 'POST' }),
 };

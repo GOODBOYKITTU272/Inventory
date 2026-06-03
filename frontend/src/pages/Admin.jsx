@@ -23,6 +23,103 @@ function RolePill({ role }) {
   return <span className={`pill ${cls}`}>{ROLE_LABEL[role] || role}</span>;
 }
 
+// ── Predictive ordering (Feature #9) ─────────────────────────────────────────
+// Shows the latest weekly forecast per product (from v_latest_forecasts).
+// "history" basis = predicted from real transaction history; "daily_usage_fallback"
+// = estimated from the static daily_usage because there isn't enough history yet.
+function BasisBadge({ basis }) {
+  const isHistory = basis === 'history';
+  const cls = isHistory ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800';
+  const label = isHistory ? 'history' : 'estimate';
+  return <span className={`pill ${cls}`}>{label}</span>;
+}
+
+function ForecastPanel() {
+  const [rows, setRows]   = useState(null);
+  const [err, setErr]     = useState('');
+  const [running, setRunning] = useState(false);
+  const [okMsg, setOkMsg] = useState('');
+
+  async function load() {
+    setErr('');
+    try { setRows(await api.forecasts()); }
+    catch (e) { setErr(e.message); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function onRun() {
+    setRunning(true); setErr(''); setOkMsg('');
+    try {
+      const { upserted } = await api.runForecast();
+      setOkMsg(`✅ Forecast refreshed — ${upserted} product(s) updated.`);
+      await load();
+    } catch (e) { setErr(e.message); }
+    finally { setRunning(false); }
+  }
+
+  return (
+    <div className="card">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+        <h2 className="font-semibold">🔮 Predictive ordering</h2>
+        <button className="btn-primary" disabled={running} onClick={onRun}>
+          {running ? 'Running…' : 'Run forecast now'}
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 mb-3">
+        Next week's predicted need per item, from recent transaction history.
+        Suggested order = predicted need − current stock. Advisory only.
+      </p>
+
+      {okMsg && <div className="text-sm text-emerald-700 bg-emerald-50 p-3 rounded-md mb-3">{okMsg}</div>}
+      {err   && <div className="text-sm text-rose-700 bg-rose-50 p-3 rounded-md mb-3">{err}</div>}
+
+      {!rows ? (
+        <div className="text-slate-500 text-sm">Loading forecasts…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-slate-500 text-sm">
+          No forecasts yet. Click “Run forecast now”, or wait for the Monday job.
+        </div>
+      ) : (
+        <div className="overflow-x-auto -mx-2 sm:mx-0">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-500 border-b">
+                <th className="py-2 pr-3">Product</th>
+                <th className="py-2 pr-3 text-right">Avg/week</th>
+                <th className="py-2 pr-3 text-right">Predicted next</th>
+                <th className="py-2 pr-3 text-right">In stock</th>
+                <th className="py-2 pr-3 text-right">Suggested order</th>
+                <th className="py-2 pr-3">Based on</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.product_id} className="border-b last:border-0">
+                  <td className="py-2 pr-3 font-medium text-slate-900">{r.product_name}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{r.avg_weekly} {r.unit || ''}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{r.predicted_next} {r.unit || ''}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-slate-500">
+                    {r.current_stock ?? '-'}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-semibold">
+                    {Number(r.suggested_order) > 0
+                      ? <span className="text-brand">{r.suggested_order} {r.unit || ''}</span>
+                      : <span className="text-slate-400">0</span>}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <BasisBadge basis={r.basis} />
+                    <span className="ml-2 text-xs text-slate-400">{r.weeks_of_data}w data</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   const { profile } = useAuth();
   const [users, setUsers]   = useState(null);
@@ -178,6 +275,8 @@ export default function Admin() {
           </table>
         </div>
       </div>
+
+      <ForecastPanel />
     </div>
   );
 }

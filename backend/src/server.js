@@ -25,6 +25,7 @@ import pushRouter from './routes/push.js';
 import cronRouter from './routes/cron.js';
 import mealPrintRouter from './routes/mealPrint.js';
 import manualPurchaseRouter from './routes/manualPurchase.js';
+import forecastsRouter from './routes/forecasts.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -88,6 +89,7 @@ app.use('/api/meals',        mealsRouter);
 app.use('/api/push',         pushRouter);
 app.use('/api/meal-print',   mealPrintRouter);
 app.use('/api/manual-purchases', manualPurchaseRouter);
+app.use('/api/forecasts', forecastsRouter);
 
 app.use(errorHandler);
 
