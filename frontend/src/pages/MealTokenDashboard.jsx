@@ -6,10 +6,21 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 
-// ── IST date helper ───────────────────────────────────────────────────────────
+// ── IST date helpers ──────────────────────────────────────────────────────────
 function getISTDate() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
     .toISOString().slice(0, 10);
+}
+
+// Returns the next working day (Mon–Fri) in IST as YYYY-MM-DD.
+// Friday → Monday, Saturday → Monday, Sunday → Monday, otherwise +1 day.
+function getNextWorkingDayIST() {
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  ist.setDate(ist.getDate() + 1);
+  while (ist.getDay() === 0 || ist.getDay() === 6) {
+    ist.setDate(ist.getDate() + 1);
+  }
+  return ist.toISOString().slice(0, 10);
 }
 
 // ── Status config ──────────────────────────────────────────────────────────────
@@ -217,7 +228,8 @@ function CabinCard({ cabin, date, onTrigger, onReprint }) {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function MealTokenDashboard() {
-  const today = getISTDate();
+  const today    = getISTDate();
+  const tomorrow = getNextWorkingDayIST();
   const [date,    setDate]    = useState(today);
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
@@ -352,7 +364,7 @@ export default function MealTokenDashboard() {
           <input
             type="date"
             value={date}
-            max={today}
+            max={tomorrow}
             onChange={e => setDate(e.target.value)}
             style={{
               border: 'none', outline: 'none', fontSize: 13, fontWeight: 600,
