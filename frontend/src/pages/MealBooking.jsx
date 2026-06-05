@@ -376,6 +376,9 @@ export default function MealBooking() {
   // Confirmation sheet state
   const [confirmData, setConfirmData] = useState(null); // { dateStr, choice, existingChoice }
 
+  // Per-date "change mode" — when true, show booking buttons so user can change existing booking
+  const [changingDate, setChangingDate] = useState(null);
+
   // Toast state
   const [toast, setToast] = useState(null); // { message, type }
 
@@ -453,6 +456,7 @@ export default function MealBooking() {
       const updated = await api.myMealBookings(monthStr);
       setBookings(updated);
       setConfirmData(null);
+      setChangingDate(null); // return to "already booked" banner after successful change
       setToast({ message: result.message || `${CHOICE_UI[choice]?.emoji} ${CHOICE_UI[choice]?.label} booked!`, type: 'success' });
       if (isManager && selectedDate === dateStr) {
         api.mealSummary(dateStr).then(setSummary).catch(() => {});
@@ -668,24 +672,73 @@ export default function MealBooking() {
               );
             }
 
-            // Next working day — show booking options with confirmation
+            // Next working day — Option A:
+            // If already booked → show clear "Already booked" banner, hide buttons.
+            // User must explicitly tap "Change" to reveal the choice buttons.
+            // If not booked → show buttons directly.
+            const isChanging = changingDate === selectedDate;
+
+            if (b && !isChanging) {
+              // ── Already booked — show confirmation state ──
+              const ui = CHOICE_UI[b.choice];
+              return (
+                <div className="space-y-3">
+                  <div className={`p-4 rounded-xl border-2 ${ui.bg} ${ui.border} flex items-center justify-between gap-3`}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{ui.emoji}</span>
+                      <div>
+                        <div className={`font-bold text-sm ${ui.text}`}>
+                          ✅ {b.choice === 'skip' ? 'Skipped' : `${ui.label} booked`}
+                        </div>
+                        {b.booked_at && (
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Booked at {new Date(b.booked_at).toLocaleTimeString('en-IN', {
+                              hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {b.choice !== 'skip' && (
+                        <button
+                          type="button"
+                          onClick={() => openMealTicket(selectedDate)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/70 border border-slate-200 text-xs font-bold text-brand hover:bg-white"
+                        >
+                          <Ticket size={13} />
+                          Ticket
+                        </button>
+                      )}
+                      {canBook && (
+                        <button
+                          type="button"
+                          onClick={() => setChangingDate(selectedDate)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/70 border border-slate-200 text-xs font-bold text-slate-500 hover:bg-white"
+                        >
+                          ✏️ Change
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // ── Not booked yet, OR user tapped "Change" — show booking buttons ──
             return (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <div className="text-xs text-brand font-bold uppercase tracking-wider">Your booking — Next working day</div>
-                  {b && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${CHOICE_UI[b.choice]?.badge}`}>
-                      Current: {CHOICE_UI[b.choice]?.emoji} {CHOICE_UI[b.choice]?.label}
-                    </span>
-                  )}
-                  {b && b.choice !== 'skip' && (
+                  <div className="text-xs text-brand font-bold uppercase tracking-wider">
+                    {isChanging ? 'Change your booking' : 'Book for next working day'}
+                  </div>
+                  {isChanging && (
                     <button
                       type="button"
-                      onClick={() => openMealTicket(selectedDate)}
-                      className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand/10 text-brand text-xs font-bold hover:bg-brand/15"
+                      onClick={() => setChangingDate(null)}
+                      className="ml-auto text-xs text-slate-400 hover:text-slate-600"
                     >
-                      <Ticket size={13} />
-                      View Ticket
+                      ✕ Cancel
                     </button>
                   )}
                 </div>
