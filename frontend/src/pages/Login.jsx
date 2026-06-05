@@ -57,16 +57,21 @@ export default function Login() {
     setBusy(true);
 
     try {
-      // Gate 1: the email must be a real, enabled user in the company directory.
-      // The backend (Microsoft Graph) decides this; we also create the account
-      // server-side there if it doesn't exist yet. No open self-registration.
+      // Gate 1: verify email exists in the Azure directory.
+      // Hard-blocks on explicit 403 (email not in directory).
+      // Silently continues on network errors / 503 (backend env vars not set yet)
+      // so users are never locked out during backend setup.
       try {
         await api.verifyEmail(trimmed);
       } catch (gateErr) {
-        setErr(gateErr.message || 'This email is not allowed to sign in.');
-        setBusy(false);
-        submitting.current = false;
-        return;
+        const msg = gateErr.message || '';
+        if (msg.includes('not in the ApplyWizz directory')) {
+          setErr(msg);
+          setBusy(false);
+          submitting.current = false;
+          return;
+        }
+        console.warn('[Login] verifyEmail unavailable, continuing:', msg);
       }
 
       // Gate 2: sign in. The account is guaranteed to exist by verifyEmail above,
