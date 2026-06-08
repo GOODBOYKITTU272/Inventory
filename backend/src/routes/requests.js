@@ -654,18 +654,16 @@ router.patch(
           deliveryTime = mins <= 1 ? 'in under a minute' : `in ${mins} min`;
         }
 
-        // Load user tone for witty delivery quotes
+        // Load user tone for all status notifications (not just delivered)
         let userTone = 'Friendly';
-        if (effectiveStatus === 'done') {
-          try {
-            const { data: toneRow } = await supabaseAdmin
-              .from('employee_cafeteria_preferences')
-              .select('notification_tone')
-              .eq('user_id', data.submitted_by)
-              .maybeSingle();
-            if (toneRow?.notification_tone) userTone = toneRow.notification_tone;
-          } catch (_) {}
-        }
+        try {
+          const { data: toneRow } = await supabaseAdmin
+            .from('employee_cafeteria_preferences')
+            .select('notification_tone')
+            .eq('user_id', data.submitted_by)
+            .maybeSingle();
+          if (toneRow?.notification_tone) userTone = toneRow.notification_tone;
+        } catch (_) {}
 
         // Witty delivery quotes by tone
         const DELIVERY_QUOTES = {
@@ -681,13 +679,57 @@ router.patch(
 
         const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+        // Tone-aware messages for every order status
+        const TONE_MESSAGES = {
+          accepted: {
+            Friendly:     [`Your ${item} is accepted! 🙌 We're on it.`],
+            Funny:        [`${item} accepted! Office boy ne haath hilaya 🖐️`],
+            'Mom Mode':   [`Beta, ${item} aa raha hai 💝 Thoda wait karo!`],
+            Professional: [`Order confirmed. ${item} is being processed.`],
+            Minimal:      [`${item} accepted.`],
+            gen_z:        [`ur ${item} got accepted bestie ✅ we're on it fr`],
+            boyfriend:    [`Hey babe, ${item} accepted! 💕 Coming right up~`],
+            girlfriend:   [`${item} accepted cutie! 💖 Won't be long!`],
+          },
+          preparing: {
+            Friendly:     [`${item} is being prepared fresh for you! 🍽️`],
+            Funny:        [`${item} ban raha hai! Suspense mat lo 😂`],
+            'Mom Mode':   [`Beta, ${item} tayar ho raha hai ghar jaisi care ke saath 🥰`],
+            Professional: [`${item} is currently being prepared.`],
+            Minimal:      [`Preparing ${item}.`],
+            gen_z:        [`ur ${item} is literally being made rn 👀`],
+            boyfriend:    [`Making your ${item} with extra love 💕`],
+            girlfriend:   [`${item} coming up! Made just for you 🥰`],
+          },
+          on_the_way: {
+            Friendly:     [`${item} is on its way to you! 🛵`],
+            Funny:        [`${item} nikal pada! Better than Zomato 💅`],
+            'Mom Mode':   [`Beta, ${item} aa raha hai! Dhyan se lena 💝`],
+            Professional: [`${item} is en route to your location.`],
+            Minimal:      [`${item} on the way.`],
+            gen_z:        [`${item} is literally coming to u rn no cap 🛵`],
+            boyfriend:    [`On my way with your ${item} babe! 🛵💕`],
+            girlfriend:   [`${item} is coming your way cutie! 💖`],
+          },
+          cancelled: {
+            Friendly:     [`Your ${item} was cancelled. Place a new order anytime! 😊`],
+            Funny:        [`Arre yaar! ${item} cancel ho gaya 😅 Try again!`],
+            'Mom Mode':   [`Beta, ${item} cancel ho gaya 😔 Kuch aur mangao!`],
+            Professional: [`Order cancelled: ${item}. Please place a new order if needed.`],
+            Minimal:      [`${item} cancelled.`],
+            gen_z:        [`ur ${item} got cancelled bestie 💀 it's giving chaos`],
+            boyfriend:    [`Oops babe, ${item} cancelled 😢 Order again?`],
+            girlfriend:   [`${item} cancelled cutie 😔 Want to try again?`],
+          },
+        };
+
         const PUSH_MESSAGES = {
-          accepted:          { title: '✅ Order Accepted!',       body: `${item} has been accepted and is being prepared.` },
-          preparing:         { title: '☕ Being Prepared!',        body: `${item} is being made right now.` },
-          on_the_way:        { title: '🛵 On the Way!',            body: `${item} is heading to you now!` },
-          ready_for_pickup:  { title: '🏃 Ready for Pickup!',     body: data.delivery_mode === 'self_pickup' ? 'Your food/drink is prepared. Please pick it up from the Cafeteria.' : `${item} is ready at the pantry counter. Come grab it! 🎉` },
-          done:              { title: '🎉 Delivered!',             body: pick(DELIVERY_QUOTES[userTone] || DELIVERY_QUOTES.Friendly) },
-          cancelled:         { title: '❌ Order Cancelled',        body: `${item} was cancelled. You can place a new order anytime.` },
+          accepted:         { title: '✅ Order Accepted!',   body: pick(TONE_MESSAGES.accepted[userTone]   || TONE_MESSAGES.accepted.Friendly) },
+          preparing:        { title: '☕ Being Prepared!',    body: pick(TONE_MESSAGES.preparing[userTone]  || TONE_MESSAGES.preparing.Friendly) },
+          on_the_way:       { title: '🛵 On the Way!',        body: pick(TONE_MESSAGES.on_the_way[userTone] || TONE_MESSAGES.on_the_way.Friendly) },
+          ready_for_pickup: { title: '🏃 Ready for Pickup!', body: data.delivery_mode === 'self_pickup' ? 'Your food/drink is prepared. Please pick it up from the Cafeteria.' : `${item} is ready at the pantry counter. Come grab it! 🎉` },
+          done:             { title: '🎉 Delivered!',         body: pick(DELIVERY_QUOTES[userTone] || DELIVERY_QUOTES.Friendly) },
+          cancelled:        { title: '❌ Order Cancelled',    body: pick(TONE_MESSAGES.cancelled[userTone]  || TONE_MESSAGES.cancelled.Friendly) },
         };
 
         const msg = PUSH_MESSAGES[effectiveStatus];
