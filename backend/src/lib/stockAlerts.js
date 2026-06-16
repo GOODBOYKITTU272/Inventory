@@ -169,3 +169,80 @@ export async function checkAndNotifyLowStock(supabaseAdmin, botToken) {
     }
   }
 }
+
+/**
+ * Phase 1 Days-of-Cover daily digest.
+ *
+ * Sends ONE combined Telegram message to leadership listing items that need
+ * attention, based on the cover_status computed in v_inventory_status:
+ *   order_now   -> 1 day or less of cover (or out of stock)
+ *   order_soon  -> 2 days or less of cover
+ *   waste_risk  -> stock exceeds what can be used before expiry
+ *
+ * Silence = all good: if nothing needs attention, no message is sent.
+ * This is additive and independent of checkAndNotifyLowStock above.
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {string} botToken Telegram bot token
+ * @returns {Promise<{ sent: number, items: number }>}
+ */
+export async function sendDailyStockDigest(supabaseAdmin, botToken) {
+  if (!botToken) return { sent: 0, items: 0 };
+
+  // 1. Pull only items that need attention (daily_usage must be set).
+  const { data: rows, error: fetchErr } = await supabaseAdmin
+    .from('v_inventory_status')
+    .select('product_name, unit, current_stock, days_of_cover, max_safe_order, cover_status')
+    .in('cover_status', ['order_now', 'order_soon', 'waste_risk']);
+
+  if (fetchErr) {
+    console.error('[StockDigest] fetch failed:', fetchErr.message);
+    return { sent: 0, items: 0 };
+  }
+  if (!rows || rows.length === 0) return { sent: 0, items: 0 }; // silence = all good
+
+  // 2. Leadership chat ids.
+  const { data: mappings } = await supabaseAdmin
+    .from('telegram_user_map')
+    .select('telegram_chat_id, profiles!inner(role)')
+    .eq('profiles.role', 'leadership');
+
+  const chatIds = mappings?.map((m) => m.telegram_chat_id).filter(Boolean) || [];
+  if (chatIds.length === 0) return { sent: 0, items: rows.length };
+
+  // 3. Build one combined message, ordered by urgency.
+  const order = { order_now: 0, order_soon: 1, waste_risk: 2 };
+  const sorted = [...rows].sort((a, b) => order[a.cover_status] - order[b.cover_status]);
+
+  const dateLabel = new Date().toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long',
+  });
+
+  const lines = sorted.map((r) => {
+    const unit = r.unit || 'units';
+    if (r.cover_status === 'order_now') {
+      const cover = r.days_of_cover != null ? `${r.days_of_cover} days left` : 'out of stock';
+      return `🔴 *${r.product_name}* — ${cover} (order now)`;
+    }
+    if (r.cover_status === 'order_soon') {
+      return `🟡 *${r.product_name}* — ${r.days_of_cover} days left (order soon)`;
+    }
+    // waste_risk
+    const usable = r.max_safe_order != null ? `, only ~${r.max_safe_order} usable before expiry` : '';
+    return `⚠️ *${r.product_name}* — ${r.current_stock} ${unit} in stock${usable}`;
+  });
+
+  const msg = `📦 *Stock check — ${dateLabel}*\n\n${lines.join('\n')}`;
+
+  // 4. Dispatch + log once.
+  await Promise.allSettled(chatIds.map((cid) => sendTelegramMessage(botToken, cid, msg)));
+
+  await supabaseAdmin.from('notification_logs').insert({
+    notification_type: 'stock_digest',
+    title: `Stock digest — ${dateLabel}`,
+    message: `${rows.length} item(s) need attention`,
+    sent_at: new Date().toISOString(),
+  });
+
+  return { sent: chatIds.length, items: rows.length };
+}

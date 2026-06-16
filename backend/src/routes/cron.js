@@ -3,7 +3,8 @@ import { supabaseAdmin } from '../lib/supabase.js';
 import { getAIDecision } from '../lib/recommendations.js';
 import { sendPushToUsers } from './push.js';
 import { postAIReminderToTeams } from '../lib/teams.js';
-import { checkAndNotifyLowStock } from '../lib/stockAlerts.js';
+import { checkAndNotifyLowStock, sendDailyStockDigest } from '../lib/stockAlerts.js';
+import { computeForecasts, getActionableForecasts } from '../lib/forecast.js';
 
 const router = Router();
 
@@ -247,5 +248,94 @@ router.post('/stock-alerts', async (req, res, next) => {
     next(e);
   }
 });
+
+// POST /api/cron/stock-digest — Phase 1 days-of-cover daily digest.
+// Schedule via pg_cron (e.g. 9:00 AM IST = 03:30 UTC). Sends ONE combined
+// Telegram message to leadership; silent when nothing needs attention.
+router.post('/stock-digest', async (req, res, next) => {
+  try {
+    const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
+    const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+
+    if (secret !== cronSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const result = await sendDailyStockDigest(supabaseAdmin, process.env.TELEGRAM_BOT_TOKEN);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /api/cron/weekly-forecast — compute predictive order suggestions.
+// Schedule via pg_cron every Monday morning (e.g. 7:00 AM IST = 01:30 UTC).
+// Idempotent: re-running the same week upserts, never duplicates.
+router.post('/weekly-forecast', async (req, res, next) => {
+  try {
+    const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
+    const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+
+    if (secret !== cronSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Compute and upsert forecasts
+    const { upserted, errors } = await computeForecasts(supabaseAdmin);
+
+    if (errors.length) {
+      console.warn('[Cron] weekly-forecast partial errors:', errors);
+    }
+
+    // Send digest to leadership if there are actionable items
+    const actionable = await getActionableForecasts(supabaseAdmin);
+    if (actionable.length > 0) {
+      await sendWeeklyForecastDigest(actionable, process.env.TELEGRAM_BOT_TOKEN);
+    }
+
+    res.json({ ok: true, upserted, actionable: actionable.length, errors });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Send a Telegram digest of suggested orders to leadership. */
+async function sendWeeklyForecastDigest(items, botToken) {
+  if (!botToken || !items.length) return;
+
+  const { data: mappings } = await supabaseAdmin
+    .from('telegram_user_map')
+    .select('telegram_chat_id, profiles!inner(role)')
+    .eq('profiles.role', 'leadership');
+
+  const chatIds = mappings?.map((m) => m.telegram_chat_id).filter(Boolean) || [];
+  if (!chatIds.length) return;
+
+  const dateLabel = new Date().toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long',
+  });
+
+  const lines = items.map((r) => {
+    const unit = r.unit || 'units';
+    const flag = r.basis === 'daily_usage_fallback' ? ' _(est)_' : '';
+    return `📦 *${r.product_name}* — order ~${r.suggested_order} ${unit}${flag}`;
+  });
+
+  const msg =
+    `🔮 *Weekly order suggestions — ${dateLabel}*\n\n` +
+    `${lines.join('\n')}\n\n` +
+    `_These are AI predictions based on recent usage. Confirm before ordering._`;
+
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+  await Promise.allSettled(
+    chatIds.map((cid) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: cid, text: msg, parse_mode: 'Markdown' }),
+      })
+    )
+  );
+}
 
 export default router;

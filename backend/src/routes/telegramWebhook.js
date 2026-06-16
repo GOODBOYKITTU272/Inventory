@@ -4,6 +4,8 @@ import { fileCompletion, visionCompletion } from '../lib/openai.js';
 import { postBillToTeams } from '../lib/teams.js';
 import { mapProductToCafeteria } from '../lib/stockHelper.js';
 import { classifyTelegramMessage, extractManualPurchase, checkAutoApproval, detectDuplicate, ALLOWED_SUBMITTERS, parseUserCorrection } from '../lib/purchaseAI.js';
+import { applyPurchaseToInventory } from '../lib/applyPurchase.js';
+import { runStockTake, applyStockTake, discardStockTake } from '../lib/stockTake.js';
 
 const router = Router();
 
@@ -202,6 +204,36 @@ async function handleCallbackQuery(callbackQuery) {
 
   await answerCallbackQuery(queryId);
 
+  // ── Photo stock-take: Confirm / Discard ──────────────────────────────────
+  const stMatch = data.match(/^st_(confirm|discard):(.+)$/);
+  if (stMatch) {
+    const stAction = stMatch[1];
+    const stockTakeId = stMatch[2];
+
+    const profile = await getProfileForChat(chatId);
+    if (!profile || !STOCKTAKE_APPROVERS.includes(profile.role)) {
+      await sendTelegramMessage(chatId,
+        '❌ Only facility managers or leadership can confirm a stock-take.', replyTo);
+      return;
+    }
+
+    if (stAction === 'discard') {
+      const r = await discardStockTake(supabaseAdmin, { stockTakeId, confirmedBy: profile.userId });
+      await sendTelegramMessage(chatId,
+        r.alreadyDone ? 'ℹ️ This stock-take was already processed.' : '🗑 Stock-take discarded. Nothing changed.',
+        replyTo);
+      return;
+    }
+
+    const result = await applyStockTake(supabaseAdmin, { stockTakeId, confirmedBy: profile.userId });
+    await sendTelegramMessage(chatId,
+      result.alreadyDone
+        ? 'ℹ️ This stock-take was already processed.'
+        : `✅ Stock-take applied — ${result.applied} item(s) adjusted${result.skipped ? `, ${result.skipped} unchanged` : ''}.`,
+      replyTo);
+    return;
+  }
+
   const match = data.match(/^c([123])_(yes|no):(.+)$/);
   if (!match) return;
 
@@ -272,22 +304,46 @@ async function finalisePurchase(chatId, purchaseId, replyTo) {
     paymentReference: purchase.payment_reference,
   });
 
-  const finalStatus = (approval.approved && !dupeCheck.isDuplicate) ? 'auto_approved' : 'pending_review';
+  const isClear = approval.approved && !dupeCheck.isDuplicate;
 
   await supabaseAdmin.from('manual_purchases').update({
-    status:               finalStatus,
+    status:               isClear ? 'auto_approved' : 'pending_review',
     confirmation_step:    'done',
     auto_approval_reason: approval.reason,
     duplicate_risk:       dupeCheck.isDuplicate,
     duplicate_reason:     dupeCheck.reason,
   }).eq('id', purchaseId);
 
+  // Clear purchase → push straight to inventory + finance (no web step needed).
+  // Duplicate / unclear → stays 'pending_review' for leadership/finance to review.
+  let syncedOk = false;
+  if (isClear) {
+    try {
+      await applyPurchaseToInventory(purchase, { writeFinance: true });
+      await supabaseAdmin.from('manual_purchases').update({
+        synced_to_inventory: true,
+        synced_to_finance:   true,
+        synced_at:           new Date().toISOString(),
+        status:              'synced_to_inventory',
+      }).eq('id', purchaseId);
+      syncedOk = true;
+    } catch (syncErr) {
+      // Leave status 'auto_approved' so the web Sync can retry later.
+      console.error(`[ManualPurchase] Telegram auto-sync failed for #${purchaseId.slice(0, 8)}:`, syncErr.message);
+    }
+  }
+
   const brandSuffix = purchase.brand_name ? ` (${purchase.brand_name})` : '';
   const unitStr     = purchase.unit || '';
 
-  const msg = (finalStatus === 'auto_approved')
-    ? `✅ Purchase Confirmed!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n🏷 ${purchase.category || ''}\n\nAuto-approved. Recorded successfully.`
-    : `⏳ Purchase Submitted!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n\nSent to finance team for review.`;
+  let msg;
+  if (isClear && syncedOk) {
+    msg = `✅ Purchase Confirmed & Added to Stock!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n🏷 ${purchase.category || ''}\n\nAuto-approved and inventory updated.`;
+  } else if (isClear) {
+    msg = `✅ Purchase Confirmed!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n\nAuto-approved. Stock update pending — finance will sync it.`;
+  } else {
+    msg = `⏳ Purchase Submitted!\n\n📦 ${purchase.item_name}${brandSuffix}\n⚖️ ${purchase.quantity}${unitStr}\n💰 ₹${purchase.amount}\n\nSent to finance team for review.`;
+  }
 
   await sendTelegramMessage(chatId, msg, replyTo);
 }
@@ -541,6 +597,103 @@ async function handleRestockCommand(message, chatId, replyTo) {
     null,
     'Markdown'
   );
+}
+
+// Roles allowed to START a stock-take (send the photo).
+const STOCKTAKE_SUBMITTERS = ['office_boy', 'facility_manager', 'leadership'];
+// Roles allowed to CONFIRM/DISCARD an applied stock-take.
+const STOCKTAKE_APPROVERS = ['facility_manager', 'leadership'];
+
+// Look up the profile linked to a Telegram chat. Returns null if unregistered.
+async function getProfileForChat(chatId) {
+  const { data: mapping } = await supabaseAdmin
+    .from('telegram_user_map')
+    .select('user_id')
+    .eq('telegram_chat_id', String(chatId))
+    .maybeSingle();
+  if (!mapping) return null;
+
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('role, full_name')
+    .eq('id', mapping.user_id)
+    .maybeSingle();
+  if (!profile) return null;
+
+  return { userId: mapping.user_id, role: profile.role, name: profile.full_name };
+}
+
+function formatStockTakeMessage(diff, unmatched) {
+  const lines = diff.map((r) => {
+    const arrow = r.delta === 0 ? '＝' : r.delta > 0 ? '🔺' : '🔻';
+    const deltaStr = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
+    return `${arrow} *${r.name}* — system ${r.system}, counted ${r.counted} (${deltaStr} ${r.unit})`;
+  });
+  let msg = `📸 *Photo Stock-take*\n\n${lines.join('\n')}`;
+  if (unmatched.length) {
+    msg += `\n\n⚠️ Couldn't match: ${unmatched.join(', ')}`;
+  }
+  msg += `\n\n_AI estimate — confirm to apply, or discard._`;
+  return msg;
+}
+
+async function handleStockTakeCommand(message, chatId, replyTo) {
+  const profile = await getProfileForChat(chatId);
+  if (!profile) {
+    await sendTelegramMessage(chatId,
+      '❌ You are not registered. Send /register <your@company.com> to link your account.',
+      replyTo);
+    return;
+  }
+  if (!STOCKTAKE_SUBMITTERS.includes(profile.role)) {
+    await sendTelegramMessage(chatId,
+      '❌ Your role is not authorised to run a stock-take.', replyTo);
+    return;
+  }
+
+  if (!message.photo?.length) {
+    await sendTelegramMessage(chatId,
+      '📸 To do a stock-take, send /stocktake as the *caption* of a clear shelf photo.',
+      replyTo, null, 'Markdown');
+    return;
+  }
+
+  // Largest photo size = best resolution for counting.
+  const best = [...message.photo].sort((a, b) => (b.file_size || 0) - (a.file_size || 0))[0];
+  let photoUrl;
+  try {
+    const buf = await downloadTelegramFile(best.file_id);
+    photoUrl = await uploadFile({
+      buffer: buf,
+      fileName: `stocktake-${chatId}-${Date.now()}.jpg`,
+      mimeType: 'image/jpeg',
+    });
+  } catch (e) {
+    console.error('[StockTake] photo upload error:', e.message);
+    await sendTelegramMessage(chatId, '❌ Could not read that photo. Please try again.', replyTo);
+    return;
+  }
+
+  const { id, diff, unmatched } = await runStockTake(supabaseAdmin, {
+    photoUrls: [photoUrl],
+    createdBy: profile.userId,
+    createdByName: profile.name,
+  });
+
+  if (!id || diff.length === 0) {
+    await sendTelegramMessage(chatId,
+      `🤔 Couldn't count any known products in that photo.${unmatched.length ? `\n\nSaw but couldn't match: ${unmatched.join(', ')}` : ''}\n\nTry a clearer, well-lit shelf photo.`,
+      replyTo);
+    return;
+  }
+
+  const keyboard = {
+    inline_keyboard: [[
+      { text: '✅ Confirm', callback_data: `st_confirm:${id}` },
+      { text: '🗑 Discard', callback_data: `st_discard:${id}` },
+    ]],
+  };
+  await sendTelegramMessage(chatId, formatStockTakeMessage(diff, unmatched), replyTo, keyboard, 'Markdown');
 }
 
 async function handleClarificationReply(message, chatId, replyTo, text) {
@@ -942,12 +1095,23 @@ async function saveBill({ parsed, fileUrl }) {
     }
 
     // 4. Upsert into cafeteria_items (for quick ordering on frontend)
-    const { cafeteriaItemName, servings, isOrderable, category: mappedCat } = mapProductToCafeteria(itemName, qty, item.unit);
-    const displayName = generateDisplayName(cafeteriaItemName);
+    const {
+      cafeteriaItemName,
+      servings,
+      isOrderable,
+      category: mappedCat,
+      displayName: mappedDisplayName,
+      frontendName,
+      sidesOption,
+      dependencies,
+      emoji: mappedEmoji,
+      sandwichType,
+    } = mapProductToCafeteria(itemName, qty, item.unit);
+    const displayName = mappedDisplayName || generateDisplayName(cafeteriaItemName);
 
     const { data: existingCafe } = await supabaseAdmin
       .from('cafeteria_items')
-      .select('id, stock_today, stock_servings')
+      .select('id, stock_today, stock_servings, display_name')
       .ilike('item_name', cafeteriaItemName)
       .maybeSingle();
 
@@ -961,6 +1125,11 @@ async function saveBill({ parsed, fileUrl }) {
         stock_servings: newServings,
         available: true
       };
+      if (frontendName) updateData.frontend_name = frontendName;
+      if (sidesOption) updateData.sides_option = true;
+      if (dependencies?.length) updateData.dependencies = dependencies;
+      if (mappedEmoji) updateData.emoji = mappedEmoji;
+      if (sandwichType && sandwichType !== 'regular') updateData.sandwich_type = sandwichType;
 
       if (cafeteriaItemName === 'Bread' || cafeteriaItemName === 'MDRN AT SHK BRD400G') {
         updateData.orderable = false;
@@ -968,7 +1137,9 @@ async function saveBill({ parsed, fileUrl }) {
         updateData.orderable = isOrderable;
       }
 
-      if (!existingCafe.display_name) {
+      if (mappedDisplayName) {
+        updateData.display_name = mappedDisplayName;
+      } else if (!existingCafe.display_name) {
         updateData.display_name = (cafeteriaItemName === 'Bread') ? 'Milk Bread' :
                                  (cafeteriaItemName === 'MDRN AT SHK BRD400G' ? 'Atta Bread' : displayName);
       }
@@ -985,12 +1156,16 @@ async function saveBill({ parsed, fileUrl }) {
         .insert({
           item_name: cafeteriaItemName,
           display_name: isBread ? (cafeteriaItemName === 'Bread' ? 'Milk Bread' : 'Atta Bread') : displayName,
-          emoji: emoji,
+          frontend_name: frontendName || null,
+          emoji: mappedEmoji || emoji,
           category: mappedCat || cafeCat || 'other',
           available: true,
           stock_today: qty,
           stock_servings: servings,
           orderable: isBread ? false : isOrderable,
+          sides_option: Boolean(sidesOption),
+          dependencies: dependencies || [],
+          sandwich_type: sandwichType || 'regular',
         });
     }
   }
@@ -1061,6 +1236,13 @@ router.post('/', (req, res) => {
   if (text.toLowerCase().startsWith('/restock')) {
     handleRestockCommand(message, chatId, replyTo).catch(e =>
       console.error('[ManualPurchase] restock error:', e.message)
+    );
+    return;
+  }
+
+  if (text.toLowerCase().startsWith('/stocktake')) {
+    handleStockTakeCommand(message, chatId, replyTo).catch(e =>
+      console.error('[StockTake] command error:', e.message)
     );
     return;
   }

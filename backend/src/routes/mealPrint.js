@@ -39,6 +39,20 @@ function checkReprintWindow(userRole) {
   return null;
 }
 
+async function findMealBooking(userId, mealDate, columns = '*') {
+  const { data, error } = await supabaseAdmin
+    .from('meal_bookings')
+    .select(columns)
+    .eq('user_id', userId)
+    .eq('meal_date', mealDate)
+    .order('booked_at', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
 // ── GET /api/meal-print/my-token?date=YYYY-MM-DD ────────────────────────────
 // Returns the logged-in employee's token for a given meal date.
 // Used by the "My Meal Box" page to show token + print button.
@@ -46,14 +60,11 @@ router.get('/my-token', async (req, res, next) => {
   try {
     const date = req.query.date || getISTDateString();
 
-    const { data: booking, error } = await supabaseAdmin
-      .from('meal_bookings')
-      .select('id, meal_date, choice, token_number, cabin_name, print_count, last_printed_at, booked_at')
-      .eq('user_id', req.user.id)
-      .eq('meal_date', date)
-      .maybeSingle();
-
-    if (error) throw error;
+    const booking = await findMealBooking(
+      req.user.id,
+      date,
+      'id, meal_date, choice, token_number, cabin_name, print_count, last_printed_at, booked_at'
+    );
 
     const hour = getISTHour();
     const canReprint = hour >= 11 && hour <= 13.5;
@@ -227,14 +238,11 @@ router.post('/reprint-token', async (req, res, next) => {
     }
 
     // Fetch the booking
-    const { data: booking, error: bookErr } = await supabaseAdmin
-      .from('meal_bookings')
-      .select('id, meal_date, choice, token_number, cabin_name, print_count, user_id')
-      .eq('user_id', targetUserId)
-      .eq('meal_date', mealDate)
-      .maybeSingle();
-
-    if (bookErr) throw bookErr;
+    const booking = await findMealBooking(
+      targetUserId,
+      mealDate,
+      'id, meal_date, choice, token_number, cabin_name, print_count, user_id'
+    );
     if (!booking) return res.status(404).json({ error: 'No booking found for this date' });
     if (booking.choice === 'skip') return res.status(400).json({ error: 'Cannot reprint a skipped meal' });
     if (!booking.token_number) return res.status(400).json({ error: 'Token not assigned yet. Printing starts at 11:00 AM.' });

@@ -15,6 +15,12 @@ export function mapProductToCafeteria(itemName, quantity, unit = '') {
   let servings = quantity;
   let isOrderable = true;
   let category = 'other';
+  let displayName = null;
+  let frontendName = null;
+  let sidesOption = false;
+  let dependencies = [];
+  let emoji = '📦';
+  let sandwichType = 'regular';
   
   // 1. Bread
   if (nameLower.includes('bread') || nameLower.includes('brd')) {
@@ -53,11 +59,19 @@ export function mapProductToCafeteria(itemName, quantity, unit = '') {
   else if (nameLower.includes('jam')) {
     category = 'food';
     isOrderable = true;
-    if (nameLower.includes('fruit')) {
-      targetItemName = 'Mix Fruit Jam';
-    } else if (nameLower.includes('pineapple')) {
-      targetItemName = 'Pineapple Jam';
+    sidesOption = true;
+    dependencies = ['Bread'];
+    emoji = nameLower.includes('pineapple') ? '🍍' : '🍓';
+    sandwichType = nameLower.includes('pineapple') ? 'pineapple_jam' : 'mix_fruit_jam';
+    if (nameLower.includes('pineapple')) {
+      targetItemName = 'Pineapple Jam Sandwich';
+    } else if (nameLower.includes('fruit')) {
+      targetItemName = 'Mix Fruit Jam Sandwich';
+    } else {
+      targetItemName = 'Mix Fruit Jam Sandwich';
     }
+    displayName = targetItemName;
+    frontendName = targetItemName;
     
     // serving size = 15g
     let gramsPerPack = 4000; // default to 4kg
@@ -80,16 +94,13 @@ export function mapProductToCafeteria(itemName, quantity, unit = '') {
   else if (nameLower.includes('peanut butter')) {
     category = 'food';
     isOrderable = true;
-    
-    // Funfoods Creamy 750g, Funfoods Crunchy 750g, Veeba Creamy 900g
-    if (nameLower.includes('creamy') && nameLower.includes('funfoods')) {
-      targetItemName = 'Funfoods - Peanut Butter (Creamy), 750 gm';
-    } else if (nameLower.includes('crunchy') && nameLower.includes('funfoods')) {
-      targetItemName = 'Funfoods - Peanut Butter (Crunchy), 750 gm';
-    } else if (nameLower.includes('creamy') && nameLower.includes('veeba')) {
-      targetItemName = 'Veeba - Peanut Butter (Creamy), 900 gm';
-    }
-    
+    sidesOption = true;
+    dependencies = ['Bread'];
+    emoji = '🥜';
+    sandwichType = 'peanut_butter';
+    targetItemName = 'Peanut Butter Sandwich';
+    displayName = targetItemName;
+    frontendName = targetItemName;
     // serving size = 20g
     let gramsPerPack = 750;
     const weightMatch = nameLower.match(/(\d+)\s*(g|gm)/);
@@ -190,6 +201,12 @@ export function mapProductToCafeteria(itemName, quantity, unit = '') {
     cafeteriaItemName: targetItemName,
     servings: servings,
     isOrderable: isOrderable,
-    category: category
+    category: category,
+    displayName,
+    frontendName,
+    sidesOption,
+    dependencies,
+    emoji,
+    sandwichType,
   };
 }

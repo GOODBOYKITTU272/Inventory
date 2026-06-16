@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
+import { applyPurchaseToInventory } from '../lib/applyPurchase.js';
 
 const router = Router();
 
@@ -73,7 +74,7 @@ router.post('/:id/approve',
     try {
       const { data: purchase, error: fetchErr } = await supabaseAdmin
         .from('manual_purchases')
-        .select('id, status')
+        .select('*')
         .eq('id', req.params.id)
         .single();
 
@@ -84,6 +85,7 @@ router.post('/:id/approve',
         return res.status(400).json({ error: 'Already approved' });
       }
 
+      // Mark approved first so a sync failure leaves a clear, recoverable state.
       const { error } = await supabaseAdmin
         .from('manual_purchases')
         .update({
@@ -96,8 +98,33 @@ router.post('/:id/approve',
 
       if (error) throw error;
 
-      console.log(`[ManualPurchase] Approved #${req.params.id.slice(0, 8)} by ${req.user.full_name}`);
-      res.json({ ok: true, status: 'approved' });
+      // Approve now syncs inventory + finance directly (no separate Sync step).
+      let productId;
+      try {
+        ({ productId } = await applyPurchaseToInventory(purchase, { writeFinance: true }));
+      } catch (syncErr) {
+        console.error(`[ManualPurchase] Approve-sync failed for #${req.params.id.slice(0, 8)}:`, syncErr.message);
+        // Leave status 'approved' so the standalone /sync can retry later.
+        return res.status(500).json({
+          error: 'Approved, but inventory sync failed. Use Sync to retry.',
+        });
+      }
+
+      const { error: syncMarkErr } = await supabaseAdmin
+        .from('manual_purchases')
+        .update({
+          synced_to_inventory: true,
+          synced_to_finance: true,
+          synced_at: new Date().toISOString(),
+          status: 'synced_to_inventory',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', req.params.id);
+
+      if (syncMarkErr) throw syncMarkErr;
+
+      console.log(`[ManualPurchase] Approved + synced #${req.params.id.slice(0, 8)} by ${req.user.full_name}`);
+      res.json({ ok: true, status: 'synced_to_inventory', productId });
     } catch (e) { next(e); }
   }
 );
@@ -202,64 +229,12 @@ router.post('/:id/sync',
         return res.status(400).json({ error: 'Already synced' });
       }
 
+      const { productId } = await applyPurchaseToInventory(purchase, { writeFinance: true });
+
       const itemName = purchase.item_name || 'Unknown Item';
       const qty = Number(purchase.quantity) || 1;
-      const amount = Number(purchase.amount) || 0;
 
-      // 1. Find or create product
-      const { data: existingProduct } = await supabaseAdmin
-        .from('products')
-        .select('id')
-        .ilike('name', itemName)
-        .maybeSingle();
-
-      let productId;
-      if (existingProduct) {
-        productId = existingProduct.id;
-      } else {
-        const { data: newProduct } = await supabaseAdmin
-          .from('products')
-          .insert({
-            name: itemName,
-            category: purchase.category || 'Pantry',
-            unit: purchase.unit || 'pcs',
-          })
-          .select('id')
-          .single();
-        productId = newProduct?.id;
-      }
-
-      // 2. Update inventory stock
-      if (productId) {
-        const { data: inv } = await supabaseAdmin
-          .from('inventory')
-          .select('current_stock')
-          .eq('product_id', productId)
-          .maybeSingle();
-
-        if (inv) {
-          await supabaseAdmin
-            .from('inventory')
-            .update({ current_stock: (inv.current_stock || 0) + qty })
-            .eq('product_id', productId);
-        } else {
-          await supabaseAdmin
-            .from('inventory')
-            .insert({ product_id: productId, current_stock: qty });
-        }
-
-        // 3. Log transaction (finance record)
-        await supabaseAdmin.from('transactions').insert({
-          product_id: productId,
-          type: 'add',
-          quantity: qty,
-          unit_cost: amount / qty,
-          total_cost: amount,
-          notes: `Manual purchase — ${purchase.vendor_name || 'Local Shop'} — ${purchase.payment_method || 'Cash'} — No invoice`,
-        });
-      }
-
-      // 4. Mark as synced
+      // Mark as synced
       const { error: updateErr } = await supabaseAdmin
         .from('manual_purchases')
         .update({

@@ -1,5 +1,18 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase.js';
+import { isPushSupported, subscribeToPush } from '../lib/push.js';
+
+/** Silently subscribe to push notifications after AAL2 login.
+ *  Never throws — a failed subscription must never block the login flow. */
+async function tryAutoSubscribePush(session) {
+  try {
+    if (!isPushSupported()) return;
+    if (Notification.permission === 'denied') return;
+    await subscribeToPush(session.access_token);
+  } catch (_) {
+    // Silently ignore — user may not have granted permission yet
+  }
+}
 
 /** Try to read AAL from the JWT's aal claim directly (no network call) */
 function readAalFromSession(session) {
@@ -125,6 +138,8 @@ export function useAuth() {
         setSession(newSession);
         if (!jwtAal) await checkAal(newSession);
         loadProfile(newSession.user.id);
+        // Auto-subscribe push notifications once AAL2 is reached (silently, never blocks)
+        if ((jwtAal || 'aal1') === 'aal2') tryAutoSubscribePush(newSession);
       } else {
         setSession(null);
         setProfile(null);

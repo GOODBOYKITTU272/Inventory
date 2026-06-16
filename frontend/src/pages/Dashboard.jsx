@@ -133,6 +133,10 @@ function StatusPill({ status }) {
     expired: 'pill-out',
     expiring_soon: 'pill-warn',
     fresh: 'pill-ok',
+    // Days-of-cover badges (Phase 1)
+    order_now: 'pill-out',
+    order_soon: 'pill-warn',
+    waste_risk: 'pill-warn',
   };
   const label = status?.replaceAll('_', ' ') || '-';
   return <span className={map[status] || 'pill bg-slate-100 text-slate-700'}>{label}</span>;
@@ -247,6 +251,7 @@ export default function Dashboard() {
                 <th className="py-2 pr-3">Category</th>
                 <th className="py-2 pr-3">Stock</th>
                 <th className="py-2 pr-3">Min</th>
+                <th className="py-2 pr-3">Cover</th>
                 <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3">Expiry</th>
               </tr>
@@ -260,6 +265,18 @@ export default function Dashboard() {
                   </td>
                   <td className="py-2 pr-3">{r.current_stock ?? 0} {r.unit}</td>
                   <td className="py-2 pr-3 text-slate-500">{r.min_threshold ?? 0}</td>
+                  <td className="py-2 pr-3 text-slate-500">
+                    {r.days_of_cover != null ? (
+                      <span className="flex items-center gap-2">
+                        {r.days_of_cover}d
+                        {r.cover_status && r.cover_status !== 'ok' && (
+                          <StatusPill status={r.cover_status} />
+                        )}
+                      </span>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
                   <td className="py-2 pr-3"><StatusPill status={r.stock_status} /></td>
                   <td className="py-2 pr-3 text-slate-500">
                     {r.expiry_date ? (

@@ -3,8 +3,17 @@
  *
  * Power Automate expects simple JSON body — NOT Adaptive Cards.
  * Env var: POWER_AUTOMATE_URL (falls back to TEAMS_WEBHOOK_URL for backward compat)
+ *
+ * NOTE: Microsoft retired Office 365 Connector webhooks (webhook.office.com) in Jan 2025.
+ * If a 401 DirectApiAuthorizationRequired is detected, Teams integration is automatically
+ * disabled for the rest of this process lifetime to prevent log spam.
+ * To restore Teams: set POWER_AUTOMATE_URL to a new Power Automate HTTP trigger URL.
  */
 const PA_URL = process.env.POWER_AUTOMATE_URL || process.env.TEAMS_WEBHOOK_URL;
+
+// Auto-disable flag: set to true on first deprecated-webhook 401.
+// Prevents log spam when the old webhook.office.com URL is no longer valid.
+let _teamsDisabled = false;
 
 function istNow() {
   return new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
@@ -12,8 +21,13 @@ function istNow() {
 
 async function postToPA(body) {
   if (!PA_URL) {
-    console.log('[Teams] No Power Automate URL set — skipping');
+    // No URL configured — silent skip (not an error)
     return { skipped: true };
+  }
+
+  if (_teamsDisabled) {
+    // Already detected a deprecated webhook — skip silently
+    return { skipped: true, reason: 'webhook_deprecated' };
   }
 
   try {
@@ -25,11 +39,22 @@ async function postToPA(body) {
     const text = await res.text();
 
     if (!res.ok) {
-      console.error('[Teams] POST failed', res.status, text.slice(0, 400));
-      return { ok: false, status: res.status, body: text.slice(0, 200) };
+      // Detect Microsoft's deprecated connector error — disable permanently for this process
+      if (res.status === 401 && text.includes('DirectApiAuthorizationRequired')) {
+        _teamsDisabled = true;
+        console.warn(
+          '[Teams] Webhook URL is deprecated (Microsoft retired Office 365 Connectors Jan 2025). ' +
+          'Teams notifications are now disabled. To restore: set POWER_AUTOMATE_URL in Render ' +
+          'to a new Power Automate HTTP trigger URL. See: https://aka.ms/teams-incoming-webhooks-retire'
+        );
+        return { ok: false, status: 401, reason: 'webhook_deprecated' };
+      }
+      // Any other non-OK response — log once and continue
+      console.error('[Teams] POST failed', res.status, text.slice(0, 200));
+      return { ok: false, status: res.status };
     }
 
-    console.log('[Teams] Sent OK:', text.slice(0, 80));
+    console.log('[Teams] Sent OK');
     return { ok: true };
   } catch (e) {
     console.error('[Teams] fetch error:', e.message);

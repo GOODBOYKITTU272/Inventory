@@ -18,8 +18,14 @@ async function request(path, opts = {}) {
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`;
     try {
-      const body = await res.json();
-      if (body?.error) msg = body.error;
+      // Only parse as JSON if the response actually is JSON.
+      // This prevents a confusing secondary error when Vercel returns
+      // the SPA index.html (HTML) instead of a real backend JSON response.
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const body = await res.json();
+        if (body?.error) msg = body.error;
+      }
     } catch {}
     throw new Error(msg);
   }
@@ -29,6 +35,8 @@ async function request(path, opts = {}) {
 
 export const api = {
   startEmailLogin: (email)        => request('/api/auth/start-email-login', { method: 'POST', body: JSON.stringify({ email }) }),
+  // Gate login: confirm the email is a real user in the Azure directory before sign-in.
+  verifyEmail:     (email)        => request('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ email }) }),
 
   listProducts:    ()             => request('/api/products'),
   createProduct:   (body)         => request('/api/products', { method: 'POST', body: JSON.stringify(body) }),
@@ -105,4 +113,8 @@ export const api = {
   rejectManualPurchase:  (id, reason)     => request(`/api/manual-purchases/${id}/reject`,  { method: 'POST', body: JSON.stringify({ reason }) }),
   clarifyManualPurchase: (id, question)   => request(`/api/manual-purchases/${id}/clarify`, { method: 'POST', body: JSON.stringify({ question }) }),
   syncManualPurchase:    (id)             => request(`/api/manual-purchases/${id}/sync`,     { method: 'POST' }),
+
+  // Predictive ordering (Feature #9)
+  forecasts:   () => request('/api/forecasts'),
+  runForecast: () => request('/api/forecasts/run', { method: 'POST' }),
 };

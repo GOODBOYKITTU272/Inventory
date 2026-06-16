@@ -155,10 +155,7 @@ export default function RequestQueue() {
     setBusy((b) => ({ ...b, [id]: true }));
     try {
       await api.setRequestStatus(id, status, liveStatus);
-      // Auto-print receipt when office boy accepts the order
-      if (liveStatus === 'accepted' && orderData) {
-        printReceipt(orderData);
-      }
+      // Printing is optional and separate — removed auto-print on accept
       await load();
     } catch (e) {
       setErr(e.message);

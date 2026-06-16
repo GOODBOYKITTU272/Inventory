@@ -68,6 +68,20 @@ function getOptionsForDate(dateStr) {
   return DAY_OPTIONS[day] || [];
 }
 
+async function findMealBooking(userId, mealDate, columns = '*') {
+  const { data, error } = await supabaseAdmin
+    .from('meal_bookings')
+    .select(columns)
+    .eq('user_id', userId)
+    .eq('meal_date', mealDate)
+    .order('booked_at', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
 // Get the next working day (Mon-Fri) from today in IST
 function getNextWorkingDay(nowDate = new Date()) {
   const p = getISTParts(nowDate);
@@ -178,12 +192,7 @@ router.get('/options', async (req, res, next) => {
     const actions = getAllowedActions(date, userShift);
 
     // Get user's current booking
-    const { data: booking } = await supabaseAdmin
-      .from('meal_bookings')
-      .select('*')
-      .eq('user_id', req.user.id)
-      .eq('meal_date', date)
-      .maybeSingle();
+    const booking = await findMealBooking(req.user.id, date);
 
     res.json({
       working_day: true,
@@ -245,19 +254,49 @@ router.post('/book', async (req, res, next) => {
       }
     }
 
-    // Upsert booking
-    const { data, error } = await supabaseAdmin
-      .from('meal_bookings')
-      .upsert({
-        user_id: req.user.id,
-        meal_date: date,
-        choice,
-        booked_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,meal_date' })
-      .select()
-      .single();
+    const bookedAt = new Date().toISOString();
+    const existing = await findMealBooking(req.user.id, date, 'id');
+    let data;
 
-    if (error) throw error;
+    if (existing?.id) {
+      const { data: updated, error } = await supabaseAdmin
+        .from('meal_bookings')
+        .update({ choice, booked_at: bookedAt })
+        .eq('id', existing.id)
+        .select()
+        .single();
+      if (error) throw error;
+      data = updated;
+    } else {
+      const { data: inserted, error } = await supabaseAdmin
+        .from('meal_bookings')
+        .insert({
+          user_id: req.user.id,
+          meal_date: date,
+          choice,
+          booked_at: bookedAt,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code !== '23505') throw error;
+
+        const retryExisting = await findMealBooking(req.user.id, date, 'id');
+        if (!retryExisting?.id) throw error;
+
+        const { data: retryUpdated, error: retryErr } = await supabaseAdmin
+          .from('meal_bookings')
+          .update({ choice, booked_at: bookedAt })
+          .eq('id', retryExisting.id)
+          .select()
+          .single();
+        if (retryErr) throw retryErr;
+        data = retryUpdated;
+      } else {
+        data = inserted;
+      }
+    }
 
     const emoji = { veg: '🥬', non_veg: '🍗', egg: '🥚', skip: '🚫' };
     res.json({
@@ -413,12 +452,7 @@ router.post('/:date/rate', async (req, res, next) => {
     }
 
     // Check booking exists and is not a skip
-    const { data: booking } = await supabaseAdmin
-      .from('meal_bookings')
-      .select('*')
-      .eq('user_id', req.user.id)
-      .eq('meal_date', date)
-      .maybeSingle();
+    const booking = await findMealBooking(req.user.id, date);
 
     if (!booking) {
       return res.status(404).json({ error: 'No meal booking found for this date' });
