@@ -132,8 +132,8 @@ async function extractPdf({ file, fileUrl }) {
 
 router.post('/', upload.single('file'), async (req, res, next) => {
   try {
-    const expectedKey = process.env.BILL_WEBHOOK_KEY || 'app_wizz_secure_782';
-    if (req.query.key !== expectedKey) {
+    const expectedKey = process.env.BILL_WEBHOOK_KEY;
+    if (!expectedKey || req.query.key !== expectedKey) {
       return res.status(401).json({ ok: false, error: 'Invalid webhook key' });
     }
 

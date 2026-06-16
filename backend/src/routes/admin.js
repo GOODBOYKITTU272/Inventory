@@ -1,11 +1,17 @@
 import { Router } from 'express';
+import { randomBytes } from 'crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-const DEFAULT_PASSWORD = 'Applywizz@2026';
+// Login is passwordless (email magic link), so the auth user only needs *some*
+// password to exist. Generate an unguessable random one per user — never a
+// shared/hardcoded value that could be used to sign in.
+function generateRandomPassword() {
+  return randomBytes(24).toString('base64url');
+}
 
 const roleEnum = z.enum(['facility_manager', 'finance', 'leadership', 'staff', 'office_boy']);
 
@@ -92,10 +98,11 @@ router.post('/users/create', async (req, res, next) => {
     });
     const { email, role, full_name } = schema.parse(req.body);
 
-    // 1. Create the auth user with hidden password (MFA via Microsoft Authenticator)
+    // 1. Create the auth user. Login is via email magic link, so set a random
+    //    throwaway password — it is never used to sign in.
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password:      DEFAULT_PASSWORD,
+      password:      generateRandomPassword(),
       email_confirm: true,
       user_metadata: { full_name },
     });

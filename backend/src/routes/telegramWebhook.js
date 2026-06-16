@@ -1195,8 +1195,8 @@ async function extractBill({ buffer, fileName, mimeType, fileUrl }) {
 }
 
 router.post('/', (req, res) => {
-  const expectedKey = process.env.TELEGRAM_WEBHOOK_KEY || 'app_wizz_telegram_secret';
-  if (req.query.key !== expectedKey) {
+  const expectedKey = process.env.TELEGRAM_WEBHOOK_KEY;
+  if (!expectedKey || req.query.key !== expectedKey) {
     return res.status(401).json({ ok: false, error: 'Invalid telegram webhook key' });
   }
 

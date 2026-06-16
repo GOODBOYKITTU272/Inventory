@@ -54,8 +54,11 @@ const credentialsPath = path.resolve(__dirname, 'test-credentials.json');
 const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
 
 // ── Supabase Admin Client (for DB assertions & setup) ────────────────────────
-const SUPABASE_URL = 'https://twmadauhauuypioznpus.supabase.co';
-const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3bWFkYXVoYXV1eXBpb3pucHVzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODczOTU1MCwiZXhwIjoyMDk0MzE1NTUwfQ._5U3_NVikbUzLkhy8Og6CMx0tL_-HTwu9pI0l8wMZNg';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in the environment to run these tests.');
+}
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 // ── Login helper ──────────────────────────────────────────────────────────────

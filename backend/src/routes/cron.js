@@ -52,9 +52,9 @@ function generateTokenNumber(mealDate, cabinAbbr, sequenceNum) {
 
 router.post('/ai-reminders', async (req, res) => {
   const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
-  const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+  const cronSecret = process.env.CRON_SECRET;
 
-  if (secret !== cronSecret) {
+  if (!cronSecret || secret !== cronSecret) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -131,9 +131,9 @@ router.post('/ai-reminders', async (req, res) => {
 // Print agent listens to meal_print_jobs and prints each batch at scheduled_for time.
 router.post('/schedule-meal-print', async (req, res) => {
   const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
-  const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+  const cronSecret = process.env.CRON_SECRET;
 
-  if (secret !== cronSecret) {
+  if (!cronSecret || secret !== cronSecret) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -236,9 +236,9 @@ router.post('/schedule-meal-print', async (req, res) => {
 router.post('/stock-alerts', async (req, res, next) => {
   try {
     const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
-    const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+    const cronSecret = process.env.CRON_SECRET;
 
-    if (secret !== cronSecret) {
+    if (!cronSecret || secret !== cronSecret) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -255,9 +255,9 @@ router.post('/stock-alerts', async (req, res, next) => {
 router.post('/stock-digest', async (req, res, next) => {
   try {
     const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
-    const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+    const cronSecret = process.env.CRON_SECRET;
 
-    if (secret !== cronSecret) {
+    if (!cronSecret || secret !== cronSecret) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -274,9 +274,9 @@ router.post('/stock-digest', async (req, res, next) => {
 router.post('/weekly-forecast', async (req, res, next) => {
   try {
     const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
-    const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+    const cronSecret = process.env.CRON_SECRET;
 
-    if (secret !== cronSecret) {
+    if (!cronSecret || secret !== cronSecret) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
