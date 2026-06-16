@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { isPushSupported, subscribeToPush } from '../lib/push.js';
 
-/** Silently subscribe to push notifications after AAL2 login.
+/** Silently subscribe to push notifications once signed in.
  *  Never throws — a failed subscription must never block the login flow. */
 async function tryAutoSubscribePush(session) {
   try {
