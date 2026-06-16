@@ -512,7 +512,7 @@ router.post('/:id/confirm', async (req, res, next) => {
           url:   '/queue',
           tag:   `order-${data.id}`,
         }).catch(() => {});
-      });
+      }).catch((e) => console.error('[requests] staff notify lookup failed:', e?.message));
     } else {
       // Send Recorded status confirmation push notification to employee
       const itemName = order.parsed_item || order.raw_text || 'Your order';
@@ -948,7 +948,7 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
           throw new Error(`Sorry, not enough stirrers left to prepare your ${itemName}.`);
         }
         await supabaseAdmin.from('cafeteria_items')
-          .update({ stock_servings: (stirItem.stock_servings || 0) - stirrerNeeded })
+          .update({ stock_servings: Math.max(0, (stirItem.stock_servings || 0) - stirrerNeeded) })
           .eq('id', stirItem.id);
       }
     }
@@ -1048,9 +1048,9 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
 
       const depUpdate = { id: depItem.id, fields: {} };
       if (depServings !== null) {
-        depUpdate.fields.stock_servings = depServings - neededDepServings;
+        depUpdate.fields.stock_servings = Math.max(0, depServings - neededDepServings);
       } else if (depStock !== null) {
-        depUpdate.fields.stock_today = depStock - neededDepServings;
+        depUpdate.fields.stock_today = Math.max(0, depStock - neededDepServings);
       }
       depUpdates.push(depUpdate);
     }
@@ -1059,9 +1059,9 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
   // 5. Apply all updates
   const mainUpdate = {};
   if (itemRow.stock_servings !== null) {
-    mainUpdate.stock_servings = itemRow.stock_servings - neededForMain;
+    mainUpdate.stock_servings = Math.max(0, itemRow.stock_servings - neededForMain);
   } else if (itemRow.stock_today !== null) {
-    mainUpdate.stock_today = itemRow.stock_today - neededForMain;
+    mainUpdate.stock_today = Math.max(0, itemRow.stock_today - neededForMain);
   }
   if (Object.keys(mainUpdate).length > 0) {
     await supabaseAdmin.from('cafeteria_items').update(mainUpdate).eq('id', itemRow.id);
@@ -1078,7 +1078,7 @@ async function deductStockForRequest(user, itemName, qty, instruction, breadType
   if (needsStirrers && stirrerItem && stirrerItem.stock_servings !== null) {
     await supabaseAdmin
       .from('cafeteria_items')
-      .update({ stock_servings: stirrerItem.stock_servings - stirrerNeeded })
+      .update({ stock_servings: Math.max(0, stirrerItem.stock_servings - stirrerNeeded) })
       .eq('id', stirrerItem.id);
   }
 }

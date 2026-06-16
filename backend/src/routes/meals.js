@@ -405,11 +405,14 @@ router.get('/settings', async (req, res, next) => {
 });
 
 async function getSettings() {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('meal_settings')
     .select('*')
     .limit(1)
     .single();
+  if (error) {
+    console.error('[meals] getSettings failed, using defaults:', error.message);
+  }
   return data || {
     cutoff_time: '18:00',
     skip_cutoff_time: '20:00',

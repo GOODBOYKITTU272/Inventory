@@ -232,9 +232,10 @@ router.patch(
 
       // 2. If Admin Verified, try to sync with inventory
       if (verification_status === 'Admin Verified') {
-        const { data: products } = await supabaseAdmin.from('products').select('id, name');
+        const { data: products, error: productsErr } = await supabaseAdmin.from('products').select('id, name');
+        if (productsErr) throw productsErr;
 
-        for (const item of bill.bill_items || []) {
+        for (const item of (products ? bill.bill_items || [] : [])) {
           // Simple matching: look for item name in products
           // In a production app, we'd use OpenAI here to map "Assam Tea" to "Tea (Assam)"
           const match = products.find(p =>
