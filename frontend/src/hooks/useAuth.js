@@ -138,8 +138,9 @@ export function useAuth() {
         setSession(newSession);
         if (!jwtAal) await checkAal(newSession);
         loadProfile(newSession.user.id);
-        // Auto-subscribe push notifications once AAL2 is reached (silently, never blocks)
-        if ((jwtAal || 'aal1') === 'aal2') tryAutoSubscribePush(newSession);
+        // Auto-subscribe push notifications for any signed-in session (silently,
+        // never blocks). Login is passwordless email link, so sessions are AAL1.
+        tryAutoSubscribePush(newSession);
       } else {
         setSession(null);
         setProfile(null);

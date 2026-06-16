@@ -1,11 +1,10 @@
 import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase.js';
 import { api } from '../lib/api.js';
+import { useAuth } from '../hooks/useAuth.js';
 
 const ALLOWED_DOMAIN = 'applywizz.ai';
-const HIDDEN_PASSWORD = 'Applywizz@2026';
 
 const fade = (delay = 0) => ({
   initial: { opacity: 0, y: 20 },
@@ -26,27 +25,26 @@ const STATS = [
 ];
 
 export default function Login() {
-  const navigate = useNavigate();
+  const { session, loading } = useAuth();
 
-  const [step,        setStep]        = useState('email');
-  const [email,       setEmail]       = useState('');
-  const [err,         setErr]         = useState('');
-  const [busy,        setBusy]        = useState(false);
-  const [qrCode,      setQrCode]      = useState('');
-  const [factorId,    setFactorId]    = useState('');
-  const [challengeId, setChallengeId] = useState('');
-  const [totpCode,    setTotpCode]    = useState('');
+  const [step,  setStep]  = useState('email');   // 'email' | 'sent'
+  const [email, setEmail] = useState('');
+  const [err,   setErr]   = useState('');
+  const [busy,  setBusy]  = useState(false);
 
   const submitting = useRef(false);
 
-  // ── Auth Logic (byte-for-byte identical to original) ────────
+  // Already authenticated (e.g. returned from the magic link) → go to the app.
+  if (!loading && session) return <Navigate to="/" replace />;
+
+  // ── Auth Logic — passwordless email magic link ──────────────
   async function submitEmail(e) {
     e.preventDefault();
     if (submitting.current) return;
     submitting.current = true;
     setErr('');
-    const trimmed = email.trim().toLowerCase();
 
+    const trimmed = email.trim().toLowerCase();
     if (!trimmed.endsWith('@' + ALLOWED_DOMAIN)) {
       setErr(`Only @${ALLOWED_DOMAIN} accounts are allowed.`);
       submitting.current = false;
@@ -57,10 +55,10 @@ export default function Login() {
     setBusy(true);
 
     try {
-      // Gate 1: verify email exists in the Azure directory.
-      // Hard-blocks on explicit 403 (email not in directory).
-      // Silently continues on network errors / 503 (backend env vars not set yet)
-      // so users are never locked out during backend setup.
+      // Gate 1: verify the email is a real, enabled user in the Azure (Entra)
+      // directory. Hard-blocks on an explicit 403 (email not in directory).
+      // Silently continues on network errors / 503 (backend env vars not set
+      // yet) so users are never locked out during backend setup.
       try {
         await api.verifyEmail(trimmed);
       } catch (gateErr) {
@@ -74,157 +72,28 @@ export default function Login() {
         console.warn('[Login] verifyEmail unavailable, continuing:', msg);
       }
 
-      // Gate 2: sign in. The account is guaranteed to exist by verifyEmail above,
-      // so a failure here is a real error (not a "create account" case).
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email: trimmed,
-        password: HIDDEN_PASSWORD,
-      });
+      // Gate 2: send the Supabase magic sign-in link. Clicking it returns the
+      // user to the app with an authenticated session (handled by useAuth).
+      await api.startEmailLogin(trimmed);
 
-      if (signInErr) {
-        setErr('Could not sign in: ' + signInErr.message);
-        setBusy(false);
-        submitting.current = false;
-        return;
-      }
-
-      console.log('[Login] Signed in, checking MFA...');
-      await handleMfaAfterSignIn();
-    } catch (ex) {
-      setErr('Something went wrong: ' + (ex.message || ex));
       setBusy(false);
       submitting.current = false;
-    }
-  }
-
-  async function handleMfaAfterSignIn() {
-    try {
-      const { data: factors, error: fErr } = await supabase.auth.mfa.listFactors();
-      console.log('[Login] MFA factors:', JSON.stringify(factors), fErr?.message);
-
-      if (fErr) {
-        setErr('Could not check authenticator: ' + fErr.message);
-        setBusy(false);
-        submitting.current = false;
-        return;
-      }
-
-      const totp = factors?.totp?.find(f => f.status === 'verified');
-      const unverified = factors?.totp?.find(f => f.status === 'unverified');
-
-      if (totp) {
-        console.log('[Login] Existing TOTP factor, creating challenge...');
-        const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
-          factorId: totp.id,
-        });
-        if (cErr) {
-          setErr('Authenticator challenge failed: ' + cErr.message);
-          setBusy(false);
-          submitting.current = false;
-          return;
-        }
-        setFactorId(totp.id);
-        setChallengeId(challenge.id);
-        setBusy(false);
-        setStep('verify');
-      } else {
-        if (unverified) {
-          await supabase.auth.mfa.unenroll({ factorId: unverified.id }).catch(() => {});
-        }
-        console.log('[Login] No TOTP factor, enrolling...');
-        await enrollNewTotp();
-      }
+      setStep('sent');
     } catch (ex) {
-      setErr('MFA setup error: ' + (ex.message || ex));
+      const raw = ex.message || String(ex);
+      const friendly = /rate limit|too many/i.test(raw)
+        ? 'Too many email attempts. Please wait a moment and try again.'
+        : 'Could not send the sign-in link. Check the email and try again.';
+      setErr(friendly);
       setBusy(false);
       submitting.current = false;
-    }
-  }
-
-  async function enrollNewTotp() {
-    try {
-      const { data, error } = await supabase.auth.mfa.enroll({
-        factorType: 'totp',
-        friendlyName: 'Microsoft Authenticator',
-      });
-
-      console.log('[Login] MFA enroll result:', !!data, error?.message);
-
-      if (error) {
-        setErr('Could not set up authenticator: ' + error.message);
-        setBusy(false);
-        submitting.current = false;
-        return;
-      }
-
-      setFactorId(data.id);
-      setQrCode(data.totp.qr_code);
-      setBusy(false);
-      setStep('enroll');
-      console.log('[Login] QR code ready, showing enroll screen');
-    } catch (ex) {
-      setErr('Authenticator setup failed: ' + (ex.message || ex));
-      setBusy(false);
-      submitting.current = false;
-    }
-  }
-
-  async function submitCode(e) {
-    e.preventDefault();
-    setErr('');
-
-    if (totpCode.length !== 6) {
-      setErr('Enter the 6-digit code from Microsoft Authenticator.');
-      return;
-    }
-
-    setBusy(true);
-
-    try {
-      let cId = challengeId;
-
-      if (!cId) {
-        const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
-          factorId,
-        });
-        if (cErr) {
-          setErr('Challenge failed: ' + cErr.message);
-          setBusy(false);
-          return;
-        }
-        cId = challenge.id;
-        setChallengeId(cId);
-      }
-
-      const { error: vErr } = await supabase.auth.mfa.verify({
-        factorId,
-        challengeId: cId,
-        code: totpCode,
-      });
-
-      if (vErr) {
-        setErr('Invalid code. Check Microsoft Authenticator and try again.');
-        setTotpCode('');
-        setChallengeId('');
-        setBusy(false);
-        return;
-      }
-
-      console.log('[Login] MFA verified! Navigating home...');
-      setStep('done');
-      navigate('/', { replace: true });
-    } catch (ex) {
-      setErr('Verification failed: ' + (ex.message || ex));
-      setBusy(false);
     }
   }
 
   function resetToEmail() {
     setStep('email');
     setErr('');
-    setTotpCode('');
     submitting.current = false;
-    supabase.auth.signOut();
   }
 
   // ── RENDER ──────────────────────────────────────────────────
@@ -423,17 +292,17 @@ export default function Login() {
                             }}
                           >
                             {busy && <Spinner />}
-                            {busy ? 'Checking…' : 'Continue →'}
+                            {busy ? 'Sending link…' : 'Send sign-in link →'}
                           </button>
                         </form>
 
                         <p className="text-[11px] text-white/15 text-center">
-                          Secured with Microsoft Authenticator (MFA)
+                          We email you a secure one-tap sign-in link
                         </p>
 
                         <div className="pt-2 border-t border-white/[0.05]">
                           <div className="flex items-center justify-center gap-4">
-                            {['🔐 MFA secured', '☁️ Supabase', '🏢 Internal only'].map(label => (
+                            {['🔗 Magic link', '☁️ Supabase', '🏢 Internal only'].map(label => (
                               <span key={label} className="text-[10px] text-white/15">{label}</span>
                             ))}
                           </div>
@@ -441,83 +310,32 @@ export default function Login() {
                       </motion.div>
                     )}
 
-                    {/* ═══ STEP: Enroll ═══ */}
-                    {step === 'enroll' && (
-                      <motion.div key="enroll" className="space-y-4"
-                        initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }} transition={{ duration: 0.4 }}
-                      >
-                        <div className="w-14 h-14 mx-auto rounded-2xl grid place-items-center text-2xl"
-                             style={{ background: 'rgba(44,118,255,0.1)', border: '1px solid rgba(44,118,255,0.2)' }}>
-                          📱
-                        </div>
-                        <div className="text-center">
-                          <h2 className="text-xl font-bold text-white mb-1">Set up Authenticator</h2>
-                          <p className="text-sm text-white/40 leading-relaxed">
-                            Open <strong className="text-white/70">Microsoft Authenticator</strong> →
-                            tap <strong className="text-white/70">+</strong> → scan this QR
-                          </p>
-                        </div>
-
-                        {qrCode && (
-                          <div className="flex justify-center py-2">
-                            <div className="bg-white rounded-2xl p-4 shadow-xl shadow-black/30">
-                              <img src={qrCode} alt="QR Code" className="w-44 h-44 sm:w-48 sm:h-48" />
-                            </div>
-                          </div>
-                        )}
-
-                        <form onSubmit={submitCode} className="space-y-3">
-                          <label className="block text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-1"
-                                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                            Enter the 6-digit code
-                          </label>
-                          <CodeInput value={totpCode} onChange={setTotpCode} />
-                          {err && <Msg text={err} />}
-                          <GradientBtn busy={busy}>{busy ? 'Verifying…' : 'Verify & Continue →'}</GradientBtn>
-                        </form>
-                        <BackBtn onClick={resetToEmail} />
-                      </motion.div>
-                    )}
-
-                    {/* ═══ STEP: Verify ═══ */}
-                    {step === 'verify' && (
-                      <motion.div key="verify" className="space-y-4"
+                    {/* ═══ STEP: Link sent ═══ */}
+                    {step === 'sent' && (
+                      <motion.div key="sent" className="space-y-4"
                         initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }} transition={{ duration: 0.4 }}
                       >
                         <div className="w-14 h-14 mx-auto rounded-2xl grid place-items-center text-2xl"
                              style={{ background: 'rgba(41,254,41,0.08)', border: '1px solid rgba(41,254,41,0.18)' }}>
-                          🔐
+                          📧
                         </div>
                         <div className="text-center">
-                          <h2 className="text-xl font-bold text-white mb-1">Welcome back</h2>
+                          <h2 className="text-xl font-bold text-white mb-1">Check your email</h2>
                           <p className="text-sm text-white/40 leading-relaxed">
-                            Enter the 6-digit code from{' '}
-                            <strong className="text-white/70">Microsoft Authenticator</strong>
+                            We sent a secure sign-in link to{' '}
+                            <strong style={{ color: '#29FE29' }}>{email}</strong>.
                             <br />
-                            for <strong style={{ color: '#29FE29' }}>{email}</strong>
+                            Tap it to enter ApplyWizz Pantry.
                           </p>
                         </div>
 
-                        <form onSubmit={submitCode} className="space-y-3">
-                          <CodeInput value={totpCode} onChange={setTotpCode} />
-                          {err && <Msg text={err} />}
-                          <GradientBtn busy={busy}>{busy ? 'Verifying…' : 'Sign in →'}</GradientBtn>
-                        </form>
-                        <BackBtn onClick={resetToEmail} />
-                      </motion.div>
-                    )}
+                        <p className="text-[11px] text-white/20 text-center leading-relaxed">
+                          The link opens this app and signs you in automatically.
+                          You can close this tab once you tap it.
+                        </p>
 
-                    {/* ═══ STEP: Done ═══ */}
-                    {step === 'done' && (
-                      <motion.div key="done" className="text-center space-y-3 py-8"
-                        initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <div className="w-12 h-12 mx-auto rounded-full border-2 border-t-transparent animate-spin"
-                             style={{ borderColor: '#2C76FF', borderTopColor: 'transparent' }} />
-                        <p className="text-sm text-white/40">Signing you in…</p>
+                        <BackBtn onClick={resetToEmail} />
                       </motion.div>
                     )}
 
@@ -538,35 +356,6 @@ export default function Login() {
 }
 
 /* ═══ Shared sub-components ═══ */
-
-function CodeInput({ value, onChange }) {
-  return (
-    <input
-      type="text" inputMode="numeric" pattern="[0-9]*"
-      maxLength={6} required autoFocus autoComplete="one-time-code"
-      placeholder="000000"
-      value={value}
-      onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
-      className="w-full max-w-[15rem] mx-auto block rounded-2xl px-4 py-3.5 text-center text-2xl tracking-[0.25em] font-mono text-white placeholder-white/15 focus:outline-none transition-all"
-      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-    />
-  );
-}
-
-function GradientBtn({ busy, children }) {
-  return (
-    <button type="submit" disabled={busy}
-      className="w-full text-white text-sm font-bold py-3.5 rounded-2xl transition-all active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-2"
-      style={{
-        background: busy ? 'rgba(255,255,255,0.1)' : 'linear-gradient(90deg, #2C76FF, #29FE29)',
-        fontFamily: "'Space Grotesk', sans-serif",
-      }}
-    >
-      {busy && <Spinner />}
-      {children}
-    </button>
-  );
-}
 
 function Spinner() {
   return <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />;

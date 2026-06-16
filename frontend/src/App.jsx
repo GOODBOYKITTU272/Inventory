@@ -28,11 +28,11 @@ import InactivityLock from './components/InactivityLock.jsx';
 import { useAuth } from './hooks/useAuth.js';
 
 function Protected({ children, allow }) {
-  const { session, profile, loading, aal } = useAuth();
+  const { session, profile, loading } = useAuth();
   if (loading) return <div className="p-8 text-slate-500">Loading...</div>;
   if (!session) return <Navigate to="/login" replace />;
-  // Require MFA (AAL2) — if only AAL1, send back to login for TOTP step
-  if (aal !== 'aal2') return <Navigate to="/login" replace />;
+  // Login is passwordless email magic-link: a valid Supabase session (AAL1) is
+  // sufficient. No TOTP/MFA (AAL2) step is required to enter the app.
   if (allow && profile && !allow.includes(profile.role)) {
     return <div className="p-8 text-rose-600">Access denied for role: {profile.role}</div>;
   }
