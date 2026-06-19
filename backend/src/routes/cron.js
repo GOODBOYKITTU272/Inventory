@@ -5,6 +5,7 @@ import { sendPushToUsers } from './push.js';
 import { postAIReminderToTeams } from '../lib/teams.js';
 import { checkAndNotifyLowStock, sendDailyStockDigest } from '../lib/stockAlerts.js';
 import { computeForecasts, getActionableForecasts } from '../lib/forecast.js';
+import { runDigiSmeSync } from '../lib/digiSmeSync.js';
 
 const router = Router();
 
@@ -337,5 +338,27 @@ async function sendWeeklyForecastDigest(items, botToken) {
     )
   );
 }
+
+// ── POST /api/cron/sync-digisme ───────────────────────────────────────────────
+// Syncs employees from DigiSME HRMS into the profiles table.
+// Called daily at 2 AM IST by Supabase cron (pg_cron) or Render scheduled job.
+// Protected by CRON_SECRET — same pattern as all other cron routes.
+router.post('/sync-digisme', async (req, res) => {
+  const secret     = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
+  const cronSecret = process.env.CRON_SECRET || 'app_wizz_cron_secret_change_in_production';
+
+  if (secret !== cronSecret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // Respond immediately so the cron caller doesn't time out while sync runs
+  res.json({ ok: true, message: 'DigiSME sync started' });
+
+  try {
+    await runDigiSmeSync('cron');
+  } catch (err) {
+    console.error('[cron/sync-digisme] Unhandled error:', err.message);
+  }
+});
 
 export default router;

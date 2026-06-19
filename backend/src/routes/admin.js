@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
+import { runDigiSmeSync } from '../lib/digiSmeSync.js';
 
 const router = Router();
 
@@ -174,6 +175,34 @@ router.post('/users/invite', async (req, res, next) => {
       );
 
     res.status(201).json({ ok: true, user_id: userId, email, role });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ── POST /api/admin/digisme-sync ──────────────────────────────────────────────
+// Manual "Sync Now" trigger for leadership from the Admin page.
+router.post('/digisme-sync', async (req, res, next) => {
+  try {
+    // Respond immediately — sync runs in the background
+    res.json({ ok: true, message: 'DigiSME sync started. Check sync logs in a few seconds.' });
+    await runDigiSmeSync('manual');
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ── GET /api/admin/digisme-sync-logs ─────────────────────────────────────────
+// Returns the last 20 sync runs so leadership can see the history.
+router.get('/digisme-sync-logs', async (_req, res, next) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('digisme_sync_logs')
+      .select('*')
+      .order('synced_at', { ascending: false })
+      .limit(20);
+    if (error) throw error;
+    res.json(data || []);
   } catch (e) {
     next(e);
   }
