@@ -49,27 +49,52 @@ export default function Preferences() {
   const [employeeCode, setEmployeeCode] = useState('');
   const [codeSaving, setCodeSaving] = useState(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: load fns reference profile.id which is already in deps
   useEffect(() => {
     if (!profile?.id) return;
-    loadPrefs();
-    loadShift();
-    loadEmployeeCode();
+    const id = profile.id;
+
+    supabase
+      .from('employee_cafeteria_preferences')
+      .select('notification_tone, reminder_enabled, reminder_time, preferred_drink')
+      .eq('user_id', id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setPrefs((p) => ({
+            ...p,
+            notification_tone: data.notification_tone || 'Friendly',
+            tea_coffee_reminder_enabled: data.reminder_enabled || false,
+            preferred_drink: data.preferred_drink || 'Tea',
+          }));
+        }
+      })
+      .catch((e) => console.error('Failed to load preferences', e))
+      .finally(() => setLoading(false));
+
+    supabase
+      .from('employee_cafeteria_preferences')
+      .select('shift')
+      .eq('user_id', id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.shift) setShift(data.shift);
+      })
+      .catch((e) => console.error('Failed to load shift', e));
+
+    supabase
+      .from('profiles')
+      .select('employee_code')
+      .eq('id', id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.employee_code) setEmployeeCode(data.employee_code);
+      })
+      .catch(() => {});
+
     getPushStatus()
       .then(setPushStatus)
       .catch(() => setPushStatus('unsupported'));
   }, [profile?.id]);
-
-  async function loadEmployeeCode() {
-    try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('employee_code')
-        .eq('id', profile.id)
-        .maybeSingle();
-      if (data?.employee_code) setEmployeeCode(data.employee_code);
-    } catch (_) {}
-  }
 
   async function saveEmployeeCode() {
     if (!employeeCode.trim()) return;
@@ -81,19 +106,6 @@ export default function Preferences() {
         .eq('id', profile.id);
     } catch (_) {}
     setCodeSaving(false);
-  }
-
-  async function loadShift() {
-    try {
-      const { data } = await supabase
-        .from('employee_cafeteria_preferences')
-        .select('shift')
-        .eq('user_id', profile.id)
-        .maybeSingle();
-      if (data?.shift) setShift(data.shift);
-    } catch (e) {
-      console.error('Failed to load shift', e);
-    }
   }
 
   async function saveShift(newShift) {
@@ -128,29 +140,6 @@ export default function Preferences() {
       setPushMsg(e.message);
     } finally {
       setPushBusy(false);
-    }
-  }
-
-  async function loadPrefs() {
-    try {
-      // Load from employee_cafeteria_preferences (unified table)
-      const { data } = await supabase
-        .from('employee_cafeteria_preferences')
-        .select('notification_tone, reminder_enabled, reminder_time, preferred_drink')
-        .eq('user_id', profile.id)
-        .maybeSingle();
-      if (data) {
-        setPrefs((p) => ({
-          ...p,
-          notification_tone: data.notification_tone || 'Friendly',
-          tea_coffee_reminder_enabled: data.reminder_enabled || false,
-          preferred_drink: data.preferred_drink || 'Tea',
-        }));
-      }
-    } catch (e) {
-      console.error('Failed to load preferences', e);
-    } finally {
-      setLoading(false);
     }
   }
 

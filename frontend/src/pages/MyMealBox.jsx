@@ -39,10 +39,10 @@ export default function MyMealBox() {
   const [printing, setPrinting] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const showToast = (message, type = 'success') => {
+  const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
-  };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,7 +54,6 @@ export default function MyMealBox() {
     } finally {
       setLoading(false);
     }
-    // biome-ignore lint/correctness/useExhaustiveDependencies: showToast is stable (only uses setToast)
   }, [selectedDate, showToast]);
 
   useEffect(() => {
