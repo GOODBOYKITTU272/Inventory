@@ -34,10 +34,10 @@ export default function InactivityLock({ children }) {
 
   useEffect(() => {
     const events = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'];
-    events.forEach((e) => window.addEventListener(e, resetTimer, { passive: true }));
+    for (const e of events) window.addEventListener(e, resetTimer, { passive: true });
     resetTimer();
     return () => {
-      events.forEach((e) => window.removeEventListener(e, resetTimer));
+      for (const e of events) window.removeEventListener(e, resetTimer);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [resetTimer]);

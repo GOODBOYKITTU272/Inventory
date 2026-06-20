@@ -13,7 +13,7 @@ const CATEGORY_EMOJI = {
 };
 
 // ── OB Leave Form ─────────────────────────────────────────────────────────────
-function OBLeaveSection({ userId }) {
+function OBLeaveSection({ userId: _userId }) {
   const todayStr = new Date().toISOString().slice(0, 10);
   const [leaveDate, setLeaveDate] = useState(todayStr);
   const [leaveType, setLeaveType] = useState('full_day');
@@ -298,7 +298,8 @@ export default function StaffView() {
 
   const grouped = items.reduce((acc, r) => {
     const k = r.category || 'other';
-    (acc[k] ??= []).push(r);
+    acc[k] ??= [];
+    acc[k].push(r);
     return acc;
   }, {});
 

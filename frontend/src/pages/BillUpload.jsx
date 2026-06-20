@@ -8,7 +8,7 @@ import {
   Loader2,
   Upload,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { supabase } from '../lib/supabase.js';
 
@@ -21,18 +21,18 @@ export default function BillUpload() {
   const [bills, setBills] = useState([]);
   const [previewUrl, setPreviewUrl] = useState(null);
 
-  useEffect(() => {
-    loadBills();
-  }, [loadBills]);
-
-  async function loadBills() {
+  const loadBills = useCallback(async () => {
     try {
       const data = await api.listBills();
       setBills(data);
     } catch (e) {
       console.error('Failed to load bills', e);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadBills();
+  }, [loadBills]);
 
   const onFileChange = (e) => {
     const selected = e.target.files[0];
@@ -54,7 +54,7 @@ export default function BillUpload() {
       const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
       const filePath = `bill_uploads/${fileName}`;
 
-      const { data: uploadData, error: uploadErr } = await supabase.storage
+      const { data: _uploadData, error: uploadErr } = await supabase.storage
         .from('bills')
         .upload(filePath, file);
 

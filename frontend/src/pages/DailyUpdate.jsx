@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import WakingUp from '../components/WakingUp.jsx';
 import { api } from '../lib/api.js';
 
@@ -16,7 +16,7 @@ export default function DailyUpdate() {
   const [okMsg, setOkMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     setErr('');
     try {
       const data = await api.inventoryStatus();
@@ -32,7 +32,7 @@ export default function DailyUpdate() {
     } catch (e) {
       setErr(e.message);
     }
-  }
+  }, []);
 
   useEffect(() => {
     load();
@@ -42,7 +42,8 @@ export default function DailyUpdate() {
     if (!items) return {};
     return items.reduce((acc, r) => {
       const k = r.category || 'other';
-      (acc[k] ??= []).push(r);
+      acc[k] ??= [];
+      acc[k].push(r);
       return acc;
     }, {});
   }, [items]);

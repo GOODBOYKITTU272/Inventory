@@ -33,7 +33,9 @@
 		"rules": {
 			"preset": "recommended",
 			"suspicious": {
-				"noConsole": "off"
+				"noConsole": "off",
+				"noArrayIndexKey": "warn",
+				"noUnknownAtRules": "warn"
 			},
 			"style": {
 				"noNonNullAssertion": "off"
@@ -44,10 +46,6 @@
 				"noSvgWithoutTitle": "warn",
 				"useKeyWithClickEvents": "warn",
 				"noStaticElementInteractions": "warn"
-			},
-			"suspicious": {
-				"noArrayIndexKey": "warn",
-				"noUnknownAtRules": "warn"
 			}
 		}
 	},

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { api } from '../lib/api.js';
 
@@ -41,14 +41,14 @@ function ForecastPanel() {
   const [running, setRunning] = useState(false);
   const [okMsg, setOkMsg] = useState('');
 
-  async function load() {
+  const load = useCallback(async () => {
     setErr('');
     try {
       setRows(await api.forecasts());
     } catch (e) {
       setErr(e.message);
     }
-  }
+  }, []);
   useEffect(() => {
     load();
   }, [load]);
@@ -152,14 +152,14 @@ export default function Admin() {
   const [inviteRole, setInviteRole] = useState('staff');
   const [inviteName, setInviteName] = useState('');
 
-  async function load() {
+  const load = useCallback(async () => {
     setErr('');
     try {
       setUsers(await api.listUsers());
     } catch (e) {
       setErr(e.message);
     }
-  }
+  }, []);
   useEffect(() => {
     load();
   }, [load]);

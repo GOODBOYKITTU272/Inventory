@@ -371,6 +371,7 @@ export default function MealTokenDashboard() {
     } finally {
       setLoading(false);
     }
+    // biome-ignore lint/correctness/useExhaustiveDependencies: showToast is stable (only uses setToast)
   }, [date, showToast]);
 
   useEffect(() => {

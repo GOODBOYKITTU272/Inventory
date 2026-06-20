@@ -9,7 +9,7 @@ import {
   Star,
   TrendingUp,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -36,11 +36,7 @@ export default function AuditLog() {
   const [spendingData, setSpendingData] = useState([]);
   const [ratingData, setRatingData] = useState([]);
 
-  useEffect(() => {
-    fetchInsights();
-  }, [fetchInsights]);
-
-  async function fetchInsights() {
+  const fetchInsights = useCallback(async () => {
     // 1. Calculate Total Pantry Value
     const { data: inv } = await supabase
       .from('inventory')
@@ -77,7 +73,11 @@ export default function AuditLog() {
       .order('created_at', { ascending: false })
       .limit(10);
     setLogs(audit || []);
-  }
+  }, []);
+
+  useEffect(() => {
+    fetchInsights();
+  }, [fetchInsights]);
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 pb-12">

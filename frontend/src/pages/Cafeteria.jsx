@@ -1608,6 +1608,7 @@ export default function Cafeteria() {
     return enrichItemsWithSandwichSpreads([...filtered, ...virtual]);
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: enrichItemsWithVirtualDrinks is pure
   const load = useCallback(async () => {
     try {
       const [itemsData, requestsData, pickupStatus] = await Promise.all([
@@ -1632,7 +1633,7 @@ export default function Cafeteria() {
     } finally {
       setLoading(false);
     }
-  }, [enrichItemsWithVirtualDrinks]);
+  }, []);
 
   // Load saved item preferences, tone, drink/taste prefs
   const [userDrinkPrefs, setUserDrinkPrefs] = useState([]);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { api } from '../lib/api.js';
 
@@ -347,11 +347,7 @@ export default function ManualPurchases() {
   const canApprove = ['finance', 'leadership'].includes(profile?.role);
   const canClarify = ['finance', 'leadership', 'facility_manager'].includes(profile?.role);
 
-  useEffect(() => {
-    load();
-  }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -368,7 +364,11 @@ export default function ManualPurchases() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [activeTab]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function handleApprove(id) {
     if (!window.confirm('Approve and add this purchase to inventory?')) return;

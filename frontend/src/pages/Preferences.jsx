@@ -49,6 +49,7 @@ export default function Preferences() {
   const [employeeCode, setEmployeeCode] = useState('');
   const [codeSaving, setCodeSaving] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load fns reference profile.id which is already in deps
   useEffect(() => {
     if (!profile?.id) return;
     loadPrefs();
@@ -57,7 +58,7 @@ export default function Preferences() {
     getPushStatus()
       .then(setPushStatus)
       .catch(() => setPushStatus('unsupported'));
-  }, [profile?.id, loadShift, loadPrefs, loadEmployeeCode]);
+  }, [profile?.id]);
 
   async function loadEmployeeCode() {
     try {

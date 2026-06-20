@@ -76,7 +76,7 @@ function RoleHome() {
  * If not, shows the onboarding flow before rendering children.
  */
 function OnboardingGate({ children }) {
-  const { session, profile, loading: authLoading } = useAuth();
+  const { session, loading: authLoading } = useAuth();
   const [checking, setChecking] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
 

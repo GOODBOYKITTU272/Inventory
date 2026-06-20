@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import WakingUp from '../components/WakingUp.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { api } from '../lib/api.js';
@@ -69,7 +69,7 @@ const MONTHS = [
   'December',
 ];
 
-function MiniCalendar({ today }) {
+function MiniCalendar({ today: _today }) {
   const [view, setView] = useState(() => {
     const t = getIST();
     return { year: t.getFullYear(), month: t.getMonth() };
@@ -178,7 +178,7 @@ function AISummaryCard() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function load(refresh = false) {
+  const load = useCallback(async (refresh = false) => {
     setErr('');
     setBusy(true);
     try {
@@ -189,7 +189,7 @@ function AISummaryCard() {
     } finally {
       setBusy(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     load(false);

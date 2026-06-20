@@ -12,7 +12,7 @@ import {
   XCircle,
   Zap,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import WakingUp from '../components/WakingUp.jsx';
 import { api } from '../lib/api.js';
 
@@ -139,11 +139,7 @@ export default function BillApproval() {
   const [busy, setBusy] = useState(false);
   const [blockError, setBlockError] = useState(null);
 
-  useEffect(() => {
-    loadBills();
-  }, [loadBills]);
-
-  async function loadBills() {
+  const loadBills = useCallback(async () => {
     try {
       const data = await api.listBills();
       setBills(data);
@@ -152,7 +148,11 @@ export default function BillApproval() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadBills();
+  }, [loadBills]);
 
   async function updateBillStatus(billId, vStatus, aStatus) {
     setBusy(true);

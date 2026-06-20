@@ -26,7 +26,7 @@ async function runMigration() {
   console.log('========================================\n');
 
   // Check 1: Does employee_cafeteria_preferences exist?
-  const { data: tableData, error: tableErr } = await client
+  const { data: _tableData, error: tableErr } = await client
     .from('employee_cafeteria_preferences')
     .select('id')
     .limit(1);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { api } from '../lib/api.js';
 
@@ -143,7 +143,7 @@ export default function RequestQueue() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState({});
 
-  async function load() {
+  const load = useCallback(async () => {
     setErr('');
     try {
       const data = await api.listRequests(filter === 'all' ? '' : filter);
@@ -151,7 +151,7 @@ export default function RequestQueue() {
     } catch (e) {
       setErr(e.message);
     }
-  }
+  }, [filter]);
 
   useEffect(() => {
     load();
