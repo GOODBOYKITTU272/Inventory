@@ -1,5 +1,5 @@
+import { resolve } from 'node:path';
 import dotenv from 'dotenv';
-import { resolve } from 'path';
 
 dotenv.config({ path: resolve(process.cwd(), '.env') });
 dotenv.config({ path: resolve(process.cwd(), 'backend', '.env') });
@@ -10,7 +10,10 @@ async function verify() {
   console.log('🔍 VERIFYING DATABASE EMPTINESS STATE...');
 
   // Check auth users
-  const { data: { users }, error: authErr } = await supabaseAdmin.auth.admin.listUsers();
+  const {
+    data: { users },
+    error: authErr,
+  } = await supabaseAdmin.auth.admin.listUsers();
   if (authErr) {
     console.error('❌ Error checking auth users:', authErr.message);
   } else {
@@ -30,14 +33,14 @@ async function verify() {
     'products',
     'teams_activity_logs',
     'notification_logs',
-    'ai_summaries'
+    'ai_summaries',
   ];
 
   for (const table of tables) {
     const { count, error } = await supabaseAdmin
       .from(table)
       .select('*', { count: 'exact', head: true });
-    
+
     if (error) {
       console.error(`❌ Error querying table ${table}:`, error.message);
     } else {
@@ -49,12 +52,12 @@ async function verify() {
   const { data: items, error: itemErr } = await supabaseAdmin
     .from('cafeteria_items')
     .select('item_name, stock_today, stock_servings');
-  
+
   if (itemErr) {
     console.error('❌ Error querying cafeteria_items:', itemErr.message);
   } else {
     console.log(`- Table [cafeteria_items] Rows Count: ${items.length}`);
-    const nonZeroStock = items.filter(i => {
+    const nonZeroStock = items.filter((i) => {
       const s = i.stock_servings ?? i.stock_today;
       return s !== null && s > 0;
     });

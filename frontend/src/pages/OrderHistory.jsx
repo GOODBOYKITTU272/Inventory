@@ -1,39 +1,41 @@
-import { useState, useEffect, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ArrowLeft, ChevronRight, Clock, Loader2, RotateCcw, Search, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Clock, ChevronRight, RotateCcw, Package, Search,
-  CheckCircle2, XCircle, Loader2, ArrowLeft,
-} from 'lucide-react';
 import { api } from '../lib/api.js';
 
 const CANCEL_WINDOW_SEC = 30;
 
 const CATEGORY_EMOJI = {
-  beverage: '☕', food: '🥪', snack: '🍪',
-  meal: '🍱', stationery: '📎', cleaning: '🧹', other: '📦',
+  beverage: '☕',
+  food: '🥪',
+  snack: '🍪',
+  meal: '🍱',
+  stationery: '📎',
+  cleaning: '🧹',
+  other: '📦',
 };
 
 const STATUS_CONFIG = {
-  pending:      { label: 'Pending',     color: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-400' },
-  in_progress:  { label: 'In Progress', color: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-400' },
-  done:         { label: 'Delivered',   color: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-400' },
-  cancelled:    { label: 'Cancelled',   color: 'bg-rose-100 text-rose-700',     dot: 'bg-rose-400' },
+  pending: { label: 'Pending', color: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400' },
+  in_progress: { label: 'In Progress', color: 'bg-blue-100 text-blue-700', dot: 'bg-blue-400' },
+  done: { label: 'Delivered', color: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-400' },
+  cancelled: { label: 'Cancelled', color: 'bg-rose-100 text-rose-700', dot: 'bg-rose-400' },
 };
 
 const LIVE_STATUS_LABEL = {
-  placed:     'Order Placed',
-  accepted:   'Accepted',
-  preparing:  'Preparing',
+  placed: 'Order Placed',
+  accepted: 'Accepted',
+  preparing: 'Preparing',
   on_the_way: 'On the Way',
-  done:       'Delivered',
-  cancelled:  'Cancelled',
-  Recorded:   'Recorded',
+  done: 'Delivered',
+  cancelled: 'Cancelled',
+  Recorded: 'Recorded',
 };
 
 const FILTERS = [
-  { key: 'all',       label: 'All' },
-  { key: 'active',    label: 'Active' },
+  { key: 'all', label: 'All' },
+  { key: 'active', label: 'Active' },
   { key: 'delivered', label: 'Delivered' },
   { key: 'cancelled', label: 'Cancelled' },
 ];
@@ -41,7 +43,7 @@ const FILTERS = [
 /** Group orders by date label: Today, Yesterday, or formatted date */
 function groupByDate(orders) {
   const groups = {};
-  const now  = new Date();
+  const now = new Date();
   const todayStr = now.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
 
   const yesterday = new Date(now);
@@ -55,10 +57,13 @@ function groupByDate(orders) {
     let label;
     if (dateStr === todayStr) label = 'Today';
     else if (dateStr === yesterdayStr) label = 'Yesterday';
-    else label = d.toLocaleDateString('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      day: 'numeric', month: 'short', year: 'numeric',
-    });
+    else
+      label = d.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
 
     if (!groups[label]) groups[label] = [];
     groups[label].push(order);
@@ -67,7 +72,7 @@ function groupByDate(orders) {
   return groups;
 }
 
-function formatTime(dateStr) {
+function _formatTime(dateStr) {
   return new Date(dateStr).toLocaleTimeString('en-IN', {
     timeZone: 'Asia/Kolkata',
     hour: 'numeric',
@@ -78,8 +83,18 @@ function formatTime(dateStr) {
 
 function formatDateTime(dateStr) {
   const d = new Date(dateStr);
-  const day = d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short' });
-  const time = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true });
+  const day = d.toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+  const time = d.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
   return `${day} · ${time}`;
 }
 
@@ -103,7 +118,10 @@ function OrderCard({ order, onTap, onReorder, onCancel }) {
   // Cancel window: only for freshly placed pending orders
   const created = new Date(order.created_at).getTime();
   const secsElapsed = (Date.now() - created) / 1000;
-  const canCancel = order.status === 'pending' && (order.live_status || 'placed') === 'placed' && secsElapsed < CANCEL_WINDOW_SEC;
+  const canCancel =
+    order.status === 'pending' &&
+    (order.live_status || 'placed') === 'placed' &&
+    secsElapsed < CANCEL_WINDOW_SEC;
 
   // Parse quantity from raw_text like "2x CCD Coffee"
   const qty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
@@ -118,7 +136,9 @@ function OrderCard({ order, onTap, onReorder, onCancel }) {
         <span className="text-[11px] text-slate-400 font-medium">
           {formatDateTime(order.created_at)}
         </span>
-        <span className={`inline-flex items-center gap-1.5 text-[10px] font-extrabold px-2.5 py-1 rounded-full ${status.color}`}>
+        <span
+          className={`inline-flex items-center gap-1.5 text-[10px] font-extrabold px-2.5 py-1 rounded-full ${status.color}`}
+        >
           <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
           {isActive ? liveLabel : status.label}
         </span>
@@ -168,7 +188,9 @@ function OrderCard({ order, onTap, onReorder, onCancel }) {
       {isDone && duration && (
         <div className="bg-slate-50 rounded-xl px-3 py-2 flex items-center gap-2 text-[11px] text-slate-500">
           <span className="text-emerald-500">⏱️</span>
-          <span>Delivered in <span className="font-bold text-slate-700">{duration}</span></span>
+          <span>
+            Delivered in <span className="font-bold text-slate-700">{duration}</span>
+          </span>
         </div>
       )}
 
@@ -181,18 +203,26 @@ function OrderCard({ order, onTap, onReorder, onCancel }) {
 
       {/* Action strip */}
       <div className="border-t border-slate-50 pt-3 flex items-center justify-between">
-        <span className="text-[10px] text-slate-300 font-mono">#{order.user_order_number || order.id?.slice(0, 8)}</span>
-        
+        <span className="text-[10px] text-slate-300 font-mono">
+          #{order.user_order_number || order.id?.slice(0, 8)}
+        </span>
+
         {canCancel ? (
           <button
-            onClick={(e) => { e.stopPropagation(); onCancel(order); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel(order);
+            }}
             className="flex items-center gap-1 text-rose-600 text-xs font-bold hover:underline"
           >
             <XCircle size={12} /> Cancel order ({Math.ceil(CANCEL_WINDOW_SEC - secsElapsed)}s)
           </button>
         ) : !isActive ? (
           <button
-            onClick={(e) => { e.stopPropagation(); onReorder(order); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onReorder(order);
+            }}
             className="flex items-center gap-1 bg-brand/5 hover:bg-brand/10 text-brand px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
           >
             <RotateCcw size={12} /> Reorder
@@ -206,10 +236,14 @@ function OrderCard({ order, onTap, onReorder, onCancel }) {
 // ── Empty State ───────────────────────────────────────────────────────────────
 function EmptyState({ filter }) {
   const messages = {
-    all:       { icon: '📦', title: 'No orders yet', sub: 'Your order history will show up here' },
-    active:    { icon: '⏳', title: 'No active orders', sub: 'Place an order from the cafeteria' },
-    delivered: { icon: '✅', title: 'No delivered orders', sub: 'Completed orders will appear here' },
-    cancelled: { icon: '❌', title: 'No cancelled orders', sub: 'That\'s a good thing!' },
+    all: { icon: '📦', title: 'No orders yet', sub: 'Your order history will show up here' },
+    active: { icon: '⏳', title: 'No active orders', sub: 'Place an order from the cafeteria' },
+    delivered: {
+      icon: '✅',
+      title: 'No delivered orders',
+      sub: 'Completed orders will appear here',
+    },
+    cancelled: { icon: '❌', title: 'No cancelled orders', sub: "That's a good thing!" },
   };
   const m = messages[filter] || messages.all;
 
@@ -225,12 +259,12 @@ function EmptyState({ filter }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function OrderHistory() {
   const navigate = useNavigate();
-  const [orders,      setOrders]      = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [filter,      setFilter]      = useState('all');
-  const [search,      setSearch]      = useState('');
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
   const [cancelTarget, setCancelTarget] = useState(null);
-  const [cancelling,  setCancelling]  = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -243,7 +277,9 @@ export default function OrderHistory() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // Filter orders
   const filtered = orders.filter((o) => {
@@ -255,7 +291,8 @@ export default function OrderHistory() {
     // Search filter
     if (search.trim()) {
       const q = search.toLowerCase();
-      const text = `${o.parsed_item || ''} ${o.raw_text || ''} ${o.parsed_location || ''}`.toLowerCase();
+      const text =
+        `${o.parsed_item || ''} ${o.raw_text || ''} ${o.parsed_location || ''}`.toLowerCase();
       if (!text.includes(q)) return false;
     }
 
@@ -266,17 +303,22 @@ export default function OrderHistory() {
   const dateKeys = Object.keys(grouped);
 
   // Counts for filter badges
-  const activeCount    = orders.filter((o) => ['pending', 'in_progress'].includes(o.status)).length;
+  const activeCount = orders.filter((o) => ['pending', 'in_progress'].includes(o.status)).length;
   const deliveredCount = orders.filter((o) => o.status === 'done').length;
   const cancelledCount = orders.filter((o) => o.status === 'cancelled').length;
-  const counts = { all: orders.length, active: activeCount, delivered: deliveredCount, cancelled: cancelledCount };
+  const counts = {
+    all: orders.length,
+    active: activeCount,
+    delivered: deliveredCount,
+    cancelled: cancelledCount,
+  };
 
   function handleReorder(order) {
     const qty = parseInt(order.raw_text?.match(/^(\d+)x/)?.[1], 10) || 1;
     navigate('/request', {
       state: {
         reorderItem: order.parsed_item,
-        reorderQty:  qty,
+        reorderQty: qty,
         reorderLocation: order.parsed_location,
       },
     });
@@ -290,7 +332,7 @@ export default function OrderHistory() {
       setCancelTarget(null);
       load(); // refresh list
     } catch (e) {
-      alert('Failed to cancel: ' + e.message);
+      alert(`Failed to cancel: ${e.message}`);
     } finally {
       setCancelling(false);
     }
@@ -317,7 +359,9 @@ export default function OrderHistory() {
         </button>
         <div>
           <h1 className="text-xl font-extrabold text-slate-900">Order History</h1>
-          <p className="text-xs text-slate-400">{orders.length} total order{orders.length !== 1 ? 's' : ''}</p>
+          <p className="text-xs text-slate-400">
+            {orders.length} total order{orders.length !== 1 ? 's' : ''}
+          </p>
         </div>
       </div>
 
@@ -347,9 +391,11 @@ export default function OrderHistory() {
           >
             {f.label}
             {counts[f.key] > 0 && (
-              <span className={`h-4 min-w-[16px] px-1 rounded-full text-[10px] font-extrabold flex items-center justify-center ${
-                filter === f.key ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'
-              }`}>
+              <span
+                className={`h-4 min-w-[16px] px-1 rounded-full text-[10px] font-extrabold flex items-center justify-center ${
+                  filter === f.key ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'
+                }`}
+              >
                 {counts[f.key]}
               </span>
             )}
@@ -367,7 +413,9 @@ export default function OrderHistory() {
               {/* Date header */}
               <div className="flex items-center gap-2 mb-3">
                 <Clock size={13} className="text-slate-400" />
-                <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider">{dateLabel}</h2>
+                <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  {dateLabel}
+                </h2>
                 <div className="h-px flex-1 bg-slate-100" />
                 <span className="text-[10px] text-slate-400 font-medium">
                   {grouped[dateLabel].length} order{grouped[dateLabel].length !== 1 ? 's' : ''}
@@ -411,8 +459,10 @@ export default function OrderHistory() {
               <div className="text-4xl">🤔</div>
               <h3 className="font-bold text-slate-900 text-lg">Cancel this order?</h3>
               <p className="text-sm text-slate-500">
-                <span className="font-semibold text-slate-700">{cancelTarget.parsed_item || cancelTarget.raw_text}</span>
-                {' '}will be cancelled. This can't be undone.
+                <span className="font-semibold text-slate-700">
+                  {cancelTarget.parsed_item || cancelTarget.raw_text}
+                </span>{' '}
+                will be cancelled. This can't be undone.
               </p>
               <div className="flex gap-3">
                 <button
@@ -427,9 +477,14 @@ export default function OrderHistory() {
                   disabled={cancelling}
                   className="flex-1 py-2.5 rounded-xl bg-rose-500 text-white text-sm font-bold hover:bg-rose-600 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1"
                 >
-                  {cancelling
-                    ? <><div className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Cancelling…</>
-                    : 'Yes, cancel'}
+                  {cancelling ? (
+                    <>
+                      <div className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />{' '}
+                      Cancelling…
+                    </>
+                  ) : (
+                    'Yes, cancel'
+                  )}
                 </button>
               </div>
             </motion.div>

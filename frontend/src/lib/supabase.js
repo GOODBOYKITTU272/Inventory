@@ -7,7 +7,7 @@ if (!url || !anon) {
   // eslint-disable-next-line no-console
   console.warn(
     '[supabase] VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY missing. ' +
-      'Copy frontend/.env.example to frontend/.env.local and fill it in.',
+      'Copy frontend/.env.example to frontend/.env.local and fill it in.'
   );
 }
 

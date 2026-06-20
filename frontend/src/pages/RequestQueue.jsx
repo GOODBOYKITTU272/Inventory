@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { api } from '../lib/api.js';
 
 const STATUS_LABEL = {
-  pending:          'Pending',
-  in_progress:      'In progress',
-  done:             'Done',
-  cancelled:        'Cancelled',
+  pending: 'Pending',
+  in_progress: 'In progress',
+  done: 'Done',
+  cancelled: 'Cancelled',
   ready_for_pickup: 'Ready for Pickup',
 };
 
 const STATUS_TONE = {
-  pending:          'bg-amber-100 text-amber-800',
-  in_progress:      'bg-blue-100 text-blue-800',
-  done:             'bg-emerald-100 text-emerald-800',
-  cancelled:        'bg-slate-100 text-slate-600',
+  pending: 'bg-amber-100 text-amber-800',
+  in_progress: 'bg-blue-100 text-blue-800',
+  done: 'bg-emerald-100 text-emerald-800',
+  cancelled: 'bg-slate-100 text-slate-600',
   ready_for_pickup: 'bg-teal-100 text-teal-800',
 };
 
@@ -97,7 +97,7 @@ function buildReceiptHTML(order) {
   <div class="row"><span>Location</span><span>${isSelfPickup ? 'Pantry Counter' : location}</span></div>
   <div class="row"><span>Mode</span><span>${isSelfPickup ? '🏃 SELF PICK' : '🛵 DELIVER'}</span></div>
   <div class="line"></div>
-  <div class="big center" style="padding:4px 0;">${item}${qty > 1 ? ' x' + qty : ''}</div>
+  <div class="big center" style="padding:4px 0;">${item}${qty > 1 ? ` x${qty}` : ''}</div>
   ${note ? `<div style="padding:2px 0;font-size:11px;">Note: ${note}</div>` : ''}
   <div class="line"></div>
   <div class="footer">${isSelfPickup ? '⏳ PREPARE & KEEP READY' : '🛵 DELIVER ASAP!'}</div>
@@ -106,7 +106,7 @@ function buildReceiptHTML(order) {
 </html>`;
 }
 
-function printReceipt(order) {
+function _printReceipt(order) {
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:none;';
   document.body.appendChild(iframe);
@@ -123,7 +123,9 @@ function printReceipt(order) {
       console.warn('Print failed:', e);
     }
     setTimeout(() => {
-      try { document.body.removeChild(iframe); } catch (_) {}
+      try {
+        document.body.removeChild(iframe);
+      } catch (_) {}
     }, 2000);
   };
 
@@ -146,12 +148,16 @@ export default function RequestQueue() {
     try {
       const data = await api.listRequests(filter === 'all' ? '' : filter);
       setRows(data);
-    } catch (e) { setErr(e.message); }
+    } catch (e) {
+      setErr(e.message);
+    }
   }
 
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  async function setStatus(id, status, liveStatus, orderData) {
+  async function setStatus(id, status, liveStatus, _orderData) {
     setBusy((b) => ({ ...b, [id]: true }));
     try {
       await api.setRequestStatus(id, status, liveStatus);
@@ -169,10 +175,10 @@ export default function RequestQueue() {
   const grouped = useMemo(() => {
     if (!rows) return null;
     return {
-      pending:     rows.filter((r) => r.status === 'pending'),
+      pending: rows.filter((r) => r.status === 'pending'),
       in_progress: rows.filter((r) => r.status === 'in_progress'),
-      done:        rows.filter((r) => r.status === 'done'),
-      cancelled:   rows.filter((r) => r.status === 'cancelled'),
+      done: rows.filter((r) => r.status === 'done'),
+      cancelled: rows.filter((r) => r.status === 'cancelled'),
     };
   }, [rows]);
 
@@ -212,15 +218,13 @@ export default function RequestQueue() {
       {err && <div className="text-sm text-rose-700 bg-rose-50 p-3 rounded-md">{err}</div>}
 
       {rows.length === 0 ? (
-        <div className="card text-slate-500">
-          Nothing here. {isStaff && 'Have a sip of chai.'}
-        </div>
+        <div className="card text-slate-500">Nothing here. {isStaff && 'Have a sip of chai.'}</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {rows.map((r) => {
             const isSelfPickup = r.delivery_mode === 'self_pickup';
-            const displayStatus = r.live_status === 'ready_for_pickup' ? 'ready_for_pickup'
-              : r.status;
+            const displayStatus =
+              r.live_status === 'ready_for_pickup' ? 'ready_for_pickup' : r.status;
 
             return (
               <div key={r.id} className="card">
@@ -245,12 +249,14 @@ export default function RequestQueue() {
                 </div>
                 <div className="text-sm text-slate-600 mt-1">{r.instruction}</div>
                 <div className="text-xs text-slate-400 mt-2">
-                  From: <span className="text-slate-600">{r.submitter_name || r.parsed_employee_name || '—'}</span>
+                  From:{' '}
+                  <span className="text-slate-600">
+                    {r.submitter_name || r.parsed_employee_name || '—'}
+                  </span>
                 </div>
 
                 {isStaff && r.status !== 'done' && r.status !== 'cancelled' && (
                   <div className="flex flex-wrap gap-2 mt-3">
-
                     {/* Accept pending */}
                     {r.status === 'pending' && (
                       <button
@@ -274,8 +280,9 @@ export default function RequestQueue() {
                     )}
 
                     {/* On the way (only for delivery orders) OR Mark as Ready (for self-pickup) */}
-                    {r.status === 'in_progress' && r.live_status === 'preparing' && (
-                      isSelfPickup ? (
+                    {r.status === 'in_progress' &&
+                      r.live_status === 'preparing' &&
+                      (isSelfPickup ? (
                         <button
                           className="btn-primary text-xs px-3 py-1.5 bg-teal-600 hover:bg-teal-700"
                           disabled={busy[r.id]}
@@ -291,8 +298,7 @@ export default function RequestQueue() {
                         >
                           On the Way
                         </button>
-                      )
-                    )}
+                      ))}
 
                     {/* Mark as Collected (self-pickup after ready) */}
                     {r.status === 'in_progress' && r.live_status === 'ready_for_pickup' && (
@@ -306,15 +312,17 @@ export default function RequestQueue() {
                     )}
 
                     {/* Mark Done (delivery orders) */}
-                    {r.status === 'in_progress' && !isSelfPickup && r.live_status === 'on_the_way' && (
-                      <button
-                        className="btn-primary text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700"
-                        disabled={busy[r.id]}
-                        onClick={() => setStatus(r.id, 'done', 'done')}
-                      >
-                        Mark Done
-                      </button>
-                    )}
+                    {r.status === 'in_progress' &&
+                      !isSelfPickup &&
+                      r.live_status === 'on_the_way' && (
+                        <button
+                          className="btn-primary text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700"
+                          disabled={busy[r.id]}
+                          onClick={() => setStatus(r.id, 'done', 'done')}
+                        >
+                          Mark Done
+                        </button>
+                      )}
 
                     {/* Cancel always available */}
                     <button

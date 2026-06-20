@@ -1,81 +1,151 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase.js';
-import { useAuth } from '../hooks/useAuth.js';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ChevronLeft } from 'lucide-react';
+import { useState } from 'react';
+import { useAuth } from '../hooks/useAuth.js';
+import { supabase } from '../lib/supabase.js';
 
 /* ── Static data ─────────────────────────────────────────────────── */
 // Top-level drink categories
 const DRINK_CATEGORIES = [
-  { id: 'coffee', emoji: '☕', label: 'CCD Coffee',
+  {
+    id: 'coffee',
+    emoji: '☕',
+    label: 'CCD Coffee',
     subs: [
-      { id: 'Espresso',      emoji: '☕', label: 'Espresso' },
-      { id: 'Latte',         emoji: '☕', label: 'Latte' },
-      { id: 'Cappuccino',    emoji: '☕', label: 'Cappuccino' },
-      { id: 'Hot Chocolate',  emoji: '🍫', label: 'Hot Chocolate' },
-      { id: 'Badam Mix',     emoji: '🥜', label: 'Badam Mix' },
-    ]},
-  { id: 'tea', emoji: '🍵', label: 'Tea',
+      { id: 'Espresso', emoji: '☕', label: 'Espresso' },
+      { id: 'Latte', emoji: '☕', label: 'Latte' },
+      { id: 'Cappuccino', emoji: '☕', label: 'Cappuccino' },
+      { id: 'Hot Chocolate', emoji: '🍫', label: 'Hot Chocolate' },
+      { id: 'Badam Mix', emoji: '🥜', label: 'Badam Mix' },
+    ],
+  },
+  {
+    id: 'tea',
+    emoji: '🍵',
+    label: 'Tea',
     subs: [
-      { id: 'Assam Tea',    emoji: '🍵', label: 'Assam Tea' },
-      { id: 'Elaichi Tea',  emoji: '🍵', label: 'Elaichi Tea' },
-      { id: 'Ginger Tea',   emoji: '🍵', label: 'Ginger Tea' },
-      { id: 'Green Tea',    emoji: '🍃', label: 'Green Tea' },
-      { id: 'Lemon Tea',    emoji: '🍋', label: 'Lemon Tea' },
-    ]},
+      { id: 'Assam Tea', emoji: '🍵', label: 'Assam Tea' },
+      { id: 'Elaichi Tea', emoji: '🍵', label: 'Elaichi Tea' },
+      { id: 'Ginger Tea', emoji: '🍵', label: 'Ginger Tea' },
+      { id: 'Green Tea', emoji: '🍃', label: 'Green Tea' },
+      { id: 'Lemon Tea', emoji: '🍋', label: 'Lemon Tea' },
+    ],
+  },
   { id: 'water', emoji: '💧', label: 'Water', subs: [] },
-  { id: 'none',  emoji: '🚫', label: 'None for me', subs: [] },
+  { id: 'none', emoji: '🚫', label: 'None for me', subs: [] },
 ];
 
 // Legacy format compat
-const DRINK_OPTS = DRINK_CATEGORIES;
+const _DRINK_OPTS = DRINK_CATEGORIES;
 
 const SNACK_OPTS = [
   { id: 'Bread + Peanut Butter', emoji: '🥜', label: 'Bread + PB' },
-  { id: 'Bread + Jam',           emoji: '🍓', label: 'Bread + Jam' },
-  { id: 'Biscuits',              emoji: '🍪', label: 'Biscuits' },
-  { id: 'none',                  emoji: '🚫', label: 'No Snacks' },
+  { id: 'Bread + Jam', emoji: '🍓', label: 'Bread + Jam' },
+  { id: 'Biscuits', emoji: '🍪', label: 'Biscuits' },
+  { id: 'none', emoji: '🚫', label: 'No Snacks' },
 ];
 
-const COFFEE_TASTE  = ['Strong Coffee','Light Coffee','Less Sugar','No Sugar','With Milk','Without Milk'];
-const TEA_TASTE     = ['Strong Tea','Light Tea','Less Sugar','No Sugar'];
-const LEMON_TASTE   = ['Normal','Less Sugar','Strong Lemon','Mild Lemon','With Honey 🍯','Without Honey'];
-const GREEN_TEA_TASTE = ['Plain Green Tea','With Honey 🍯','With Lemon','Light Brew','Strong Brew'];
+const COFFEE_TASTE = [
+  'Strong Coffee',
+  'Light Coffee',
+  'Less Sugar',
+  'No Sugar',
+  'With Milk',
+  'Without Milk',
+];
+const TEA_TASTE = ['Strong Tea', 'Light Tea', 'Less Sugar', 'No Sugar'];
+const LEMON_TASTE = [
+  'Normal',
+  'Less Sugar',
+  'Strong Lemon',
+  'Mild Lemon',
+  'With Honey 🍯',
+  'Without Honey',
+];
+const GREEN_TEA_TASTE = [
+  'Plain Green Tea',
+  'With Honey 🍯',
+  'With Lemon',
+  'Light Brew',
+  'Strong Brew',
+];
 
 const LOCATION_OPTS = [
-  { id: 'Balaji Cabin',     label: 'Balaji Cabin' },
-  { id: 'RK Cabin',         label: 'RK Cabin' },
-  { id: 'Manisha Cabin',    label: 'Manisha Cabin' },
-  { id: 'Resume Cabin',     label: 'Resume Cabin' },
-  { id: 'Tech Team',        label: 'Tech Team' },
-  { id: 'Marketing Team',   label: 'Marketing Team' },
-  { id: 'Conference Room',  label: 'Conference Room' },
-  { id: 'Ask Every Time',   label: 'Ask me every time' },
+  { id: 'Balaji Cabin', label: 'Balaji Cabin' },
+  { id: 'RK Cabin', label: 'RK Cabin' },
+  { id: 'Manisha Cabin', label: 'Manisha Cabin' },
+  { id: 'Resume Cabin', label: 'Resume Cabin' },
+  { id: 'Tech Team', label: 'Tech Team' },
+  { id: 'Marketing Team', label: 'Marketing Team' },
+  { id: 'Conference Room', label: 'Conference Room' },
+  { id: 'Ask Every Time', label: 'Ask me every time' },
 ];
 
 const SHIFT_OPTS = [
-  { id: 'morning', emoji: '☀️', label: 'Morning Shift', sub: '9:00 AM – 5:00 PM', detail: 'Lunch served ~12:30 PM' },
-  { id: 'night',   emoji: '🌙', label: 'Night Shift',   sub: '8:00 PM – 5:30 AM', detail: 'Dinner served ~11:00 PM' },
+  {
+    id: 'morning',
+    emoji: '☀️',
+    label: 'Morning Shift',
+    sub: '9:00 AM – 5:00 PM',
+    detail: 'Lunch served ~12:30 PM',
+  },
+  {
+    id: 'night',
+    emoji: '🌙',
+    label: 'Night Shift',
+    sub: '8:00 PM – 5:30 AM',
+    detail: 'Dinner served ~11:00 PM',
+  },
 ];
 
 const TONE_OPTS_BASE = [
-  { id: 'gen_z',        emoji: '🔥', label: 'Gen-Z Vibes',    example: '"Your coffee is on its way bestie! ☕🚀"' },
-  { id: 'Friendly',     emoji: '😊', label: 'Friendly',       example: '"Coffee time! Should we send your usual?"' },
-  { id: 'Professional', emoji: '👔', label: 'Professional',   example: '"Your coffee reminder is ready."' },
-  { id: 'Funny',        emoji: '😄', label: 'Funny',          example: '"Coffee is calling. Should we answer?"' },
-  { id: 'Mom Mode',     emoji: '💝', label: 'Mom Mode',       example: '"Two days no coffee? Are you okay? 😄"' },
+  {
+    id: 'gen_z',
+    emoji: '🔥',
+    label: 'Gen-Z Vibes',
+    example: '"Your coffee is on its way bestie! ☕🚀"',
+  },
+  {
+    id: 'Friendly',
+    emoji: '😊',
+    label: 'Friendly',
+    example: '"Coffee time! Should we send your usual?"',
+  },
+  {
+    id: 'Professional',
+    emoji: '👔',
+    label: 'Professional',
+    example: '"Your coffee reminder is ready."',
+  },
+  { id: 'Funny', emoji: '😄', label: 'Funny', example: '"Coffee is calling. Should we answer?"' },
+  {
+    id: 'Mom Mode',
+    emoji: '💝',
+    label: 'Mom Mode',
+    example: '"Two days no coffee? Are you okay? 😄"',
+  },
 ];
-const TONE_BOYFRIEND = { id: 'boyfriend', emoji: '💕', label: 'Boyfriend Style', example: '"Hey cutie, your coffee\'s here 💖 Don\'t forget to eat lunch!"' };
-const TONE_GIRLFRIEND = { id: 'girlfriend', emoji: '💕', label: 'Girlfriend Style', example: '"Hey handsome, your chai is ready ☕💖 Stay hydrated!"' };
+const TONE_BOYFRIEND = {
+  id: 'boyfriend',
+  emoji: '💕',
+  label: 'Boyfriend Style',
+  example: '"Hey cutie, your coffee\'s here 💖 Don\'t forget to eat lunch!"',
+};
+const TONE_GIRLFRIEND = {
+  id: 'girlfriend',
+  emoji: '💕',
+  label: 'Girlfriend Style',
+  example: '"Hey handsome, your chai is ready ☕💖 Stay hydrated!"',
+};
 
 function getToneOpts(gender) {
   const base = [...TONE_OPTS_BASE];
   if (gender === 'female') base.splice(1, 0, TONE_BOYFRIEND);
-  if (gender === 'male')   base.splice(1, 0, TONE_GIRLFRIEND);
+  if (gender === 'male') base.splice(1, 0, TONE_GIRLFRIEND);
   return base;
 }
 // For backward compat
-const TONE_OPTS = TONE_OPTS_BASE;
+const _TONE_OPTS = TONE_OPTS_BASE;
 
 /* ── Reusable chip components ────────────────────────────────────── */
 function MultiChip({ emoji, label, selected, onToggle }) {
@@ -107,7 +177,9 @@ function SingleChip({ emoji, label, example, selected, onSelect }) {
     >
       {emoji && <span className="text-2xl shrink-0 mt-0.5">{emoji}</span>}
       <div className="min-w-0 flex-1">
-        <div className={`font-semibold text-sm ${selected ? 'text-brand' : 'text-slate-800'}`}>{label}</div>
+        <div className={`font-semibold text-sm ${selected ? 'text-brand' : 'text-slate-800'}`}>
+          {label}
+        </div>
         {example && <div className="text-xs text-slate-400 mt-0.5 italic">{example}</div>}
       </div>
       {selected && <Check size={16} className="ml-auto shrink-0 text-brand mt-0.5" />}
@@ -119,7 +191,11 @@ function NavBar({ step, onBack, onNext, nextLabel = 'Next', nextDisabled = false
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex gap-3 max-w-lg mx-auto">
       {step > 0 && (
-        <button type="button" onClick={onBack} className="btn-secondary flex items-center gap-1 px-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="btn-secondary flex items-center gap-1 px-4"
+        >
           <ChevronLeft size={16} /> Back
         </button>
       )}
@@ -149,10 +225,15 @@ function StepWelcome({ onNext }) {
         🍽️
       </motion.div>
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">Welcome to<br />Office Café ☕</h1>
+        <h1 className="text-3xl font-bold text-slate-900">
+          Welcome to
+          <br />
+          Office Café ☕
+        </h1>
         <p className="text-slate-500 mt-3 text-base leading-relaxed">
           Order tea, coffee, snacks, lunch, and more — delivered to your desk in minutes.
-          <br /><br />
+          <br />
+          <br />
           Let's set up your preferences in 30 seconds.
         </p>
       </div>
@@ -177,19 +258,22 @@ function StepName({ prefs, set, onNext, onBack }) {
 
       <div className="space-y-4">
         <div>
-          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1.5 block">Your Name</label>
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1.5 block">
+            Your Name
+          </label>
           <input
             className="w-full border-2 border-slate-200 rounded-2xl px-4 py-4 text-lg font-semibold text-slate-800 placeholder:text-slate-300 focus:border-brand focus:outline-none text-center"
             placeholder="e.g. Naga, Rama, RK…"
             value={prefs.displayName}
             onChange={(e) => set('displayName', e.target.value)}
             maxLength={30}
-            autoFocus
           />
         </div>
 
         <div>
-          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1.5 block">Employee Code <span className="text-rose-400">*</span></label>
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1.5 block">
+            Employee Code <span className="text-rose-400">*</span>
+          </label>
           <input
             type="text"
             inputMode="numeric"
@@ -208,11 +292,20 @@ function StepName({ prefs, set, onNext, onBack }) {
         </div>
 
         <p className="text-center text-xs text-slate-400">
-          Your order will say: <span className="font-bold text-slate-600">"{prefs.displayName || 'Your name'} ({prefs.employeeCode || '0000'}) needs 1x CCD Coffee 🚀"</span>
+          Your order will say:{' '}
+          <span className="font-bold text-slate-600">
+            "{prefs.displayName || 'Your name'} ({prefs.employeeCode || '0000'}) needs 1x CCD Coffee
+            🚀"
+          </span>
         </p>
       </div>
 
-      <NavBar step={1} onBack={onBack} onNext={onNext} nextDisabled={!prefs.displayName?.trim() || (prefs.employeeCode || '').length !== 4} />
+      <NavBar
+        step={1}
+        onBack={onBack}
+        onNext={onNext}
+        nextDisabled={!prefs.displayName?.trim() || (prefs.employeeCode || '').length !== 4}
+      />
     </div>
   );
 }
@@ -241,7 +334,9 @@ function StepShift({ prefs, set, onNext, onBack }) {
             <div className="flex items-center gap-3">
               <span className="text-3xl">{emoji}</span>
               <div>
-                <div className={`font-bold text-base ${prefs.shift === id ? 'text-brand' : 'text-slate-800'}`}>
+                <div
+                  className={`font-bold text-base ${prefs.shift === id ? 'text-brand' : 'text-slate-800'}`}
+                >
                   {label}
                   {prefs.shift === id && <Check size={14} className="inline ml-2" />}
                 </div>
@@ -264,7 +359,7 @@ function StepDrinks({ prefs, toggle, onNext, onBack }) {
   const selectedDrinks = prefs.drinks || [];
 
   // Check if any sub from a category is selected
-  const hasCatSelection = (cat) => cat.subs?.some(s => selectedDrinks.includes(s.id));
+  const hasCatSelection = (cat) => cat.subs?.some((s) => selectedDrinks.includes(s.id));
 
   function toggleCategory(cat) {
     if (cat.id === 'none') {
@@ -276,7 +371,7 @@ function StepDrinks({ prefs, toggle, onNext, onBack }) {
       return;
     }
     // Toggle expand/collapse
-    setExpanded(prev => ({ ...prev, [cat.id]: !prev[cat.id] }));
+    setExpanded((prev) => ({ ...prev, [cat.id]: !prev[cat.id] }));
   }
 
   return (
@@ -295,17 +390,26 @@ function StepDrinks({ prefs, toggle, onNext, onBack }) {
 
           // Simple items (Water, None)
           if (!hasSubs) {
-            const isSelected = cat.id === 'none' ? selectedDrinks.includes('None') : selectedDrinks.includes('Water');
+            const isSelected =
+              cat.id === 'none'
+                ? selectedDrinks.includes('None')
+                : selectedDrinks.includes('Water');
             return (
               <button
                 key={cat.id}
                 onClick={() => toggleCategory(cat)}
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 text-left transition-all ${
-                  isSelected ? 'border-brand bg-brand/5' : 'border-slate-200 bg-white hover:border-brand/30'
+                  isSelected
+                    ? 'border-brand bg-brand/5'
+                    : 'border-slate-200 bg-white hover:border-brand/30'
                 }`}
               >
                 <span className="text-2xl">{cat.emoji}</span>
-                <span className={`font-bold text-sm ${isSelected ? 'text-brand' : 'text-slate-700'}`}>{cat.label}</span>
+                <span
+                  className={`font-bold text-sm ${isSelected ? 'text-brand' : 'text-slate-700'}`}
+                >
+                  {cat.label}
+                </span>
                 {isSelected && <Check size={16} className="text-brand ml-auto" />}
               </button>
             );
@@ -317,25 +421,38 @@ function StepDrinks({ prefs, toggle, onNext, onBack }) {
               <button
                 onClick={() => toggleCategory(cat)}
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 text-left transition-all ${
-                  hasSelection ? 'border-brand bg-brand/5' : 'border-slate-200 bg-white hover:border-brand/30'
+                  hasSelection
+                    ? 'border-brand bg-brand/5'
+                    : 'border-slate-200 bg-white hover:border-brand/30'
                 }`}
               >
                 <span className="text-2xl">{cat.emoji}</span>
                 <div className="flex-1">
-                  <span className={`font-bold text-sm ${hasSelection ? 'text-brand' : 'text-slate-700'}`}>{cat.label}</span>
+                  <span
+                    className={`font-bold text-sm ${hasSelection ? 'text-brand' : 'text-slate-700'}`}
+                  >
+                    {cat.label}
+                  </span>
                   {hasSelection && (
                     <div className="text-[10px] text-brand/70 mt-0.5">
-                      {cat.subs.filter(s => selectedDrinks.includes(s.id)).map(s => s.label).join(', ')}
+                      {cat.subs
+                        .filter((s) => selectedDrinks.includes(s.id))
+                        .map((s) => s.label)
+                        .join(', ')}
                     </div>
                   )}
                 </div>
-                <span className={`text-xs font-bold transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                <span
+                  className={`text-xs font-bold transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                >
+                  ▼
+                </span>
               </button>
 
               {/* Sub-options grid */}
               {isExpanded && (
                 <div className="grid grid-cols-2 gap-2 mt-2 ml-2 mr-2">
-                  {cat.subs.map(sub => (
+                  {cat.subs.map((sub) => (
                     <MultiChip
                       key={sub.id}
                       emoji={sub.emoji}
@@ -385,18 +502,20 @@ function StepSnacks({ prefs, toggle, onNext, onBack }) {
 function StepTaste({ prefs, toggle, onNext, onBack }) {
   const drinks = prefs.drinks || [];
   const CCD_SUBS = ['Espresso', 'Latte', 'Cappuccino', 'Hot Chocolate', 'Badam Mix'];
-  const TEA_SUBS = ['Assam Tea', 'Elaichi Tea', 'Ginger Tea', 'Green Tea', 'Lemon Tea'];
+  const _TEA_SUBS = ['Assam Tea', 'Elaichi Tea', 'Ginger Tea', 'Green Tea', 'Lemon Tea'];
 
-  const hasCoffee   = drinks.some(d => CCD_SUBS.includes(d) || d.toLowerCase().includes('coffee'));
-  const hasTea      = drinks.some(d => ['Assam Tea','Elaichi Tea','Ginger Tea'].includes(d) || d === 'Regular Tea');
+  const hasCoffee = drinks.some((d) => CCD_SUBS.includes(d) || d.toLowerCase().includes('coffee'));
+  const hasTea = drinks.some(
+    (d) => ['Assam Tea', 'Elaichi Tea', 'Ginger Tea'].includes(d) || d === 'Regular Tea'
+  );
   const hasGreenTea = drinks.includes('Green Tea');
-  const hasLemon    = drinks.includes('Lemon Tea');
+  const hasLemon = drinks.includes('Lemon Tea');
 
   const groups = [];
-  if (hasCoffee)   groups.push({ label: '☕ Coffee — how do you take it?', opts: COFFEE_TASTE });
-  if (hasTea)      groups.push({ label: '🍵 Tea — how do you like it?',    opts: TEA_TASTE });
-  if (hasGreenTea) groups.push({ label: '🍃 Green Tea preference',         opts: GREEN_TEA_TASTE });
-  if (hasLemon)    groups.push({ label: '🍋 Lemon Tea preference',         opts: LEMON_TASTE });
+  if (hasCoffee) groups.push({ label: '☕ Coffee — how do you take it?', opts: COFFEE_TASTE });
+  if (hasTea) groups.push({ label: '🍵 Tea — how do you like it?', opts: TEA_TASTE });
+  if (hasGreenTea) groups.push({ label: '🍃 Green Tea preference', opts: GREEN_TEA_TASTE });
+  if (hasLemon) groups.push({ label: '🍋 Lemon Tea preference', opts: LEMON_TASTE });
 
   if (!groups.length) {
     return (
@@ -419,7 +538,9 @@ function StepTaste({ prefs, toggle, onNext, onBack }) {
       </div>
       {groups.map(({ label, opts }) => (
         <div key={label}>
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{label}</div>
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+            {label}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             {opts.map((opt) => (
               <MultiChip
@@ -474,17 +595,65 @@ function StepReminders({ prefs, set, onNext, onBack, shift }) {
   const isNight = shift === 'night';
 
   const MORNING_ITEMS = [
-    { key: 'morningReminder',   label: '☀️ Morning drink',    sub: 'Reminds you around 10:45 AM', timeKey: 'morningTime',   defTime: '10:45' },
-    { key: 'afternoonReminder', label: '🌤️ Afternoon drink',  sub: 'Reminds you around 2:45 PM',  timeKey: 'afternoonTime', defTime: '14:45' },
-    { key: 'lunchReminder',     label: '🍱 Lunch reminder',    sub: 'Reminds you around 12:45 PM', timeKey: 'lunchTime',     defTime: '12:45' },
-    { key: 'waterReminder',     label: '💧 Hydration nudge',   sub: 'Drink water reminder',        timeKey: null,            defTime: null },
+    {
+      key: 'morningReminder',
+      label: '☀️ Morning drink',
+      sub: 'Reminds you around 10:45 AM',
+      timeKey: 'morningTime',
+      defTime: '10:45',
+    },
+    {
+      key: 'afternoonReminder',
+      label: '🌤️ Afternoon drink',
+      sub: 'Reminds you around 2:45 PM',
+      timeKey: 'afternoonTime',
+      defTime: '14:45',
+    },
+    {
+      key: 'lunchReminder',
+      label: '🍱 Lunch reminder',
+      sub: 'Reminds you around 12:45 PM',
+      timeKey: 'lunchTime',
+      defTime: '12:45',
+    },
+    {
+      key: 'waterReminder',
+      label: '💧 Hydration nudge',
+      sub: 'Drink water reminder',
+      timeKey: null,
+      defTime: null,
+    },
   ];
 
   const NIGHT_ITEMS = [
-    { key: 'eveningReminder',   label: '🌙 Evening drink',    sub: 'Reminds you around 9:30 PM',  timeKey: 'eveningTime',   defTime: '21:30' },
-    { key: 'lateNightReminder', label: '🌛 Late night drink', sub: 'Reminds you around 1:00 AM',  timeKey: 'lateNightTime', defTime: '01:00' },
-    { key: 'dinnerReminder',    label: '🍽️ Dinner reminder',  sub: 'Reminds you around 11:00 PM', timeKey: 'dinnerTime',    defTime: '23:00' },
-    { key: 'waterReminder',     label: '💧 Hydration nudge',   sub: 'Drink water reminder',        timeKey: null,            defTime: null },
+    {
+      key: 'eveningReminder',
+      label: '🌙 Evening drink',
+      sub: 'Reminds you around 9:30 PM',
+      timeKey: 'eveningTime',
+      defTime: '21:30',
+    },
+    {
+      key: 'lateNightReminder',
+      label: '🌛 Late night drink',
+      sub: 'Reminds you around 1:00 AM',
+      timeKey: 'lateNightTime',
+      defTime: '01:00',
+    },
+    {
+      key: 'dinnerReminder',
+      label: '🍽️ Dinner reminder',
+      sub: 'Reminds you around 11:00 PM',
+      timeKey: 'dinnerTime',
+      defTime: '23:00',
+    },
+    {
+      key: 'waterReminder',
+      label: '💧 Hydration nudge',
+      sub: 'Drink water reminder',
+      timeKey: null,
+      defTime: null,
+    },
   ];
 
   const items = isNight ? NIGHT_ITEMS : MORNING_ITEMS;
@@ -501,13 +670,18 @@ function StepReminders({ prefs, set, onNext, onBack, shift }) {
         </p>
         {isNight && (
           <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 rounded-full">
-            <span className="text-xs text-indigo-700 font-bold">🌙 Night shift — self pickup only at night</span>
+            <span className="text-xs text-indigo-700 font-bold">
+              🌙 Night shift — self pickup only at night
+            </span>
           </div>
         )}
       </div>
       <div className="space-y-3">
         {items.map(({ key, label, sub, timeKey, defTime }) => (
-          <div key={key} className={`p-4 rounded-2xl border-2 transition-all ${prefs[key] ? 'border-brand bg-brand/5' : 'border-slate-200 bg-white'}`}>
+          <div
+            key={key}
+            className={`p-4 rounded-2xl border-2 transition-all ${prefs[key] ? 'border-brand bg-brand/5' : 'border-slate-200 bg-white'}`}
+          >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="font-semibold text-sm text-slate-800">{label}</div>
@@ -518,7 +692,9 @@ function StepReminders({ prefs, set, onNext, onBack, shift }) {
                 onClick={() => set(key, !prefs[key])}
                 className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${prefs[key] ? 'bg-brand' : 'bg-slate-300'}`}
               >
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${prefs[key] ? 'left-6' : 'left-1'}`} />
+                <div
+                  className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${prefs[key] ? 'left-6' : 'left-1'}`}
+                />
               </button>
             </div>
             {prefs[key] && timeKey && (
@@ -526,7 +702,7 @@ function StepReminders({ prefs, set, onNext, onBack, shift }) {
                 type="time"
                 className="input mt-3 w-full"
                 defaultValue={defTime}
-                onChange={e => set(timeKey, e.target.value)}
+                onChange={(e) => set(timeKey, e.target.value)}
               />
             )}
           </div>
@@ -540,9 +716,9 @@ function StepReminders({ prefs, set, onNext, onBack, shift }) {
 // Step 8 — Gender (for personalized notification tone)
 function StepGender({ prefs, set, onNext, onBack }) {
   const GENDER_OPTS = [
-    { id: 'male',   emoji: '👨', label: 'Male' },
+    { id: 'male', emoji: '👨', label: 'Male' },
     { id: 'female', emoji: '👩', label: 'Female' },
-    { id: 'other',  emoji: '🧑', label: 'Prefer not to say' },
+    { id: 'other', emoji: '🧑', label: 'Prefer not to say' },
   ];
   return (
     <div className="space-y-6 pb-28">
@@ -551,7 +727,10 @@ function StepGender({ prefs, set, onNext, onBack }) {
         <h2 className="text-2xl font-bold text-slate-900">One quick thing...</h2>
         <p className="text-slate-500 mt-2 text-sm">
           This helps us personalize your notification style.
-          <br /><span className="text-[10px] text-slate-400">Only used for AI tone — never shared with anyone.</span>
+          <br />
+          <span className="text-[10px] text-slate-400">
+            Only used for AI tone — never shared with anyone.
+          </span>
         </p>
       </div>
       <div className="grid grid-cols-3 gap-3">
@@ -566,7 +745,9 @@ function StepGender({ prefs, set, onNext, onBack }) {
             }`}
           >
             <div className="text-3xl mb-2">{emoji}</div>
-            <div className={`text-sm font-bold ${prefs.gender === id ? 'text-brand' : 'text-slate-700'}`}>
+            <div
+              className={`text-sm font-bold ${prefs.gender === id ? 'text-brand' : 'text-slate-700'}`}
+            >
               {label}
               {prefs.gender === id && <Check size={12} className="inline ml-1" />}
             </div>
@@ -619,7 +800,8 @@ function StepDone({ onFinish, saving }) {
       <div>
         <h1 className="text-3xl font-bold text-slate-900">All Set!</h1>
         <p className="text-slate-500 mt-3 text-base">
-          Your Office Café is personalized and ready.<br />
+          Your Office Café is personalized and ready.
+          <br />
           Order anything. We'll send it right to you.
         </p>
       </div>
@@ -646,7 +828,7 @@ const TOTAL = 11;
 
 export default function Onboarding({ onComplete }) {
   const { session } = useAuth();
-  const [step,   setStep]   = useState(0);
+  const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
 
   // Pre-fill displayName from Microsoft profile (full_name or email prefix)
@@ -656,7 +838,7 @@ export default function Onboarding({ onComplete }) {
     return name.split(' ')[0] || '';
   })();
 
-  const [prefs,  setPrefs]  = useState({
+  const [prefs, setPrefs] = useState({
     displayName: defaultName,
     employeeCode: '',
     drinks: [],
@@ -665,38 +847,38 @@ export default function Onboarding({ onComplete }) {
     shift: 'morning',
     location: '',
     // Morning shift reminders
-    morningReminder:   true,
-    morningTime:       '10:45',
+    morningReminder: true,
+    morningTime: '10:45',
     afternoonReminder: false,
-    afternoonTime:     '14:45',
-    lunchReminder:     false,
-    lunchTime:         '12:45',
-    waterReminder:     false,
+    afternoonTime: '14:45',
+    lunchReminder: false,
+    lunchTime: '12:45',
+    waterReminder: false,
     // Night shift reminders
-    eveningReminder:   true,
-    eveningTime:       '21:30',
+    eveningReminder: true,
+    eveningTime: '21:30',
     lateNightReminder: false,
-    lateNightTime:     '01:00',
-    dinnerReminder:    false,
-    dinnerTime:        '23:00',
+    lateNightTime: '01:00',
+    dinnerReminder: false,
+    dinnerTime: '23:00',
     gender: '',
     tone: 'gen_z',
   });
 
   function toggleArr(field, value) {
-    setPrefs(p => ({
+    setPrefs((p) => ({
       ...p,
       [field]: p[field].includes(value)
-        ? p[field].filter(x => x !== value)
+        ? p[field].filter((x) => x !== value)
         : [...p[field], value],
     }));
   }
   function set(field, value) {
-    setPrefs(p => ({ ...p, [field]: value }));
+    setPrefs((p) => ({ ...p, [field]: value }));
   }
 
-  const next = () => setStep(s => Math.min(s + 1, TOTAL - 1));
-  const back = () => setStep(s => Math.max(s - 1, 0));
+  const next = () => setStep((s) => Math.min(s + 1, TOTAL - 1));
+  const back = () => setStep((s) => Math.max(s - 1, 0));
 
   // Timeout wrapper — never let a save hang forever
   function withTimeout(promise, ms = 8000) {
@@ -729,30 +911,34 @@ export default function Onboarding({ onComplete }) {
       // Save preferred name + employee code back to profiles
       const profileUpdate = {};
       if (prefs.displayName?.trim()) profileUpdate.preferred_name = prefs.displayName.trim();
-      if (prefs.employeeCode?.trim()) profileUpdate.employee_code = prefs.employeeCode.trim().toUpperCase();
+      if (prefs.employeeCode?.trim())
+        profileUpdate.employee_code = prefs.employeeCode.trim().toUpperCase();
       if (Object.keys(profileUpdate).length > 0) {
-        await supabase
-          .from('profiles')
-          .update(profileUpdate)
-          .eq('id', session.user.id);
+        await supabase.from('profiles').update(profileUpdate).eq('id', session.user.id);
       }
 
       await savePrefs({
-        user_id:              session.user.id,
-        preferred_name:       prefs.displayName?.trim() || null,
-        drink_prefs:          prefs.drinks.filter(d => d !== 'None'),
-        snack_prefs:          prefs.snacks.filter(s => s !== 'none'),
-        taste_prefs:          prefs.tastes,
-        shift:                prefs.shift || 'morning',
-        preferred_location:   prefs.location || null,
-        gender:               prefs.gender || null,
-        reminder_enabled:     prefs.morningReminder || prefs.afternoonReminder || prefs.lunchReminder || prefs.waterReminder
-                              || prefs.eveningReminder || prefs.lateNightReminder || prefs.dinnerReminder || false,
+        user_id: session.user.id,
+        preferred_name: prefs.displayName?.trim() || null,
+        drink_prefs: prefs.drinks.filter((d) => d !== 'None'),
+        snack_prefs: prefs.snacks.filter((s) => s !== 'none'),
+        taste_prefs: prefs.tastes,
+        shift: prefs.shift || 'morning',
+        preferred_location: prefs.location || null,
+        gender: prefs.gender || null,
+        reminder_enabled:
+          prefs.morningReminder ||
+          prefs.afternoonReminder ||
+          prefs.lunchReminder ||
+          prefs.waterReminder ||
+          prefs.eveningReminder ||
+          prefs.lateNightReminder ||
+          prefs.dinnerReminder ||
+          false,
         // Save the primary reminder time based on shift
-        reminder_time:        prefs.shift === 'night'
-                                ? (prefs.eveningTime   || '21:30')
-                                : (prefs.morningTime   || '10:45'),
-        notification_tone:    prefs.tone || 'gen_z',
+        reminder_time:
+          prefs.shift === 'night' ? prefs.eveningTime || '21:30' : prefs.morningTime || '10:45',
+        notification_tone: prefs.tone || 'gen_z',
         onboarding_completed: true,
       });
     } catch (e) {
@@ -767,8 +953,8 @@ export default function Onboarding({ onComplete }) {
     setSaving(true);
     try {
       await savePrefs({
-        user_id:              session.user.id,
-        notification_tone:    'gen_z',
+        user_id: session.user.id,
+        notification_tone: 'gen_z',
         onboarding_completed: true,
       });
     } catch (e) {
@@ -780,17 +966,42 @@ export default function Onboarding({ onComplete }) {
   }
 
   const steps = [
-    <StepWelcome   key={0} onNext={next} />,
-    <StepName      key={1} prefs={prefs} set={set} onNext={next} onBack={back} />,
-    <StepShift     key={2} prefs={prefs} set={set} onNext={next} onBack={back} />,
-    <StepDrinks    key={3} prefs={prefs} toggle={v => toggleArr('drinks', v)} onNext={next} onBack={back} />,
-    <StepSnacks    key={4} prefs={prefs} toggle={v => toggleArr('snacks', v)} onNext={next} onBack={back} />,
-    <StepTaste     key={5} prefs={prefs} toggle={v => toggleArr('tastes', v)} onNext={next} onBack={back} />,
-    <StepLocation  key={6} prefs={prefs} set={set}  onNext={next} onBack={back} />,
-    <StepReminders key={7} prefs={prefs} set={set} onNext={next} onBack={back} shift={prefs.shift} />,
-    <StepGender    key={8} prefs={prefs} set={set} onNext={next} onBack={back} />,
-    <StepTone      key={9} prefs={prefs} set={v => set('tone', v)} onNext={next} onBack={back} />,
-    <StepDone      key={10} onFinish={finish} saving={saving} />,
+    <StepWelcome key={0} onNext={next} />,
+    <StepName key={1} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepShift key={2} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepDrinks
+      key={3}
+      prefs={prefs}
+      toggle={(v) => toggleArr('drinks', v)}
+      onNext={next}
+      onBack={back}
+    />,
+    <StepSnacks
+      key={4}
+      prefs={prefs}
+      toggle={(v) => toggleArr('snacks', v)}
+      onNext={next}
+      onBack={back}
+    />,
+    <StepTaste
+      key={5}
+      prefs={prefs}
+      toggle={(v) => toggleArr('tastes', v)}
+      onNext={next}
+      onBack={back}
+    />,
+    <StepLocation key={6} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepReminders
+      key={7}
+      prefs={prefs}
+      set={set}
+      onNext={next}
+      onBack={back}
+      shift={prefs.shift}
+    />,
+    <StepGender key={8} prefs={prefs} set={set} onNext={next} onBack={back} />,
+    <StepTone key={9} prefs={prefs} set={(v) => set('tone', v)} onNext={next} onBack={back} />,
+    <StepDone key={10} onFinish={finish} saving={saving} />,
   ];
 
   return (
@@ -802,9 +1013,11 @@ export default function Onboarding({ onComplete }) {
             <div
               key={i}
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === step   ? 'flex-[2] bg-brand' :
-                i < step     ? 'flex-1 bg-brand/40' :
-                               'flex-1 bg-slate-100'
+                i === step
+                  ? 'flex-[2] bg-brand'
+                  : i < step
+                    ? 'flex-1 bg-brand/40'
+                    : 'flex-1 bg-slate-100'
               }`}
             />
           ))}

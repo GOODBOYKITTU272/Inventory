@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 function base32Decode(base32) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -28,12 +28,12 @@ function generateTOTP(secret) {
   const hmacResult = hmac.digest();
 
   const offset = hmacResult[hmacResult.length - 1] & 0xf;
-  const code = (
-    ((hmacResult[offset] & 0x7f) << 24) |
-    ((hmacResult[offset + 1] & 0xff) << 16) |
-    ((hmacResult[offset + 2] & 0xff) << 8) |
-    (hmacResult[offset + 3] & 0xff)
-  ) % 1000000;
+  const code =
+    (((hmacResult[offset] & 0x7f) << 24) |
+      ((hmacResult[offset + 1] & 0xff) << 16) |
+      ((hmacResult[offset + 2] & 0xff) << 8) |
+      (hmacResult[offset + 3] & 0xff)) %
+    1000000;
 
   return code.toString().padStart(6, '0');
 }

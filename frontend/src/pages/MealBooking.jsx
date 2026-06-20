@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { CheckCircle2, ChevronLeft, ChevronRight, History, Ticket, XCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Clock, CheckCircle2, XCircle, History, Ticket } from 'lucide-react';
-import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { api } from '../lib/api.js';
 import { supabase } from '../lib/supabase.js';
 
 function getISTParts(dateObj = new Date()) {
@@ -16,7 +16,7 @@ function getISTParts(dateObj = new Date()) {
       hour: 'numeric',
       minute: 'numeric',
       second: 'numeric',
-      hour12: false
+      hour12: false,
     });
     const parts = formatter.formatToParts(dateObj);
     const m = {};
@@ -29,7 +29,7 @@ function getISTParts(dateObj = new Date()) {
       day: parseInt(m.day, 10),
       hour: parseInt(m.hour, 10),
       minute: parseInt(m.minute, 10),
-      second: parseInt(m.second, 10)
+      second: parseInt(m.second, 10),
     };
   } catch (e) {
     console.error('Error formatting IST parts, falling back to local system:', e);
@@ -39,7 +39,7 @@ function getISTParts(dateObj = new Date()) {
       day: dateObj.getDate(),
       hour: dateObj.getHours(),
       minute: dateObj.getMinutes(),
-      second: dateObj.getSeconds()
+      second: dateObj.getSeconds(),
     };
   }
 }
@@ -48,11 +48,12 @@ function getOpeningTimeLabel(mealDateStr, shift) {
   const [year, month, day] = mealDateStr.split('-').map(Number);
   const mealDateObj = new Date(Date.UTC(year, month - 1, day));
   const dow = mealDateObj.getUTCDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
-  
-  let openDate = new Date(mealDateObj);
+
+  const openDate = new Date(mealDateObj);
   if (shift === 'morning') {
     // Morning shift opens at 9:00 AM on the day before, except Monday which opens on Friday
-    if (dow === 1) { // Monday
+    if (dow === 1) {
+      // Monday
       openDate.setUTCDate(mealDateObj.getUTCDate() - 3); // Friday
     } else {
       openDate.setUTCDate(mealDateObj.getUTCDate() - 1); // Day before
@@ -61,7 +62,7 @@ function getOpeningTimeLabel(mealDateStr, shift) {
       weekday: 'long',
       day: 'numeric',
       month: 'short',
-      timeZone: 'Asia/Kolkata'
+      timeZone: 'Asia/Kolkata',
     });
     const dayName = formatter.format(openDate);
     return `${dayName} at 9:00 AM`;
@@ -72,7 +73,7 @@ function getOpeningTimeLabel(mealDateStr, shift) {
       weekday: 'long',
       day: 'numeric',
       month: 'short',
-      timeZone: 'Asia/Kolkata'
+      timeZone: 'Asia/Kolkata',
     });
     const dayName = formatter.format(openDate);
     return `${dayName} at 8:00 PM`;
@@ -81,9 +82,9 @@ function getOpeningTimeLabel(mealDateStr, shift) {
 
 function getToneMessage(tone, shift, openTimeLabel) {
   const isMorning = shift === 'morning';
-  
+
   const messages = {
-    gen_z: isMorning 
+    gen_z: isMorning
       ? `No cap bestie, this lunch opens on ${openTimeLabel} 🤫. Don't sleep on it! 🍱🔥`
       : `Hold up bestie, dinner bookings unlock on ${openTimeLabel} 🌙. Stay tuned! 🍕✨`,
     Friendly: isMorning
@@ -106,7 +107,7 @@ function getToneMessage(tone, shift, openTimeLabel) {
       : `Patience, handsome! Dinner booking opens on ${openTimeLabel} 🌙. Make sure you book on time so you don't go hungry! 💕`,
     Minimal: isMorning
       ? `Lunch booking opens ${openTimeLabel}.`
-      : `Dinner booking opens ${openTimeLabel}.`
+      : `Dinner booking opens ${openTimeLabel}.`,
   };
 
   return messages[tone] || messages.Friendly;
@@ -114,8 +115,8 @@ function getToneMessage(tone, shift, openTimeLabel) {
 
 function getBookingStatus(dateStr, shift = 'morning', todayDateObj) {
   const nowObj = todayDateObj || new Date();
-  
-  if (isNaN(nowObj.getTime())) {
+
+  if (Number.isNaN(nowObj.getTime())) {
     return { canBook: false, canSkip: false, reason: 'error' };
   }
 
@@ -147,7 +148,11 @@ function getBookingStatus(dateStr, shift = 'morning', todayDateObj) {
   if (shift === 'morning') {
     const nextWD = getNextWorkingDay(parts.year, parts.month, parts.day);
     if (dateStr !== nextWD) {
-      return { canBook: false, canSkip: false, reason: dateStr < nextWD ? 'past' : 'future_locked' };
+      return {
+        canBook: false,
+        canSkip: false,
+        reason: dateStr < nextWD ? 'past' : 'future_locked',
+      };
     }
 
     const targetDateObj = new Date(Date.UTC(tYear, tMonth - 1, tDay));
@@ -200,23 +205,65 @@ function getBookingStatus(dateStr, shift = 'morning', todayDateObj) {
 }
 
 const CHOICE_UI = {
-  veg:     { emoji: '🥬', label: 'Veg',     bg: 'bg-emerald-50',  border: 'border-emerald-200', text: 'text-emerald-700', ring: 'ring-emerald-400', badge: 'bg-emerald-100 text-emerald-700' },
-  non_veg: { emoji: '🍗', label: 'Non-Veg', bg: 'bg-red-50',      border: 'border-red-200',     text: 'text-red-700',     ring: 'ring-red-400',     badge: 'bg-red-100 text-red-700' },
-  egg:     { emoji: '🥚', label: 'Egg',     bg: 'bg-amber-50',    border: 'border-amber-200',   text: 'text-amber-700',   ring: 'ring-amber-400',   badge: 'bg-amber-100 text-amber-700' },
-  skip:    { emoji: '🚫', label: 'Skip',    bg: 'bg-slate-50',    border: 'border-slate-200',   text: 'text-slate-500',   ring: 'ring-slate-400',   badge: 'bg-slate-100 text-slate-500' },
+  veg: {
+    emoji: '🥬',
+    label: 'Veg',
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    text: 'text-emerald-700',
+    ring: 'ring-emerald-400',
+    badge: 'bg-emerald-100 text-emerald-700',
+  },
+  non_veg: {
+    emoji: '🍗',
+    label: 'Non-Veg',
+    bg: 'bg-red-50',
+    border: 'border-red-200',
+    text: 'text-red-700',
+    ring: 'ring-red-400',
+    badge: 'bg-red-100 text-red-700',
+  },
+  egg: {
+    emoji: '🥚',
+    label: 'Egg',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+    text: 'text-amber-700',
+    ring: 'ring-amber-400',
+    badge: 'bg-amber-100 text-amber-700',
+  },
+  skip: {
+    emoji: '🚫',
+    label: 'Skip',
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    text: 'text-slate-500',
+    ring: 'ring-slate-400',
+    badge: 'bg-slate-100 text-slate-500',
+  },
 };
 
 const DAY_OPTIONS = {
-  1: ['veg'],            // Mon
-  2: ['veg', 'egg'],     // Tue
+  1: ['veg'], // Mon
+  2: ['veg', 'egg'], // Tue
   3: ['veg', 'non_veg'], // Wed
-  4: ['veg', 'egg'],     // Thu
+  4: ['veg', 'egg'], // Thu
   5: ['veg', 'non_veg'], // Fri
 };
 
 const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 function getMonthStr(year, month) {
@@ -244,17 +291,23 @@ function Toast({ message, type, onDismiss }) {
       exit={{ y: -60, opacity: 0, scale: 0.95 }}
       className="fixed top-4 left-4 right-4 z-[100] flex justify-center pointer-events-none"
     >
-      <div className={`pointer-events-auto max-w-sm w-full rounded-2xl shadow-2xl border-2 p-4 flex items-center gap-3 backdrop-blur-sm ${
-        isError
-          ? 'bg-rose-50/95 border-rose-200 shadow-rose-100/50'
-          : 'bg-emerald-50/95 border-emerald-200 shadow-emerald-100/50'
-      }`}>
-        <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${
-          isError ? 'bg-rose-100' : 'bg-emerald-100'
-        }`}>
-          {isError
-            ? <XCircle size={20} className="text-rose-600" />
-            : <CheckCircle2 size={20} className="text-emerald-600" />}
+      <div
+        className={`pointer-events-auto max-w-sm w-full rounded-2xl shadow-2xl border-2 p-4 flex items-center gap-3 backdrop-blur-sm ${
+          isError
+            ? 'bg-rose-50/95 border-rose-200 shadow-rose-100/50'
+            : 'bg-emerald-50/95 border-emerald-200 shadow-emerald-100/50'
+        }`}
+      >
+        <div
+          className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${
+            isError ? 'bg-rose-100' : 'bg-emerald-100'
+          }`}
+        >
+          {isError ? (
+            <XCircle size={20} className="text-rose-600" />
+          ) : (
+            <CheckCircle2 size={20} className="text-emerald-600" />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className={`font-bold text-sm ${isError ? 'text-rose-800' : 'text-emerald-800'}`}>
@@ -264,9 +317,14 @@ function Toast({ message, type, onDismiss }) {
             {message}
           </div>
         </div>
-        <button onClick={onDismiss} className={`text-xs font-bold px-2 py-1 rounded-lg transition-all ${
-          isError ? 'text-rose-400 hover:bg-rose-100' : 'text-emerald-400 hover:bg-emerald-100'
-        }`}>✕</button>
+        <button
+          onClick={onDismiss}
+          className={`text-xs font-bold px-2 py-1 rounded-lg transition-all ${
+            isError ? 'text-rose-400 hover:bg-rose-100' : 'text-emerald-400 hover:bg-emerald-100'
+          }`}
+        >
+          ✕
+        </button>
       </div>
     </motion.div>
   );
@@ -277,8 +335,11 @@ function ConfirmSheet({ dateStr, choice, existingChoice, busy, onConfirm, onClos
   const ui = CHOICE_UI[choice];
   const existingUi = existingChoice ? CHOICE_UI[existingChoice] : null;
   const isChange = existingChoice && existingChoice !== choice;
-  const dateLabel = new Date(dateStr + 'T00:00:00+05:30').toLocaleDateString('en-IN', {
-    weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata',
+  const dateLabel = new Date(`${dateStr}T00:00:00+05:30`).toLocaleDateString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'Asia/Kolkata',
   });
 
   return (
@@ -304,11 +365,15 @@ function ConfirmSheet({ dateStr, choice, existingChoice, busy, onConfirm, onClos
             <>
               <h2 className="font-extrabold text-slate-900 text-lg">Change your booking?</h2>
               <div className="flex items-center justify-center gap-2 mt-3">
-                <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold ${existingUi.badge}`}>
+                <span
+                  className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold ${existingUi.badge}`}
+                >
                   {existingUi.emoji} {existingUi.label}
                 </span>
                 <span className="text-slate-400 font-bold">→</span>
-                <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold ${ui.badge}`}>
+                <span
+                  className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold ${ui.badge}`}
+                >
                   {ui.emoji} {ui.label}
                 </span>
               </div>
@@ -357,7 +422,6 @@ function ConfirmSheet({ dateStr, choice, existingChoice, busy, onConfirm, onClos
   );
 }
 
-
 export default function MealBooking() {
   const { profile } = useAuth();
   const navigate = useNavigate();
@@ -370,7 +434,7 @@ export default function MealBooking() {
   const [summary, setSummary] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [booking, setBooking] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [userPrefs, setUserPrefs] = useState({ shift: 'morning', notification_tone: 'Friendly' });
 
   // Confirmation sheet state
@@ -404,28 +468,39 @@ export default function MealBooking() {
 
   useEffect(() => {
     setLoading(true);
-    api.myMealBookings(monthStr)
+    api
+      .myMealBookings(monthStr)
       .then(setBookings)
       .catch(() => setBookings([]))
       .finally(() => setLoading(false));
   }, [monthStr]);
 
   useEffect(() => {
-    if (!selectedDate || !isManager) { setSummary(null); return; }
-    api.mealSummary(selectedDate).then(setSummary).catch(() => setSummary(null));
+    if (!selectedDate || !isManager) {
+      setSummary(null);
+      return;
+    }
+    api
+      .mealSummary(selectedDate)
+      .then(setSummary)
+      .catch(() => setSummary(null));
   }, [selectedDate, isManager]);
 
   function prevMonth() {
-    if (month === 0) { setMonth(11); setYear(y => y - 1); }
-    else setMonth(m => m - 1);
+    if (month === 0) {
+      setMonth(11);
+      setYear((y) => y - 1);
+    } else setMonth((m) => m - 1);
   }
   function nextMonth() {
-    if (month === 11) { setMonth(0); setYear(y => y + 1); }
-    else setMonth(m => m + 1);
+    if (month === 11) {
+      setMonth(0);
+      setYear((y) => y + 1);
+    } else setMonth((m) => m + 1);
   }
 
   function getBookingForDate(dateStr) {
-    return bookings.find(b => b.meal_date === dateStr);
+    return bookings.find((b) => b.meal_date === dateStr);
   }
 
   function openMealTicket(dateStr) {
@@ -438,7 +513,7 @@ export default function MealBooking() {
     while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
-  const nextWorkingDay = getNextWorkingDay();
+  const _nextWorkingDay = getNextWorkingDay();
 
   // Step 1: User taps a choice → show confirmation sheet
   function requestBook(dateStr, choice) {
@@ -457,9 +532,16 @@ export default function MealBooking() {
       setBookings(updated);
       setConfirmData(null);
       setChangingDate(null); // return to "already booked" banner after successful change
-      setToast({ message: result.message || `${CHOICE_UI[choice]?.emoji} ${CHOICE_UI[choice]?.label} booked!`, type: 'success' });
+      setToast({
+        message:
+          result.message || `${CHOICE_UI[choice]?.emoji} ${CHOICE_UI[choice]?.label} booked!`,
+        type: 'success',
+      });
       if (isManager && selectedDate === dateStr) {
-        api.mealSummary(dateStr).then(setSummary).catch(() => {});
+        api
+          .mealSummary(dateStr)
+          .then(setSummary)
+          .catch(() => {});
       }
     } catch (e) {
       setConfirmData(null);
@@ -479,7 +561,9 @@ export default function MealBooking() {
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Toast */}
       <AnimatePresence>
-        {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
+        {toast && (
+          <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />
+        )}
       </AnimatePresence>
 
       {/* Confirmation Sheet */}
@@ -527,11 +611,19 @@ export default function MealBooking() {
 
       {/* Month Navigation */}
       <div className="flex items-center justify-between bg-white rounded-2xl border border-slate-100 p-3">
-        <button onClick={prevMonth} className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-all">
+        <button
+          onClick={prevMonth}
+          className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-all"
+        >
           <ChevronLeft size={16} />
         </button>
-        <h2 className="font-bold text-slate-800">{MONTH_NAMES[month]} {year}</h2>
-        <button onClick={nextMonth} className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-all">
+        <h2 className="font-bold text-slate-800">
+          {MONTH_NAMES[month]} {year}
+        </h2>
+        <button
+          onClick={nextMonth}
+          className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-all"
+        >
           <ChevronRight size={16} />
         </button>
       </div>
@@ -539,8 +631,10 @@ export default function MealBooking() {
       {/* Calendar Grid */}
       <div className="bg-white rounded-2xl border border-slate-100 p-4">
         <div className="grid grid-cols-5 gap-1 mb-2">
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => (
-            <div key={d} className="text-center text-xs font-bold text-slate-400 py-1">{d}</div>
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((d) => (
+            <div key={d} className="text-center text-xs font-bold text-slate-400 py-1">
+              {d}
+            </div>
           ))}
         </div>
 
@@ -557,7 +651,7 @@ export default function MealBooking() {
 
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const b = getBookingForDate(dateStr);
-                        const isPast = dateObj < today || dateObj.getTime() === today.getTime();
+            const isPast = dateObj < today || dateObj.getTime() === today.getTime();
             const isToday = dateObj.getTime() === today.getTime();
             const isSelected = selectedDate === dateStr;
             const bStatus = getBookingStatus(dateStr, userPrefs.shift, now);
@@ -577,7 +671,11 @@ export default function MealBooking() {
                   ${isToday ? 'ring-2 ring-slate-300' : ''}
                 `}
               >
-                <span className={`font-bold ${isBookable ? 'text-brand' : isToday ? 'text-slate-500' : 'text-slate-700'}`}>{day}</span>
+                <span
+                  className={`font-bold ${isBookable ? 'text-brand' : isToday ? 'text-slate-500' : 'text-slate-700'}`}
+                >
+                  {day}
+                </span>
                 {b ? (
                   <span className="text-base">{ui?.emoji}</span>
                 ) : isBookable ? (
@@ -600,16 +698,25 @@ export default function MealBooking() {
         >
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-slate-800">
-              {new Date(selectedDate + 'T00:00:00+05:30').toLocaleDateString('en-IN', {
-                weekday: 'long', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata'
+              {new Date(`${selectedDate}T00:00:00+05:30`).toLocaleDateString('en-IN', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                timeZone: 'Asia/Kolkata',
               })}
             </h3>
-            <button onClick={() => setSelectedDate(null)} className="text-xs text-slate-400 hover:text-slate-600">✕ Close</button>
+            <button
+              onClick={() => setSelectedDate(null)}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              ✕ Close
+            </button>
           </div>
 
           {(() => {
             const b = getBookingForDate(selectedDate);
-            const dateObj = new Date(selectedDate + 'T00:00:00+05:30');
+            const dateObj = new Date(`${selectedDate}T00:00:00+05:30`);
             const dow = dateObj.getDay();
             const dayOpts = DAY_OPTIONS[dow] || [];
             const isPast = dateObj < today || dateObj.getTime() === today.getTime();
@@ -621,16 +728,25 @@ export default function MealBooking() {
             // Past or today — view only
             if (isPast) {
               return (
-                <div className={`p-4 rounded-xl flex items-center justify-between gap-3 ${b ? `${CHOICE_UI[b.choice]?.bg} border ${CHOICE_UI[b.choice]?.border}` : 'bg-slate-50 border border-slate-200'}`}>
+                <div
+                  className={`p-4 rounded-xl flex items-center justify-between gap-3 ${b ? `${CHOICE_UI[b.choice]?.bg} border ${CHOICE_UI[b.choice]?.border}` : 'bg-slate-50 border border-slate-200'}`}
+                >
                   {b ? (
                     <>
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="text-2xl">{CHOICE_UI[b.choice]?.emoji}</span>
                         <div>
                           <span className="font-bold text-sm">{CHOICE_UI[b.choice]?.label}</span>
-                          {b.booked_at && <div className="text-[10px] text-slate-400 mt-0.5">
-                            Booked at {new Date(b.booked_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
-                          </div>}
+                          {b.booked_at && (
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              Booked at{' '}
+                              {new Date(b.booked_at).toLocaleTimeString('en-IN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                timeZone: 'Asia/Kolkata',
+                              })}
+                            </div>
+                          )}
                         </div>
                       </div>
                       {b.choice !== 'skip' && (
@@ -657,15 +773,23 @@ export default function MealBooking() {
             // Future but NOT next working day — locked
             if (!isBookable) {
               const openTimeLabel = getOpeningTimeLabel(selectedDate, userPrefs.shift);
-              const toneMsg = getToneMessage(userPrefs.notification_tone, userPrefs.shift, openTimeLabel);
+              const toneMsg = getToneMessage(
+                userPrefs.notification_tone,
+                userPrefs.shift,
+                openTimeLabel
+              );
               return (
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-1">
                   <span className="text-lg">🔒</span>
                   <div className="text-sm font-semibold text-slate-500">Not available yet</div>
-                  <div className="text-xs text-slate-500 font-medium leading-relaxed px-2 py-1">{toneMsg}</div>
+                  <div className="text-xs text-slate-500 font-medium leading-relaxed px-2 py-1">
+                    {toneMsg}
+                  </div>
                   {b && (
                     <div className={`mt-2 p-2 rounded-lg ${CHOICE_UI[b.choice]?.bg}`}>
-                      <span className="text-sm font-semibold">{CHOICE_UI[b.choice]?.emoji} {CHOICE_UI[b.choice]?.label}</span>
+                      <span className="text-sm font-semibold">
+                        {CHOICE_UI[b.choice]?.emoji} {CHOICE_UI[b.choice]?.label}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -683,7 +807,9 @@ export default function MealBooking() {
               const ui = CHOICE_UI[b.choice];
               return (
                 <div className="space-y-3">
-                  <div className={`p-4 rounded-xl border-2 ${ui.bg} ${ui.border} flex items-center justify-between gap-3`}>
+                  <div
+                    className={`p-4 rounded-xl border-2 ${ui.bg} ${ui.border} flex items-center justify-between gap-3`}
+                  >
                     <div className="flex items-center gap-3">
                       <span className="text-3xl">{ui.emoji}</span>
                       <div>
@@ -692,8 +818,11 @@ export default function MealBooking() {
                         </div>
                         {b.booked_at && (
                           <div className="text-[10px] text-slate-400 mt-0.5">
-                            Booked at {new Date(b.booked_at).toLocaleTimeString('en-IN', {
-                              hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+                            Booked at{' '}
+                            {new Date(b.booked_at).toLocaleTimeString('en-IN', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              timeZone: 'Asia/Kolkata',
                             })}
                           </div>
                         )}
@@ -743,7 +872,7 @@ export default function MealBooking() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  {dayOpts.map(opt => {
+                  {dayOpts.map((opt) => {
                     const ui = CHOICE_UI[opt];
                     const selected = b?.choice === opt;
                     return (
@@ -753,7 +882,7 @@ export default function MealBooking() {
                         onClick={() => requestBook(selectedDate, opt)}
                         className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
                           ${selected ? `${ui.bg} border-current ${ui.text}` : `bg-white ${ui.border} hover:${ui.bg}`}
-                          ${(booking || !canBook) ? 'opacity-40' : ''}
+                          ${booking || !canBook ? 'opacity-40' : ''}
                         `}
                       >
                         <span className="text-xl">{ui.emoji}</span>
@@ -767,7 +896,7 @@ export default function MealBooking() {
                     onClick={() => requestBook(selectedDate, 'skip')}
                     className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
                       ${b?.choice === 'skip' ? 'bg-slate-100 border-slate-400 text-slate-600' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-500'}
-                      ${(booking || !canSkip) ? 'opacity-40' : ''}
+                      ${booking || !canSkip ? 'opacity-40' : ''}
                     `}
                   >
                     <span className="text-xl">🚫</span>
@@ -782,7 +911,9 @@ export default function MealBooking() {
           {/* Summary for managers */}
           {isManager && summary && (
             <div className="space-y-2 pt-2 border-t border-slate-100">
-              <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Team Summary</div>
+              <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">
+                Team Summary
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-emerald-50 rounded-xl p-3 text-center">
                   <div className="text-2xl font-bold text-emerald-700">{summary.veg_count}</div>
@@ -806,7 +937,9 @@ export default function MealBooking() {
                 </div>
               </div>
               <div className="flex items-center justify-between bg-brand/5 rounded-xl p-3">
-                <span className="font-bold text-sm text-slate-700">Total Meals: {summary.total_meals}</span>
+                <span className="font-bold text-sm text-slate-700">
+                  Total Meals: {summary.total_meals}
+                </span>
                 <span className="font-bold text-sm text-brand">{summary.cost?.total || 0} INR</span>
               </div>
               {summary.not_booked > 0 && (

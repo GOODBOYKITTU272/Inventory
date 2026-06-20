@@ -1,5 +1,5 @@
+import { resolve } from 'node:path';
 import dotenv from 'dotenv';
-import { resolve } from 'path';
 
 dotenv.config({ path: resolve(process.cwd(), '.env') });
 dotenv.config({ path: resolve(process.cwd(), 'backend', '.env') });
@@ -11,7 +11,10 @@ async function nuke() {
 
   // 1. Delete all users from Supabase Auth
   try {
-    const { data: { users }, error: listErr } = await supabaseAdmin.auth.admin.listUsers();
+    const {
+      data: { users },
+      error: listErr,
+    } = await supabaseAdmin.auth.admin.listUsers();
     if (listErr) throw listErr;
     console.log(`Found ${users.length} auth users. Deleting them...`);
     for (const u of users) {
@@ -38,7 +41,7 @@ async function nuke() {
     'profiles',
     'teams_activity_logs',
     'notification_logs',
-    'ai_summaries'
+    'ai_summaries',
   ];
 
   for (const table of tables) {
@@ -49,7 +52,10 @@ async function nuke() {
       .neq('id', '00000000-0000-0000-0000-000000000000');
     if (error) {
       // Fallback delete if table doesn't have uuid primary key id
-      const { error: err2 } = await supabaseAdmin.from(table).delete().neq('user_id', '00000000-0000-0000-0000-000000000000');
+      const { error: err2 } = await supabaseAdmin
+        .from(table)
+        .delete()
+        .neq('user_id', '00000000-0000-0000-0000-000000000000');
       if (err2) {
         console.error(`❌ Error clearing table ${table}:`, error.message);
       } else {
@@ -77,7 +83,7 @@ async function nuke() {
           .eq('id', item.id);
         if (updateError) console.error(`❌ Error updating water:`, updateError.message);
       } else {
-        let updateFields = { stock_today: 0, stock_servings: 0 };
+        const updateFields = { stock_today: 0, stock_servings: 0 };
         if (item.item_name === 'Bread') {
           updateFields.display_name = 'Milk Bread';
           updateFields.available = true;
@@ -87,14 +93,14 @@ async function nuke() {
           updateFields.available = true;
           updateFields.orderable = false;
         } else if (
-          item.item_name === 'MODERN MILK BRD 350G' || 
-          item.item_name === 'MRBWL MLK BREAD 400G' || 
+          item.item_name === 'MODERN MILK BRD 350G' ||
+          item.item_name === 'MRBWL MLK BREAD 400G' ||
           item.item_name === 'MRBWL BR BREAD 400G'
         ) {
           updateFields.available = false;
           updateFields.orderable = false;
         }
-        
+
         const { error: updateError } = await supabaseAdmin
           .from('cafeteria_items')
           .update(updateFields)

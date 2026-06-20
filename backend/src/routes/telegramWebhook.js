@@ -1,11 +1,18 @@
 import { Router } from 'express';
-import { supabaseAdmin } from '../lib/supabase.js';
-import { fileCompletion, visionCompletion } from '../lib/openai.js';
-import { postBillToTeams } from '../lib/teams.js';
-import { normalizeName } from '../lib/productConversion.js';
-import { classifyTelegramMessage, extractManualPurchase, checkAutoApproval, detectDuplicate, ALLOWED_SUBMITTERS, parseUserCorrection } from '../lib/purchaseAI.js';
 import { applyPurchaseToInventory } from '../lib/applyPurchase.js';
-import { runStockTake, applyStockTake, discardStockTake } from '../lib/stockTake.js';
+import { fileCompletion, visionCompletion } from '../lib/openai.js';
+import { normalizeName } from '../lib/productConversion.js';
+import {
+  ALLOWED_SUBMITTERS,
+  checkAutoApproval,
+  classifyTelegramMessage,
+  detectDuplicate,
+  extractManualPurchase,
+  parseUserCorrection,
+} from '../lib/purchaseAI.js';
+import { applyStockTake, discardStockTake, runStockTake } from '../lib/stockTake.js';
+import { supabaseAdmin } from '../lib/supabase.js';
+import { postBillToTeams } from '../lib/teams.js';
 
 const router = Router();
 
@@ -38,12 +45,15 @@ function bufferMessage(chatId, { text, photoFileId, replyTo, messageId }) {
 
   // Reset timer on each new message — fires 2 min after the LAST message
   if (group.timerId) clearTimeout(group.timerId);
-  group.timerId = setTimeout(() => {
-    messageBuffer.delete(chatId);
-    processBufferedPurchase(chatId, group).catch(e =>
-      console.error('[ManualPurchase] process error:', e.message)
-    );
-  }, 2 * 60 * 1000);
+  group.timerId = setTimeout(
+    () => {
+      messageBuffer.delete(chatId);
+      processBufferedPurchase(chatId, group).catch((e) =>
+        console.error('[ManualPurchase] process error:', e.message)
+      );
+    },
+    2 * 60 * 1000
+  );
 }
 
 async function processBufferedPurchase(chatId, group) {
@@ -58,7 +68,8 @@ async function processBufferedPurchase(chatId, group) {
     .maybeSingle();
 
   if (!mapping) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       '❌ You are not registered. Send /register <your@company.com> to link your account.',
       replyTo
     );
@@ -76,7 +87,8 @@ async function processBufferedPurchase(chatId, group) {
   const senderName = profile?.full_name;
 
   if (!ALLOWED_SUBMITTERS.includes(senderRole)) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       '❌ Your role is not authorised to submit manual purchases.',
       replyTo
     );
@@ -104,7 +116,8 @@ async function processBufferedPurchase(chatId, group) {
 
   // 5. If AI extracted nothing at all, ask user to describe manually
   if (!extracted.item_name && !extracted.quantity && !extracted.amount) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       `❓ Could not read this image clearly.\n\nPlease type what you bought:\n"Item name, weight, price"\n\nExample: Bread, 400g, ₹60`,
       replyTo
     );
@@ -143,7 +156,14 @@ async function processBufferedPurchase(chatId, group) {
     .single();
 
   if (saveError || !savedPurchase) {
-    console.error('[ManualPurchase] DB insert error:', saveError?.message, '|', saveError?.details, '|', saveError?.hint);
+    console.error(
+      '[ManualPurchase] DB insert error:',
+      saveError?.message,
+      '|',
+      saveError?.details,
+      '|',
+      saveError?.hint
+    );
     await sendTelegramMessage(chatId, '❌ Could not save purchase. Please try again.', replyTo);
     return;
   }
@@ -161,9 +181,27 @@ async function processBufferedPurchase(chatId, group) {
 
 async function sendConfirmationStep(chatId, step, purchaseId, value, replyTo) {
   const stepConfig = {
-    1: { label: 'Item Name',       emoji: '📦', prefix: '',  fieldKey: 'item_name', prompt: 'Type the item name\n\nExample: Bread' },
-    2: { label: 'Weight / Volume', emoji: '⚖️', prefix: '',  fieldKey: 'quantity',  prompt: 'Type the weight or volume\n\nExample: 400g  or  1L  or  6 pieces' },
-    3: { label: 'Price Paid',      emoji: '💰', prefix: '₹', fieldKey: 'amount',    prompt: 'Type the price you paid\n\nExample: 60' },
+    1: {
+      label: 'Item Name',
+      emoji: '📦',
+      prefix: '',
+      fieldKey: 'item_name',
+      prompt: 'Type the item name\n\nExample: Bread',
+    },
+    2: {
+      label: 'Weight / Volume',
+      emoji: '⚖️',
+      prefix: '',
+      fieldKey: 'quantity',
+      prompt: 'Type the weight or volume\n\nExample: 400g  or  1L  or  6 pieces',
+    },
+    3: {
+      label: 'Price Paid',
+      emoji: '💰',
+      prefix: '₹',
+      fieldKey: 'amount',
+      prompt: 'Type the price you paid\n\nExample: 60',
+    },
   };
   const { label, emoji, prefix, fieldKey, prompt } = stepConfig[step];
   const hasValue = value != null && String(value).trim() !== '' && value !== 'null';
@@ -183,10 +221,12 @@ async function sendConfirmationStep(chatId, step, purchaseId, value, replyTo) {
   // Value detected — show with Yes / No buttons
   const displayValue = prefix ? `${prefix}${value}` : value;
   const keyboard = {
-    inline_keyboard: [[
-      { text: '✅ Yes', callback_data: `c${step}_yes:${purchaseId}` },
-      { text: '✏️ No, correct it', callback_data: `c${step}_no:${purchaseId}` },
-    ]],
+    inline_keyboard: [
+      [
+        { text: '✅ Yes', callback_data: `c${step}_yes:${purchaseId}` },
+        { text: '✏️ No, correct it', callback_data: `c${step}_no:${purchaseId}` },
+      ],
+    ],
   };
   await sendTelegramMessage(
     chatId,
@@ -197,10 +237,10 @@ async function sendConfirmationStep(chatId, step, purchaseId, value, replyTo) {
 }
 
 async function handleCallbackQuery(callbackQuery) {
-  const chatId   = String(callbackQuery.message?.chat?.id);
-  const data     = callbackQuery.data || '';
-  const queryId  = callbackQuery.id;
-  const replyTo  = callbackQuery.message?.message_id;
+  const chatId = String(callbackQuery.message?.chat?.id);
+  const data = callbackQuery.data || '';
+  const queryId = callbackQuery.id;
+  const replyTo = callbackQuery.message?.message_id;
 
   await answerCallbackQuery(queryId);
 
@@ -212,33 +252,45 @@ async function handleCallbackQuery(callbackQuery) {
 
     const profile = await getProfileForChat(chatId);
     if (!profile || !STOCKTAKE_APPROVERS.includes(profile.role)) {
-      await sendTelegramMessage(chatId,
-        '❌ Only facility managers or leadership can confirm a stock-take.', replyTo);
+      await sendTelegramMessage(
+        chatId,
+        '❌ Only facility managers or leadership can confirm a stock-take.',
+        replyTo
+      );
       return;
     }
 
     if (stAction === 'discard') {
       const r = await discardStockTake(supabaseAdmin, { stockTakeId, confirmedBy: profile.userId });
-      await sendTelegramMessage(chatId,
-        r.alreadyDone ? 'ℹ️ This stock-take was already processed.' : '🗑 Stock-take discarded. Nothing changed.',
-        replyTo);
+      await sendTelegramMessage(
+        chatId,
+        r.alreadyDone
+          ? 'ℹ️ This stock-take was already processed.'
+          : '🗑 Stock-take discarded. Nothing changed.',
+        replyTo
+      );
       return;
     }
 
-    const result = await applyStockTake(supabaseAdmin, { stockTakeId, confirmedBy: profile.userId });
-    await sendTelegramMessage(chatId,
+    const result = await applyStockTake(supabaseAdmin, {
+      stockTakeId,
+      confirmedBy: profile.userId,
+    });
+    await sendTelegramMessage(
+      chatId,
       result.alreadyDone
         ? 'ℹ️ This stock-take was already processed.'
         : `✅ Stock-take applied — ${result.applied} item(s) adjusted${result.skipped ? `, ${result.skipped} unchanged` : ''}.`,
-      replyTo);
+      replyTo
+    );
     return;
   }
 
   const match = data.match(/^c([123])_(yes|no):(.+)$/);
   if (!match) return;
 
-  const step       = parseInt(match[1]);
-  const action     = match[2];
+  const step = parseInt(match[1], 10);
+  const action = match[2];
   const purchaseId = match[3];
 
   const state = confirmationState.get(chatId);
@@ -253,15 +305,15 @@ async function handleCallbackQuery(callbackQuery) {
         .eq('id', purchaseId)
         .single();
 
-      await supabaseAdmin.from('manual_purchases')
+      await supabaseAdmin
+        .from('manual_purchases')
         .update({ confirmation_step: `step_${nextStep}` })
         .eq('id', purchaseId);
 
       confirmationState.set(chatId, { ...state, step: nextStep, waitingFor: null });
 
-      const qtyDisplay = purchase.quantity != null
-        ? `${purchase.quantity}${purchase.unit || ''}`
-        : null;
+      const qtyDisplay =
+        purchase.quantity != null ? `${purchase.quantity}${purchase.unit || ''}` : null;
       const values = [null, purchase.item_name, qtyDisplay, purchase.amount];
       await sendConfirmationStep(chatId, nextStep, purchaseId, values[nextStep], replyTo);
     } else {
@@ -269,8 +321,8 @@ async function handleCallbackQuery(callbackQuery) {
       confirmationState.delete(chatId);
     }
   } else {
-    const fieldMap  = { 1: 'item_name', 2: 'quantity', 3: 'amount' };
-    const prompts   = {
+    const fieldMap = { 1: 'item_name', 2: 'quantity', 3: 'amount' };
+    const prompts = {
       1: '📦 What is the correct item name?\n\nType it (e.g. "Milk")',
       2: '⚖️ What is the correct weight or volume?\n\nType it (e.g. "500g" or "1L")',
       3: '💰 What did you actually pay?\n\nType the amount (e.g. "55")',
@@ -290,29 +342,32 @@ async function finalisePurchase(chatId, purchaseId, replyTo) {
   if (!purchase) return;
 
   const approval = checkAutoApproval({
-    senderRole:    purchase.sender_role,
-    amount:        purchase.amount,
-    category:      purchase.category,
-    confidence:    purchase.ai_confidence,
-    hasProof:      !!(purchase.item_photo_url || purchase.payment_screenshot_url),
+    senderRole: purchase.sender_role,
+    amount: purchase.amount,
+    category: purchase.category,
+    confidence: purchase.ai_confidence,
+    hasProof: !!(purchase.item_photo_url || purchase.payment_screenshot_url),
     duplicateRisk: false,
   });
 
   const dupeCheck = await detectDuplicate(supabaseAdmin, {
     telegramChatId: chatId,
-    amount:         purchase.amount,
+    amount: purchase.amount,
     paymentReference: purchase.payment_reference,
   });
 
   const isClear = approval.approved && !dupeCheck.isDuplicate;
 
-  await supabaseAdmin.from('manual_purchases').update({
-    status:               isClear ? 'auto_approved' : 'pending_review',
-    confirmation_step:    'done',
-    auto_approval_reason: approval.reason,
-    duplicate_risk:       dupeCheck.isDuplicate,
-    duplicate_reason:     dupeCheck.reason,
-  }).eq('id', purchaseId);
+  await supabaseAdmin
+    .from('manual_purchases')
+    .update({
+      status: isClear ? 'auto_approved' : 'pending_review',
+      confirmation_step: 'done',
+      auto_approval_reason: approval.reason,
+      duplicate_risk: dupeCheck.isDuplicate,
+      duplicate_reason: dupeCheck.reason,
+    })
+    .eq('id', purchaseId);
 
   // Clear purchase → push straight to inventory + finance (no web step needed).
   // Duplicate / unclear → stays 'pending_review' for leadership/finance to review.
@@ -320,21 +375,27 @@ async function finalisePurchase(chatId, purchaseId, replyTo) {
   if (isClear) {
     try {
       await applyPurchaseToInventory(purchase, { writeFinance: true });
-      await supabaseAdmin.from('manual_purchases').update({
-        synced_to_inventory: true,
-        synced_to_finance:   true,
-        synced_at:           new Date().toISOString(),
-        status:              'synced_to_inventory',
-      }).eq('id', purchaseId);
+      await supabaseAdmin
+        .from('manual_purchases')
+        .update({
+          synced_to_inventory: true,
+          synced_to_finance: true,
+          synced_at: new Date().toISOString(),
+          status: 'synced_to_inventory',
+        })
+        .eq('id', purchaseId);
       syncedOk = true;
     } catch (syncErr) {
       // Leave status 'auto_approved' so the web Sync can retry later.
-      console.error(`[ManualPurchase] Telegram auto-sync failed for #${purchaseId.slice(0, 8)}:`, syncErr.message);
+      console.error(
+        `[ManualPurchase] Telegram auto-sync failed for #${purchaseId.slice(0, 8)}:`,
+        syncErr.message
+      );
     }
   }
 
   const brandSuffix = purchase.brand_name ? ` (${purchase.brand_name})` : '';
-  const unitStr     = purchase.unit || '';
+  const unitStr = purchase.unit || '';
 
   let msg;
   if (isClear && syncedOk) {
@@ -350,20 +411,19 @@ async function finalisePurchase(chatId, purchaseId, replyTo) {
 
 async function handleConfirmationCorrection(chatId, text, replyTo) {
   const state = confirmationState.get(chatId);
-  if (!state || !state.waitingFor) return false;
+  if (!state?.waitingFor) return false;
 
   const parsed = parseUserCorrection(state.waitingFor, text);
   if (!parsed) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       '❓ Could not understand that. Please try again.\nExamples: "Bread"  "500g"  "55"',
       replyTo
     );
     return true;
   }
 
-  await supabaseAdmin.from('manual_purchases')
-    .update(parsed)
-    .eq('id', state.purchaseId);
+  await supabaseAdmin.from('manual_purchases').update(parsed).eq('id', state.purchaseId);
 
   const fieldToStep = { item_name: 1, quantity: 2, amount: 3 };
   const step = fieldToStep[state.waitingFor];
@@ -371,8 +431,8 @@ async function handleConfirmationCorrection(chatId, text, replyTo) {
 
   let displayValue;
   if (state.waitingFor === 'item_name') displayValue = parsed.item_name;
-  if (state.waitingFor === 'quantity')  displayValue = `${parsed.quantity}${parsed.unit || ''}`;
-  if (state.waitingFor === 'amount')    displayValue = parsed.amount;
+  if (state.waitingFor === 'quantity') displayValue = `${parsed.quantity}${parsed.unit || ''}`;
+  if (state.waitingFor === 'amount') displayValue = parsed.amount;
 
   await sendConfirmationStep(chatId, step, state.purchaseId, displayValue, replyTo);
   return true;
@@ -382,19 +442,17 @@ async function handleRegisterCommand(message, chatId, replyTo) {
   const parts = (message.text || '').trim().split(/\s+/);
   const email = parts[1]?.toLowerCase();
 
-  if (!email || !email.includes('@')) {
-    await sendTelegramMessage(chatId,
-      '❌ Usage: /register your@company.com',
-      replyTo
-    );
+  if (!email?.includes('@')) {
+    await sendTelegramMessage(chatId, '❌ Usage: /register your@company.com', replyTo);
     return;
   }
 
   // Look up Supabase auth user by email (listUsers works across all supabase-js v2 versions)
   const { data: usersData, error: authErr } = await supabaseAdmin.auth.admin.listUsers();
-  const authUser = usersData?.users?.find(u => u.email?.toLowerCase() === email);
+  const authUser = usersData?.users?.find((u) => u.email?.toLowerCase() === email);
   if (authErr || !authUser) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       `❌ No account found for ${email}. Check the email or ask your admin.`,
       replyTo
     );
@@ -409,7 +467,8 @@ async function handleRegisterCommand(message, chatId, replyTo) {
     .maybeSingle();
 
   if (!regProfile) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       '❌ Profile not found. Ask your admin to complete your account setup.',
       replyTo
     );
@@ -417,7 +476,8 @@ async function handleRegisterCommand(message, chatId, replyTo) {
   }
 
   if (!ALLOWED_SUBMITTERS.includes(regProfile.role)) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       `❌ Your role (${regProfile.role}) cannot submit purchases via Telegram.`,
       replyTo
     );
@@ -425,14 +485,18 @@ async function handleRegisterCommand(message, chatId, replyTo) {
   }
 
   // Link Telegram chat_id → profile
-  await supabaseAdmin.from('telegram_user_map').upsert({
-    telegram_chat_id: String(chatId),
-    user_id: authUser.id,
-    telegram_username: message.from?.username || null,
-    mapped_at: new Date().toISOString(),
-  }, { onConflict: 'telegram_chat_id' });
+  await supabaseAdmin.from('telegram_user_map').upsert(
+    {
+      telegram_chat_id: String(chatId),
+      user_id: authUser.id,
+      telegram_username: message.from?.username || null,
+      mapped_at: new Date().toISOString(),
+    },
+    { onConflict: 'telegram_chat_id' }
+  );
 
-  await sendTelegramMessage(chatId,
+  await sendTelegramMessage(
+    chatId,
     `✅ Registered!\n\nName: ${regProfile.full_name}\nRole: ${regProfile.role}\n\nYou can now send purchase details directly in this chat.`,
     replyTo
   );
@@ -447,7 +511,8 @@ async function handleRestockCommand(message, chatId, replyTo) {
     .maybeSingle();
 
   if (!mapping) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       '❌ You are not registered. Send /register <your@company.com> to link your account.',
       replyTo
     );
@@ -462,7 +527,8 @@ async function handleRestockCommand(message, chatId, replyTo) {
     .maybeSingle();
 
   if (!profile || !['facility_manager', 'leadership'].includes(profile.role)) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       '❌ You are not authorized to use the /restock command.',
       replyTo
     );
@@ -472,7 +538,8 @@ async function handleRestockCommand(message, chatId, replyTo) {
   const text = (message.text || message.caption || '').trim();
   const match = text.match(/^\/restock\s+(.+?)\s+(\d+(\.\d+)?)\s*([a-zA-Z]+)?$/i);
   if (!match) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       '❌ Usage: /restock <item name> <quantity>\nExample: /restock Milk 5',
       replyTo
     );
@@ -483,10 +550,7 @@ async function handleRestockCommand(message, chatId, replyTo) {
   const qty = parseFloat(match[2]);
 
   if (qty <= 0) {
-    await sendTelegramMessage(chatId,
-      '❌ Restock quantity must be greater than zero.',
-      replyTo
-    );
+    await sendTelegramMessage(chatId, '❌ Restock quantity must be greater than zero.', replyTo);
     return;
   }
 
@@ -500,7 +564,8 @@ async function handleRestockCommand(message, chatId, replyTo) {
     .maybeSingle();
 
   if (prodErr || !prod) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       `❌ Product matching '${itemName}' not found. Check spelling.`,
       replyTo
     );
@@ -514,14 +579,15 @@ async function handleRestockCommand(message, chatId, replyTo) {
   const dayOfWeek = istDate.getDay();
   const isWeekendUpcoming = dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0;
   let warningMessage = '';
-  const isBread = prod.name.toLowerCase().includes('bread') || prod.name.toLowerCase().includes('brd');
+  const isBread =
+    prod.name.toLowerCase().includes('bread') || prod.name.toLowerCase().includes('brd');
   const isPerishable = isBread || (prod.shelf_life_days && prod.shelf_life_days <= 4);
   if (isPerishable && isWeekendUpcoming) {
     let dailyUsageRate = 1.0;
     if (isBread) {
       dailyUsageRate = 1.5;
     }
-    
+
     const shelfLife = prod.shelf_life_days || 4;
     let workingDaysLeft = 0;
     for (let i = 1; i <= shelfLife; i++) {
@@ -531,13 +597,14 @@ async function handleRestockCommand(message, chatId, replyTo) {
         workingDaysLeft++;
       }
     }
-    
+
     const expectedCons = dailyUsageRate * workingDaysLeft;
     if (qty > expectedCons) {
       const wasted = (qty - expectedCons).toFixed(1);
-      const expiresOnDayName = new Date(istDate.getTime() + shelfLife * 24 * 60 * 60 * 1000)
-        .toLocaleDateString('en-US', { weekday: 'long' });
-        
+      const expiresOnDayName = new Date(
+        istDate.getTime() + shelfLife * 24 * 60 * 60 * 1000
+      ).toLocaleDateString('en-US', { weekday: 'long' });
+
       warningMessage = `\n\n⚠️ *Perishable Warning:* Today is Friday/Weekend. ${prod.name} expires in ${shelfLife} days. Over the weekend, the office is closed (0 headcount). With morning shift (70 people) and evening shift (20 people), you will only consume ~${expectedCons.toFixed(1)} ${prod.unit || 'units'} before expiration on ${expiresOnDayName}. *Restocking ${qty} ${prod.unit || 'units'} could waste ~${wasted} ${prod.unit || 'units'}.*`;
     }
   }
@@ -567,9 +634,12 @@ async function handleRestockCommand(message, chatId, replyTo) {
       return;
     }
   } else {
-    const { error: insErr } = await supabaseAdmin
-      .from('inventory')
-      .insert({ product_id: prod.id, current_stock: newVal, min_threshold: 0, last_updated_by: mapping.user_id });
+    const { error: insErr } = await supabaseAdmin.from('inventory').insert({
+      product_id: prod.id,
+      current_stock: newVal,
+      min_threshold: 0,
+      last_updated_by: mapping.user_id,
+    });
     if (insErr) {
       await sendTelegramMessage(chatId, `❌ Database insert error: ${insErr.message}`, replyTo);
       return;
@@ -584,14 +654,15 @@ async function handleRestockCommand(message, chatId, replyTo) {
     unit_cost: prod.cost_per_unit || 0,
     total_cost: Number((qty * (prod.cost_per_unit || 0)).toFixed(2)),
     facility_manager_id: mapping.user_id,
-    notes: 'restocked via Telegram bot'
+    notes: 'restocked via Telegram bot',
   });
 
   if (txErr) {
     console.error('[StockAlerts] txn log error:', txErr.message);
   }
 
-  await sendTelegramMessage(chatId,
+  await sendTelegramMessage(
+    chatId,
     `✅ *${prod.name} restocked!*\nNew stock: *${newVal} ${prod.unit || 'units'}* (added ${qty})${warningMessage}`,
     replyTo,
     null,
@@ -640,21 +711,30 @@ function formatStockTakeMessage(diff, unmatched) {
 async function handleStockTakeCommand(message, chatId, replyTo) {
   const profile = await getProfileForChat(chatId);
   if (!profile) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       '❌ You are not registered. Send /register <your@company.com> to link your account.',
-      replyTo);
+      replyTo
+    );
     return;
   }
   if (!STOCKTAKE_SUBMITTERS.includes(profile.role)) {
-    await sendTelegramMessage(chatId,
-      '❌ Your role is not authorised to run a stock-take.', replyTo);
+    await sendTelegramMessage(
+      chatId,
+      '❌ Your role is not authorised to run a stock-take.',
+      replyTo
+    );
     return;
   }
 
   if (!message.photo?.length) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       '📸 To do a stock-take, send /stocktake as the *caption* of a clear shelf photo.',
-      replyTo, null, 'Markdown');
+      replyTo,
+      null,
+      'Markdown'
+    );
     return;
   }
 
@@ -681,19 +761,29 @@ async function handleStockTakeCommand(message, chatId, replyTo) {
   });
 
   if (!id || diff.length === 0) {
-    await sendTelegramMessage(chatId,
+    await sendTelegramMessage(
+      chatId,
       `🤔 Couldn't count any known products in that photo.${unmatched.length ? `\n\nSaw but couldn't match: ${unmatched.join(', ')}` : ''}\n\nTry a clearer, well-lit shelf photo.`,
-      replyTo);
+      replyTo
+    );
     return;
   }
 
   const keyboard = {
-    inline_keyboard: [[
-      { text: '✅ Confirm', callback_data: `st_confirm:${id}` },
-      { text: '🗑 Discard', callback_data: `st_discard:${id}` },
-    ]],
+    inline_keyboard: [
+      [
+        { text: '✅ Confirm', callback_data: `st_confirm:${id}` },
+        { text: '🗑 Discard', callback_data: `st_discard:${id}` },
+      ],
+    ],
   };
-  await sendTelegramMessage(chatId, formatStockTakeMessage(diff, unmatched), replyTo, keyboard, 'Markdown');
+  await sendTelegramMessage(
+    chatId,
+    formatStockTakeMessage(diff, unmatched),
+    replyTo,
+    keyboard,
+    'Markdown'
+  );
 }
 
 async function handleClarificationReply(message, chatId, replyTo, text) {
@@ -791,7 +881,10 @@ function apiBase() {
 }
 
 function cleanJson(content) {
-  return content.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+  return content
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
 }
 
 function normalizeNumber(value) {
@@ -805,9 +898,27 @@ function safeName(name = 'bill') {
 }
 
 // Strip brand names, weights, and pack sizes for customer-facing display
-const KNOWN_BRANDS = ['mala\'s', 'malas', 'tata', 'amul', 'nescafe', 'bru', 'britannia', 'parle', 'haldiram', 'mdh', 'everest', 'dabur', 'patanjali', 'lipton', 'brooke bond', 'red label', 'society'];
+const KNOWN_BRANDS = [
+  "mala's",
+  'malas',
+  'tata',
+  'amul',
+  'nescafe',
+  'bru',
+  'britannia',
+  'parle',
+  'haldiram',
+  'mdh',
+  'everest',
+  'dabur',
+  'patanjali',
+  'lipton',
+  'brooke bond',
+  'red label',
+  'society',
+];
 
-function generateDisplayName(rawName) {
+function _generateDisplayName(rawName) {
   if (!rawName) return null;
   let name = rawName.trim();
   // Remove leading brand + separator: "Mala's - Mix Fruit Jam" → "Mix Fruit Jam"
@@ -816,18 +927,24 @@ function generateDisplayName(rawName) {
     name = name.replace(re, '');
   }
   // Remove trailing weight/pack info: ", 4 Kg", "(Pack of 500)", "500g", "1 Kg"
-  name = name.replace(/[,\s]*\d+(\.\d+)?\s*(kg|g|gm|gms|ml|l|ltr|litre|litres|pcs|pack|count)\b.*$/i, '');
+  name = name.replace(
+    /[,\s]*\d+(\.\d+)?\s*(kg|g|gm|gms|ml|l|ltr|litre|litres|pcs|pack|count)\b.*$/i,
+    ''
+  );
   // Remove parenthetical info: "(Pack of 500)", "(250ml)"
   name = name.replace(/\s*\([^)]*\)\s*/g, ' ');
   // Clean up extra spaces and dashes
-  name = name.replace(/\s*[-–—]\s*$/, '').replace(/\s+/g, ' ').trim();
+  name = name
+    .replace(/\s*[-–—]\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return name || rawName.trim();
 }
 
-function calculateServings(quantity, unit) {
+function _calculateServings(quantity, unit) {
   if (!quantity || quantity <= 0) return quantity || 0;
   const u = (unit || '').toLowerCase().trim();
-  if (['kg', 'kgs'].includes(u)) return Math.round(quantity * 25);       // 40g per serving
+  if (['kg', 'kgs'].includes(u)) return Math.round(quantity * 25); // 40g per serving
   if (['g', 'gm', 'gms', 'gram', 'grams'].includes(u)) return Math.round(quantity / 40);
   if (['l', 'ltr', 'litre', 'litres', 'liter'].includes(u)) return Math.round(quantity * 20); // 50ml per serving
   if (['ml'].includes(u)) return Math.round(quantity / 50);
@@ -876,7 +993,13 @@ async function telegramRequest(method, body) {
   return res.json();
 }
 
-async function sendTelegramMessage(chatId, text, replyToMessageId, replyMarkup = null, parseMode = null) {
+async function sendTelegramMessage(
+  chatId,
+  text,
+  replyToMessageId,
+  replyMarkup = null,
+  parseMode = null
+) {
   return telegramRequest('sendMessage', {
     chat_id: chatId,
     text,
@@ -892,7 +1015,7 @@ async function answerCallbackQuery(callbackQueryId, text = '') {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
-  }).catch(e => console.error('[Telegram] answerCallbackQuery error:', e.message));
+  }).catch((e) => console.error('[Telegram] answerCallbackQuery error:', e.message));
 }
 
 async function downloadTelegramFile(fileId) {
@@ -900,7 +1023,9 @@ async function downloadTelegramFile(fileId) {
   const filePath = fileInfo?.result?.file_path;
   if (!filePath) throw new Error('Telegram did not return file_path');
 
-  const res = await fetch(`https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`);
+  const res = await fetch(
+    `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Telegram file download ${res.status}: ${text.slice(0, 200)}`);
@@ -912,12 +1037,10 @@ async function downloadTelegramFile(fileId) {
 
 async function uploadFile({ buffer, fileName, mimeType }) {
   const path = `telegram/${Date.now()}-${safeName(fileName)}`;
-  const { error } = await supabaseAdmin.storage
-    .from('bills')
-    .upload(path, buffer, {
-      contentType: mimeType || 'application/octet-stream',
-      upsert: false,
-    });
+  const { error } = await supabaseAdmin.storage.from('bills').upload(path, buffer, {
+    contentType: mimeType || 'application/octet-stream',
+    upsert: false,
+  });
   if (error) throw error;
 
   const { data } = supabaseAdmin.storage.from('bills').getPublicUrl(path);
@@ -968,7 +1091,7 @@ function normalizeDate(dateStr) {
   if (m2) return `${m2[1]}-${m2[2].padStart(2, '0')}-${m2[3].padStart(2, '0')}`;
   // Try JS Date parse as last resort
   const d = new Date(dateStr);
-  if (!isNaN(d.getTime())) {
+  if (!Number.isNaN(d.getTime())) {
     return d.toISOString().slice(0, 10);
   }
   return null;
@@ -1015,7 +1138,10 @@ async function saveBill({ parsed, fileUrl }) {
     cafeteria_category: item.cafeteria_category || 'other',
   }));
 
-  console.log('[Telegram] Normalized items:', JSON.stringify(items.map(i => ({ name: i.item_name, qty: i.quantity, emoji: i.emoji }))));
+  console.log(
+    '[Telegram] Normalized items:',
+    JSON.stringify(items.map((i) => ({ name: i.item_name, qty: i.quantity, emoji: i.emoji })))
+  );
 
   if (items.length) {
     const rows = items.map((item) => ({
@@ -1038,8 +1164,8 @@ async function saveBill({ parsed, fileUrl }) {
   for (const item of items) {
     const qty = item.quantity;
     const itemName = item.item_name;
-    const emoji = item.emoji;
-    const cafeCat = item.cafeteria_category;
+    const _emoji = item.emoji;
+    const _cafeCat = item.cafeteria_category;
 
     // 1. Upsert into products table
     const { data: existingProduct } = await supabaseAdmin
@@ -1078,9 +1204,7 @@ async function saveBill({ parsed, fileUrl }) {
           .update({ current_stock: (inv.current_stock || 0) + qty })
           .eq('product_id', productId);
       } else {
-        await supabaseAdmin
-          .from('inventory')
-          .insert({ product_id: productId, current_stock: qty });
+        await supabaseAdmin.from('inventory').insert({ product_id: productId, current_stock: qty });
       }
 
       // 3. Log transaction
@@ -1106,8 +1230,9 @@ async function saveBill({ parsed, fileUrl }) {
 
     // Only update cafeteria stock for approved direct-menu items
     const skipClasses = new Set(['internal_supply', 'equipment_asset', 'finance_expense']);
-    if (master && master.cafeteria_item_name && !skipClasses.has(master.classification)) {
-      const servings = master.units_per_purchase_unit != null ? qty * master.units_per_purchase_unit : null;
+    if (master?.cafeteria_item_name && !skipClasses.has(master.classification)) {
+      const servings =
+        master.units_per_purchase_unit != null ? qty * master.units_per_purchase_unit : null;
 
       const { data: existingCafe } = await supabaseAdmin
         .from('cafeteria_items')
@@ -1119,9 +1244,12 @@ async function saveBill({ parsed, fileUrl }) {
         await supabaseAdmin
           .from('cafeteria_items')
           .update({
-            stock_today:    (existingCafe.stock_today    || 0) + qty,
-            stock_servings: servings !== null ? (existingCafe.stock_servings || 0) + servings : existingCafe.stock_servings,
-            available:      true,
+            stock_today: (existingCafe.stock_today || 0) + qty,
+            stock_servings:
+              servings !== null
+                ? (existingCafe.stock_servings || 0) + servings
+                : existingCafe.stock_servings,
+            available: true,
           })
           .eq('id', existingCafe.id);
       }
@@ -1168,7 +1296,7 @@ router.post('/', (req, res) => {
 
   // Handle inline keyboard button press
   if (req.body.callback_query) {
-    handleCallbackQuery(req.body.callback_query).catch(e =>
+    handleCallbackQuery(req.body.callback_query).catch((e) =>
       console.error('[Telegram] callback_query error:', e.message)
     );
     return;
@@ -1187,21 +1315,21 @@ router.post('/', (req, res) => {
   // /register must be handled synchronously (before the async IIFE) so the
   // early return prevents falling into the invoice flow below.
   if (text.toLowerCase().startsWith('/register')) {
-    handleRegisterCommand(message, chatId, replyTo).catch(e =>
+    handleRegisterCommand(message, chatId, replyTo).catch((e) =>
       console.error('[ManualPurchase] register error:', e.message)
     );
     return;
   }
 
   if (text.toLowerCase().startsWith('/restock')) {
-    handleRestockCommand(message, chatId, replyTo).catch(e =>
+    handleRestockCommand(message, chatId, replyTo).catch((e) =>
       console.error('[ManualPurchase] restock error:', e.message)
     );
     return;
   }
 
   if (text.toLowerCase().startsWith('/stocktake')) {
-    handleStockTakeCommand(message, chatId, replyTo).catch(e =>
+    handleStockTakeCommand(message, chatId, replyTo).catch((e) =>
       console.error('[StockTake] command error:', e.message)
     );
     return;
@@ -1237,7 +1365,7 @@ router.post('/', (req, res) => {
             photoFileIds: bestPhoto?.file_id ? [bestPhoto.file_id] : [],
             replyTo,
             firstMsgId: replyTo,
-          }).catch(e => console.error('[ManualPurchase] process error:', e.message));
+          }).catch((e) => console.error('[ManualPurchase] process error:', e.message));
         } else {
           // Text only — buffer briefly in case photo follows
           bufferMessage(String(chatId), {
@@ -1256,7 +1384,7 @@ router.post('/', (req, res) => {
         await sendTelegramMessage(
           chatId,
           '🤔 Not sure what this is. To submit a purchase, describe what you bought and the amount (e.g. "bought 2kg sugar ₹80"). To upload a bill, send the PDF or image.',
-          replyTo,
+          replyTo
         ).catch(() => {});
         return;
       }
@@ -1266,20 +1394,30 @@ router.post('/', (req, res) => {
       if (!file || !isSupportedFile(file.fileName, file.mimeType)) return;
 
       const buffer = await downloadTelegramFile(file.fileId);
-      const fileUrl = await uploadFile({ buffer, fileName: file.fileName, mimeType: file.mimeType });
+      const fileUrl = await uploadFile({
+        buffer,
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+      });
       const { content } = await extractBill({ ...file, buffer, fileUrl });
       console.log('[Telegram] Raw AI response (first 500 chars):', content.slice(0, 500));
       let parsed;
       try {
         parsed = JSON.parse(cleanJson(content));
       } catch {
-        await sendTelegramMessage(chatId,
+        await sendTelegramMessage(
+          chatId,
           '📸 This doesn\'t look like a bill or invoice.\n\nIf this is a purchase without a receipt, send a message describing what you bought, the amount, and where — e.g. "bought bread ₹60 from local shop, cash".',
           replyTo
         ).catch(() => {});
         return;
       }
-      console.log('[Telegram] Parsed items count:', parsed.items?.length, 'First item keys:', parsed.items?.[0] ? Object.keys(parsed.items[0]) : 'none');
+      console.log(
+        '[Telegram] Parsed items count:',
+        parsed.items?.length,
+        'First item keys:',
+        parsed.items?.[0] ? Object.keys(parsed.items[0]) : 'none'
+      );
 
       const duplicate = await findDuplicate(parsed);
       if (duplicate) {
@@ -1291,7 +1429,10 @@ router.post('/', (req, res) => {
           : Infinity;
         const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
         if (ageMs < FIFTEEN_MINUTES_MS) {
-          console.log('[Telegram] Suppressing duplicate roast — likely Telegram retry within 15 min for invoice', duplicate.invoice_number);
+          console.log(
+            '[Telegram] Suppressing duplicate roast — likely Telegram retry within 15 min for invoice',
+            duplicate.invoice_number
+          );
           return; // silent skip
         }
         // Bill is older — user is intentionally re-uploading. Show the roast.
@@ -1299,7 +1440,7 @@ router.post('/', (req, res) => {
         await sendTelegramMessage(
           chatId,
           `Duplicate Bill Detected\n\nVendor: ${duplicate.vendor_name || '-'}\nInvoice: #${duplicate.invoice_number || '-'}\nTotal: ₹${duplicate.grand_total || '-'}\n\n${roast}`,
-          replyTo,
+          replyTo
         );
         return;
       }
@@ -1308,13 +1449,13 @@ router.post('/', (req, res) => {
 
       // Build items summary from normalized data
       const itemsList = (normalizedItems || [])
-        .map(i => `  ${i.emoji} ${i.item_name} — ${i.quantity} ${i.unit}`)
+        .map((i) => `  ${i.emoji} ${i.item_name} — ${i.quantity} ${i.unit}`)
         .join('\n');
 
       await sendTelegramMessage(
         chatId,
         `✅ Bill Auto-Approved & Inventory Updated!\n\n🏢 Vendor: ${bill.vendor_name || '-'}\n🧾 Invoice: #${bill.invoice_number || '-'}\n💰 Total: ₹${bill.grand_total || '-'}\n\n📦 ${itemCount} items added to stock:\n${itemsList}\n\n🟢 Status: Auto-Verified\n🔄 Cafeteria menu & inventory updated automatically!`,
-        replyTo,
+        replyTo
       );
 
       // Teams notification for bill upload
@@ -1329,7 +1470,7 @@ router.post('/', (req, res) => {
       await sendTelegramMessage(
         chatId,
         `Bill processing failed\n\n${e.message || 'Unknown error'}\n\nPlease upload a clear PDF, JPG, JPEG, or PNG bill.`,
-        replyTo,
+        replyTo
       ).catch(() => {});
     }
   })();

@@ -1,56 +1,68 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { checkAndNotifyLowStock } from '../lib/stockAlerts.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
-import { checkAndNotifyLowStock } from '../lib/stockAlerts.js';
 
 const router = Router();
 
 const updateSchema = z.object({
   current_stock: z.number().nonnegative().optional(),
   min_threshold: z.number().nonnegative().optional(),
-  expiry_date:   z.string().nullable().optional(),
-  date_added:    z.string().nullable().optional(),
+  expiry_date: z.string().nullable().optional(),
+  date_added: z.string().nullable().optional(),
 });
 
 const dailyUpdateSchema = z.object({
   updates: z
     .array(
       z.object({
-        product_id:    z.string().uuid(),
+        product_id: z.string().uuid(),
         current_stock: z.number().nonnegative(),
-        unit_cost:     z.number().nonnegative().optional(),  // price paid today
-        expiry_date:   z.string().optional().nullable(),
-        notes:         z.string().optional(),
-      }),
+        unit_cost: z.number().nonnegative().optional(), // price paid today
+        expiry_date: z.string().optional().nullable(),
+        notes: z.string().optional(),
+      })
     )
     .min(1),
 });
 
 // GET /api/inventory
-router.get('/', requireRole('facility_manager', 'finance', 'leadership', 'office_boy'), async (_req, res, next) => {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('v_inventory_status')
-      .select('*')
-      .order('category')
-      .order('product_name');
-    if (error) throw error;
-    res.json(data);
-  } catch (e) { next(e); }
-});
+router.get(
+  '/',
+  requireRole('facility_manager', 'finance', 'leadership', 'office_boy'),
+  async (_req, res, next) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('v_inventory_status')
+        .select('*')
+        .order('category')
+        .order('product_name');
+      if (error) throw error;
+      res.json(data);
+    } catch (e) {
+      next(e);
+    }
+  }
+);
 
 // GET /api/inventory/alerts
-router.get('/alerts', requireRole('facility_manager', 'finance', 'leadership', 'office_boy'), async (_req, res, next) => {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('v_inventory_status')
-      .select('*')
-      .or('stock_status.in.(low,out_of_stock),expiry_status.in.(expiring_soon,expired)');
-    if (error) throw error;
-    res.json(data);
-  } catch (e) { next(e); }
-});
+router.get(
+  '/alerts',
+  requireRole('facility_manager', 'finance', 'leadership', 'office_boy'),
+  async (_req, res, next) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('v_inventory_status')
+        .select('*')
+        .or('stock_status.in.(low,out_of_stock),expiry_status.in.(expiring_soon,expired)');
+      if (error) throw error;
+      res.json(data);
+    } catch (e) {
+      next(e);
+    }
+  }
+);
 
 // PATCH /api/inventory/:productId
 router.patch(
@@ -67,9 +79,13 @@ router.patch(
         .single();
       if (error) throw error;
       res.json(data);
-      checkAndNotifyLowStock(supabaseAdmin, process.env.TELEGRAM_BOT_TOKEN).catch(e => console.error('[StockAlerts] alert error:', e.message));
-    } catch (e) { next(e); }
-  },
+      checkAndNotifyLowStock(supabaseAdmin, process.env.TELEGRAM_BOT_TOKEN).catch((e) =>
+        console.error('[StockAlerts] alert error:', e.message)
+      );
+    } catch (e) {
+      next(e);
+    }
+  }
 );
 
 // POST /api/inventory/daily-update
@@ -90,9 +106,9 @@ router.post(
       if (fetchErr) throw fetchErr;
 
       const currentMap = new Map(currentRows.map((r) => [r.product_id, r]));
-      const transactions    = [];
+      const transactions = [];
       const inventoryUpdates = [];
-      const productCostUpdates = [];   // {id, new_cost} for products whose price changed
+      const productCostUpdates = []; // {id, new_cost} for products whose price changed
 
       for (const u of updates) {
         const current = currentMap.get(u.product_id);
@@ -110,12 +126,12 @@ router.post(
         const delta = Number(u.current_stock) - Number(current.current_stock);
         if (delta !== 0) {
           const isAdd = delta > 0;
-          const qty   = Math.abs(delta);
+          const qty = Math.abs(delta);
           transactions.push({
             product_id: u.product_id,
-            type:       isAdd ? 'add' : 'remove',
-            quantity:   qty,
-            unit_cost:  effectiveCost,
+            type: isAdd ? 'add' : 'remove',
+            quantity: qty,
+            unit_cost: effectiveCost,
             total_cost: Number((qty * effectiveCost).toFixed(2)),
             facility_manager_id: req.user.id,
             notes: u.notes || (isAdd ? 'daily restock' : 'daily consumption'),
@@ -157,13 +173,17 @@ router.post(
 
       res.json({
         ok: true,
-        updated:                inventoryUpdates.length,
-        transactions_logged:    transactions.length,
-        prices_updated:         productCostUpdates.length,
+        updated: inventoryUpdates.length,
+        transactions_logged: transactions.length,
+        prices_updated: productCostUpdates.length,
       });
-      checkAndNotifyLowStock(supabaseAdmin, process.env.TELEGRAM_BOT_TOKEN).catch(e => console.error('[StockAlerts] alert error:', e.message));
-    } catch (e) { next(e); }
-  },
+      checkAndNotifyLowStock(supabaseAdmin, process.env.TELEGRAM_BOT_TOKEN).catch((e) =>
+        console.error('[StockAlerts] alert error:', e.message)
+      );
+    } catch (e) {
+      next(e);
+    }
+  }
 );
 
 export default router;

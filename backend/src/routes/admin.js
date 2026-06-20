@@ -86,8 +86,8 @@ router.patch('/users/:id/preferred-name', async (req, res, next) => {
 router.post('/users/create', async (req, res, next) => {
   try {
     const schema = z.object({
-      email:     z.string().email(),
-      role:      roleEnum.default('staff'),
+      email: z.string().email(),
+      role: roleEnum.default('staff'),
       full_name: z.string().min(1),
     });
     const { email, role, full_name } = schema.parse(req.body);
@@ -95,7 +95,7 @@ router.post('/users/create', async (req, res, next) => {
     // 1. Create the auth user with hidden password (MFA via Microsoft Authenticator)
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password:      DEFAULT_PASSWORD,
+      password: DEFAULT_PASSWORD,
       email_confirm: true,
       user_metadata: { full_name },
     });
@@ -140,11 +140,13 @@ router.post('/users/invite', async (req, res, next) => {
     const { email, role, full_name } = schema.parse(req.body);
 
     // 1. Send the invite (creates a pending auth.users row)
-    const { data: invited, error: invErr } =
-      await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+    const { data: invited, error: invErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+      email,
+      {
         data: { full_name: full_name || email },
-        redirectTo: (process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173') + '/dashboard',
-      });
+        redirectTo: `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173'}/dashboard`,
+      }
+    );
     if (invErr) {
       // If the user already exists, fall through to role-set
       if (!String(invErr.message).toLowerCase().includes('already')) {
@@ -168,10 +170,7 @@ router.post('/users/invite', async (req, res, next) => {
     // 3. Upsert profile with role (the trigger may have already inserted as staff)
     await supabaseAdmin
       .from('profiles')
-      .upsert(
-        { id: userId, full_name: full_name || email, role },
-        { onConflict: 'id' },
-      );
+      .upsert({ id: userId, full_name: full_name || email, role }, { onConflict: 'id' });
 
     res.status(201).json({ ok: true, user_id: userId, email, role });
   } catch (e) {

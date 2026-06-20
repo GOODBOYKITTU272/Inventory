@@ -24,7 +24,7 @@ export default function WakingUp({ loading }) {
 
     // Animated dots
     const dotInterval = setInterval(() => {
-      setDots((d) => (d.length >= 3 ? '' : d + '.'));
+      setDots((d) => (d.length >= 3 ? '' : `${d}.`));
     }, 500);
 
     // Elapsed seconds counter
@@ -50,17 +50,13 @@ export default function WakingUp({ loading }) {
         </div>
 
         <div className="min-w-0">
-          <div className="font-semibold text-sm">
-            Backend is waking up{dots}
-          </div>
+          <div className="font-semibold text-sm">Backend is waking up{dots}</div>
           <div className="text-xs text-slate-400 mt-1 leading-relaxed">
-            The server goes to sleep after 15 min of no activity.
-            First load takes <strong className="text-white">30–60 seconds</strong>. Please wait.
+            The server goes to sleep after 15 min of no activity. First load takes{' '}
+            <strong className="text-white">30–60 seconds</strong>. Please wait.
           </div>
           {elapsed > 10 && (
-            <div className="text-xs text-slate-500 mt-1">
-              {elapsed}s elapsed — almost there…
-            </div>
+            <div className="text-xs text-slate-500 mt-1">{elapsed}s elapsed — almost there…</div>
           )}
         </div>
       </div>

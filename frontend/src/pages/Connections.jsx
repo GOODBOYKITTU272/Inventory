@@ -1,20 +1,11 @@
+import { AlertCircle, CheckCircle2, Copy, MessageSquare, Plus, Send, Terminal } from 'lucide-react';
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { 
-  MessageSquare, 
-  Send, 
-  Webhook, 
-  Plus, 
-  CheckCircle2,
-  AlertCircle,
-  Copy,
-  Terminal
-} from 'lucide-react';
 
 export default function Connections() {
   const [copied, setCopied] = useState(false);
-  const webhookUrl = import.meta.env.VITE_BILL_WEBHOOK_URL ||
-    "https://inventory-ashen-theta.vercel.app/api/bills/webhook?key=app_wizz_secure_782";
+  const webhookUrl =
+    import.meta.env.VITE_BILL_WEBHOOK_URL ||
+    'https://inventory-ashen-theta.vercel.app/api/bills/webhook?key=app_wizz_secure_782';
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(webhookUrl);
@@ -26,7 +17,9 @@ export default function Connections() {
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Omnichannel Sync</h1>
-        <p className="text-slate-500 mt-2">Skip the UI. Upload bills directly from your favorite chat apps.</p>
+        <p className="text-slate-500 mt-2">
+          Skip the UI. Upload bills directly from your favorite chat apps.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -43,12 +36,14 @@ export default function Connections() {
           </div>
 
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Your Unique Webhook URL</label>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Your Unique Webhook URL
+            </label>
             <div className="flex items-center gap-2">
               <div className="flex-1 bg-white p-3 rounded-xl border border-slate-200 text-xs font-mono truncate">
                 {webhookUrl}
               </div>
-              <button 
+              <button
                 onClick={copyToClipboard}
                 className="p-3 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-colors shrink-0"
               >
@@ -59,7 +54,10 @@ export default function Connections() {
 
           <div className="flex gap-3 text-xs text-slate-500 bg-amber-50 p-3 rounded-xl border border-amber-100">
             <AlertCircle size={16} className="text-amber-600 shrink-0" />
-            <span>Use <strong>Zapier</strong> or <strong>Make.com</strong> to send your WhatsApp/Telegram PDFs to this URL. The AI will handle the rest.</span>
+            <span>
+              Use <strong>Zapier</strong> or <strong>Make.com</strong> to send your
+              WhatsApp/Telegram PDFs to this URL. The AI will handle the rest.
+            </span>
           </div>
         </div>
 
@@ -83,7 +81,8 @@ export default function Connections() {
               </div>
             </div>
             <p className="text-xs text-slate-500 italic">
-              "Any PDF or bill image uploaded to the '#inventory-bills' private channel is extracted and sent for Admin verification."
+              "Any PDF or bill image uploaded to the '#inventory-bills' private channel is extracted
+              and sent for Admin verification."
             </p>
           </div>
 
@@ -107,11 +106,15 @@ export default function Connections() {
           </div>
           <div className="space-y-2">
             <div className="text-brand font-bold text-lg">02</div>
-            <p className="text-xs text-slate-400">Our AI Vision reads the vendor, items, and total instantly.</p>
+            <p className="text-xs text-slate-400">
+              Our AI Vision reads the vendor, items, and total instantly.
+            </p>
           </div>
           <div className="space-y-2">
             <div className="text-brand font-bold text-lg">03</div>
-            <p className="text-xs text-slate-400">Stock levels are pushed to 'Available' and logged in Audit.</p>
+            <p className="text-xs text-slate-400">
+              Stock levels are pushed to 'Available' and logged in Audit.
+            </p>
           </div>
         </div>
       </div>

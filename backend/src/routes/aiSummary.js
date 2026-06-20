@@ -1,7 +1,7 @@
 import { Router } from 'express';
+import { chatCompletion } from '../lib/openai.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
-import { chatCompletion } from '../lib/openai.js';
 
 const router = Router();
 
@@ -19,8 +19,11 @@ function today() {
 }
 
 const INR = (n) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
-    .format(Number(n) || 0);
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(Number(n) || 0);
 
 // Pull the data we want GPT to summarize.
 async function gatherWeekData() {
@@ -39,7 +42,9 @@ async function gatherWeekData() {
   // 2. Current inventory + status
   const { data: inv, error: invErr } = await supabaseAdmin
     .from('v_inventory_status')
-    .select('product_name, category, current_stock, min_threshold, expiry_date, stock_status, expiry_status, unit');
+    .select(
+      'product_name, category, current_stock, min_threshold, expiry_date, stock_status, expiry_status, unit'
+    );
   if (invErr) throw invErr;
 
   // ---- aggregate
@@ -57,7 +62,7 @@ async function gatherWeekData() {
   };
 
   const thisWeek = tally(txns.filter((t) => t.occurred_at >= thisStart));
-  const prevWeek = tally(txns.filter((t) => t.occurred_at <  thisStart));
+  const prevWeek = tally(txns.filter((t) => t.occurred_at < thisStart));
 
   // Top consumed products this week (sum of 'remove' quantity)
   const removed = {};
@@ -70,25 +75,37 @@ async function gatherWeekData() {
     .slice(0, 5)
     .map(([name, qty]) => ({ name, qty }));
 
-  const low      = inv.filter((r) => r.stock_status === 'low' || r.stock_status === 'out_of_stock');
-  const expiring = inv.filter((r) => r.expiry_status === 'expiring_soon' || r.expiry_status === 'expired');
+  const low = inv.filter((r) => r.stock_status === 'low' || r.stock_status === 'out_of_stock');
+  const expiring = inv.filter(
+    (r) => r.expiry_status === 'expiring_soon' || r.expiry_status === 'expired'
+  );
 
   return {
     period_start: thisStart,
-    period_end:   end,
-    this_week:    thisWeek,
-    prev_week:    prevWeek,
+    period_end: end,
+    this_week: thisWeek,
+    prev_week: prevWeek,
     top_consumed: topConsumed,
-    low_stock:    low.map((r) => ({ name: r.product_name, stock: r.current_stock, unit: r.unit, status: r.stock_status })),
-    expiring:     expiring.map((r) => ({ name: r.product_name, expiry: r.expiry_date, status: r.expiry_status })),
-    txn_count:    txns.filter((t) => t.occurred_at >= thisStart).length,
+    low_stock: low.map((r) => ({
+      name: r.product_name,
+      stock: r.current_stock,
+      unit: r.unit,
+      status: r.stock_status,
+    })),
+    expiring: expiring.map((r) => ({
+      name: r.product_name,
+      expiry: r.expiry_date,
+      status: r.expiry_status,
+    })),
+    txn_count: txns.filter((t) => t.occurred_at >= thisStart).length,
   };
 }
 
 function buildPrompt(d) {
-  const wow = d.prev_week.total > 0
-    ? `${(((d.this_week.total - d.prev_week.total) / d.prev_week.total) * 100).toFixed(0)}%`
-    : 'n/a';
+  const wow =
+    d.prev_week.total > 0
+      ? `${(((d.this_week.total - d.prev_week.total) / d.prev_week.total) * 100).toFixed(0)}%`
+      : 'n/a';
 
   return [
     `Weekly pantry inventory data for Applyways office (single location).`,
@@ -126,7 +143,7 @@ router.get('/ai-summary', async (req, res, next) => {
 
     // 1. Check cache (latest summary for current week start)
     const periodStart = nDaysAgo(7);
-    const periodEnd   = today();
+    const periodEnd = today();
 
     if (!refresh) {
       const { data: cached } = await supabaseAdmin
@@ -145,8 +162,8 @@ router.get('/ai-summary', async (req, res, next) => {
     const userPrompt = buildPrompt(data);
     const { content, model, usage } = await chatCompletion({
       system: SYSTEM_PROMPT,
-      user:   userPrompt,
-      model:  'gpt-4o-mini',
+      user: userPrompt,
+      model: 'gpt-4o-mini',
     });
 
     // 3. Store
@@ -155,14 +172,14 @@ router.get('/ai-summary', async (req, res, next) => {
       .upsert(
         {
           period_start: periodStart,
-          period_end:   periodEnd,
+          period_end: periodEnd,
           content,
           model,
-          prompt_tokens:     usage.prompt_tokens     ?? null,
+          prompt_tokens: usage.prompt_tokens ?? null,
           completion_tokens: usage.completion_tokens ?? null,
           created_by: req.user.id,
         },
-        { onConflict: 'period_start,period_end' },
+        { onConflict: 'period_start,period_end' }
       )
       .select()
       .single();

@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { supabaseAdmin } from '../lib/supabase.js';
-import { getAIDecision } from '../lib/recommendations.js';
-import { sendPushToUsers } from './push.js';
-import { postAIReminderToTeams } from '../lib/teams.js';
-import { checkAndNotifyLowStock, sendDailyStockDigest } from '../lib/stockAlerts.js';
 import { computeForecasts, getActionableForecasts } from '../lib/forecast.js';
+import { getAIDecision } from '../lib/recommendations.js';
+import { checkAndNotifyLowStock, sendDailyStockDigest } from '../lib/stockAlerts.js';
+import { supabaseAdmin } from '../lib/supabase.js';
+import { postAIReminderToTeams } from '../lib/teams.js';
+import { sendPushToUsers } from './push.js';
 
 const router = Router();
 
@@ -12,12 +12,12 @@ const router = Router();
 // Each cabin is printed with a 2-minute gap so office boy can separate batches.
 // Change order or delays here without touching any other code.
 const CABIN_PRINT_ORDER = [
-  { name: 'Balaji Cabin',       abbr: 'BALAJI', delayMinutes: 0  },
-  { name: 'Rama Krishna Cabin', abbr: 'RK',     delayMinutes: 2  },
-  { name: 'Manisha Cabin',      abbr: 'MAN',    delayMinutes: 4  },
-  { name: 'Tech Cabin',         abbr: 'TECH',   delayMinutes: 6  },
-  { name: 'Marketing Cabin',    abbr: 'MKT',    delayMinutes: 8  },
-  { name: 'Resume Cabin',       abbr: 'RES',    delayMinutes: 10 },
+  { name: 'Balaji Cabin', abbr: 'BALAJI', delayMinutes: 0 },
+  { name: 'Rama Krishna Cabin', abbr: 'RK', delayMinutes: 2 },
+  { name: 'Manisha Cabin', abbr: 'MAN', delayMinutes: 4 },
+  { name: 'Tech Cabin', abbr: 'TECH', delayMinutes: 6 },
+  { name: 'Marketing Cabin', abbr: 'MKT', delayMinutes: 8 },
+  { name: 'Resume Cabin', abbr: 'RES', delayMinutes: 10 },
 ];
 
 // Exported so mealPrint.js can use the same cabin list
@@ -27,7 +27,8 @@ export { CABIN_PRINT_ORDER };
 function getISTDateString() {
   const now = new Date();
   return new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
-    .toISOString().slice(0, 10);
+    .toISOString()
+    .slice(0, 10);
 }
 
 // ── Helper: check if today is a working day (Mon-Fri) ────────────────────────
@@ -41,14 +42,26 @@ function isWorkingDayToday() {
 // ── Helper: generate token number ─────────────────────────────────────────────
 // Format: "28MAY-TECH-012"
 function generateTokenNumber(mealDate, cabinAbbr, sequenceNum) {
-  const d = new Date(mealDate + 'T00:00:00+05:30');
+  const d = new Date(`${mealDate}T00:00:00+05:30`);
   const day = String(d.getDate()).padStart(2, '0');
-  const monthNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const monthNames = [
+    'JAN',
+    'FEB',
+    'MAR',
+    'APR',
+    'MAY',
+    'JUN',
+    'JUL',
+    'AUG',
+    'SEP',
+    'OCT',
+    'NOV',
+    'DEC',
+  ];
   const month = monthNames[d.getMonth()];
   const seq = String(sequenceNum).padStart(3, '0');
   return `${day}${month}-${cabinAbbr}-${seq}`;
 }
-
 
 router.post('/ai-reminders', async (req, res) => {
   const secret = req.query.secret || req.body?.secret || req.headers['x-cron-secret'];
@@ -97,7 +110,6 @@ router.post('/ai-reminders', async (req, res) => {
     },
   }));
 
-
   // Respond immediately — don't block on GPT calls
   res.json({ queued: optedIn.length });
 
@@ -105,16 +117,16 @@ router.post('/ai-reminders', async (req, res) => {
   await Promise.allSettled(
     optedIn.map(async ({ user_id, profiles }) => {
       try {
-        const employeeName = profiles?.full_name || 'Team Member';
+        const _employeeName = profiles?.full_name || 'Team Member';
         const decision = await getAIDecision(user_id);
         if (!decision?.send_notification) return;
 
         await Promise.allSettled([
           sendPushToUsers([user_id], {
             title: decision.title,
-            body:  decision.message,
-            url:   '/request',
-            tag:   `reminder-${user_id}`,
+            body: decision.message,
+            url: '/request',
+            tag: `reminder-${user_id}`,
           }),
           postAIReminderToTeams(user_id, decision),
         ]);
@@ -184,7 +196,9 @@ router.post('/schedule-meal-print', async (req, res) => {
       const cabinBookings = byCabin[cabinConfig.name] || [];
       if (cabinBookings.length === 0) continue; // Skip cabins with no bookings
 
-      const scheduledFor = new Date(basePrintTimeUTC.getTime() + cabinConfig.delayMinutes * 60 * 1000);
+      const scheduledFor = new Date(
+        basePrintTimeUTC.getTime() + cabinConfig.delayMinutes * 60 * 1000
+      );
 
       // Generate token numbers for each booking in this cabin
       cabinBookings.forEach((booking, idx) => {
@@ -217,15 +231,19 @@ router.post('/schedule-meal-print', async (req, res) => {
 
     // Insert all print jobs in one batch
     if (printJobs.length > 0) {
-      const { error: jobErr } = await supabaseAdmin
-        .from('meal_print_jobs')
-        .insert(printJobs);
+      const { error: jobErr } = await supabaseAdmin.from('meal_print_jobs').insert(printJobs);
       if (jobErr) throw jobErr;
     }
 
-    console.log(`[Cron] Created ${printJobs.length} print jobs for ${mealDate} — ${tokenUpdates.length} tokens assigned`);
-    res.json({ ok: true, mealDate, jobsCreated: printJobs.length, tokensAssigned: tokenUpdates.length });
-
+    console.log(
+      `[Cron] Created ${printJobs.length} print jobs for ${mealDate} — ${tokenUpdates.length} tokens assigned`
+    );
+    res.json({
+      ok: true,
+      mealDate,
+      jobsCreated: printJobs.length,
+      tokensAssigned: tokenUpdates.length,
+    });
   } catch (err) {
     console.error('[Cron] schedule-meal-print failed:', err.message);
     res.status(500).json({ error: err.message });
@@ -312,7 +330,9 @@ async function sendWeeklyForecastDigest(items, botToken) {
   if (!chatIds.length) return;
 
   const dateLabel = new Date().toLocaleDateString('en-GB', {
-    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long',
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'long',
   });
 
   const lines = items.map((r) => {

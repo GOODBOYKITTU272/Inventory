@@ -1,5 +1,5 @@
-import { supabaseAdmin } from './supabase.js';
 import { chatCompletion } from './openai.js';
+import { supabaseAdmin } from './supabase.js';
 
 export function normalizeName(name = '') {
   return name.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -43,7 +43,7 @@ Rules:
 async function batchAISuggestions(unmatchedItems) {
   if (!unmatchedItems.length) return {};
   const list = unmatchedItems
-    .map(i => `- "${i.item_name}" (qty: ${i.quantity ?? '?'} ${i.unit ?? ''})`)
+    .map((i) => `- "${i.item_name}" (qty: ${i.quantity ?? '?'} ${i.unit ?? ''})`)
     .join('\n');
   try {
     const { content } = await chatCompletion({
@@ -86,37 +86,38 @@ export async function processInvoiceItems(rawItems) {
 
     if (master) {
       const qty = parseFloat(item.quantity) || 0;
-      const converted = master.units_per_purchase_unit != null
-        ? qty * master.units_per_purchase_unit
-        : null;
+      const converted =
+        master.units_per_purchase_unit != null ? qty * master.units_per_purchase_unit : null;
 
       // No-stock classifications skip cafeteria update
-      const noStock = ['internal_supply', 'equipment_asset', 'finance_expense'].includes(master.classification);
+      const noStock = ['internal_supply', 'equipment_asset', 'finance_expense'].includes(
+        master.classification
+      );
 
       results[i] = {
-        conversion_master_id:  master.id,
-        normalized_item_name:  normalized,
-        converted_quantity:    converted,
-        conversion_status:     noStock ? 'no_stock' : 'master_match',
-        ai_suggestion:         null,
-        conversion_error:      null,
+        conversion_master_id: master.id,
+        normalized_item_name: normalized,
+        converted_quantity: converted,
+        conversion_status: noStock ? 'no_stock' : 'master_match',
+        ai_suggestion: null,
+        conversion_error: null,
       };
     } else {
       unmatchedIndices.push(i);
       results[i] = {
         conversion_master_id: null,
         normalized_item_name: normalized,
-        converted_quantity:   null,
-        conversion_status:    'pending_review',
-        ai_suggestion:        null,
-        conversion_error:     null,
+        converted_quantity: null,
+        conversion_status: 'pending_review',
+        ai_suggestion: null,
+        conversion_error: null,
       };
     }
   }
 
   // Batch AI for all unmatched in one call
   if (unmatchedIndices.length) {
-    const unmatchedItems = unmatchedIndices.map(i => rawItems[i]);
+    const unmatchedItems = unmatchedIndices.map((i) => rawItems[i]);
     const suggestionMap = await batchAISuggestions(unmatchedItems);
 
     for (const i of unmatchedIndices) {
@@ -126,9 +127,9 @@ export async function processInvoiceItems(rawItems) {
         // ponytail: safety overrides — AI cannot auto-approve or make items visible
         results[i].ai_suggestion = {
           ...aiRaw,
-          employee_orderable:    false,
-          visible_to_employees:  false,
-          status:                'pending_review',
+          employee_orderable: false,
+          visible_to_employees: false,
+          status: 'pending_review',
         };
         results[i].conversion_status = 'ai_suggestion';
       }
@@ -145,22 +146,24 @@ export async function processInvoiceItems(rawItems) {
  * conversions: parallel array from processInvoiceItems.
  */
 export async function saveConversions(itemRows, conversions) {
-  const updates = itemRows.map((row, i) => {
-    const c = conversions[i];
-    if (!c) return null;
-    return supabaseAdmin
-      .from('bill_items')
-      .update({
-        conversion_master_id:  c.conversion_master_id,
-        normalized_item_name:  c.normalized_item_name,
-        converted_quantity:    c.converted_quantity,
-        conversion_status:     c.conversion_status,
-        ai_suggestion:         c.ai_suggestion,
-        conversion_error:      c.conversion_error,
-        processed_at:          new Date().toISOString(),
-      })
-      .eq('id', row.id);
-  }).filter(Boolean);
+  const updates = itemRows
+    .map((row, i) => {
+      const c = conversions[i];
+      if (!c) return null;
+      return supabaseAdmin
+        .from('bill_items')
+        .update({
+          conversion_master_id: c.conversion_master_id,
+          normalized_item_name: c.normalized_item_name,
+          converted_quantity: c.converted_quantity,
+          conversion_status: c.conversion_status,
+          ai_suggestion: c.ai_suggestion,
+          conversion_error: c.conversion_error,
+          processed_at: new Date().toISOString(),
+        })
+        .eq('id', row.id);
+    })
+    .filter(Boolean);
 
   // Fire all updates in parallel — non-fatal if any fail
   await Promise.allSettled(updates);

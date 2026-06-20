@@ -1,5 +1,5 @@
+import { resolve } from 'node:path';
 import dotenv from 'dotenv';
-import { resolve } from 'path';
 
 dotenv.config({ path: resolve(process.cwd(), '.env') });
 
@@ -24,7 +24,7 @@ async function run() {
         .from('cafeteria_items')
         .update({ dependencies: ['bread'] })
         .eq('id', item.id);
-      
+
       if (updateError) {
         console.error(`  ❌ Failed to update ${item.item_name}:`, updateError.message);
       } else {

@@ -44,8 +44,8 @@ async function postToPA(body) {
         _teamsDisabled = true;
         console.warn(
           '[Teams] Webhook URL is deprecated (Microsoft retired Office 365 Connectors Jan 2025). ' +
-          'Teams notifications are now disabled. To restore: set POWER_AUTOMATE_URL in Render ' +
-          'to a new Power Automate HTTP trigger URL. See: https://aka.ms/teams-incoming-webhooks-retire'
+            'Teams notifications are now disabled. To restore: set POWER_AUTOMATE_URL in Render ' +
+            'to a new Power Automate HTTP trigger URL. See: https://aka.ms/teams-incoming-webhooks-retire'
         );
         return { ok: false, status: 401, reason: 'webhook_deprecated' };
       }
@@ -138,30 +138,42 @@ export async function postStockAlertToTeams(item) {
 export const postRequestToTeams = postOrderToTeams;
 
 // ── OB Leave Alert ─────────────────────────────────────────────────────────────────
-export async function postLeaveAlertToTeams({ ob_name, leave_date, leave_type, half_day_slot, reason }) {
-  const dateLabel = new Date(leave_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  const slotLabel = leave_type === 'full_day' ? 'Full Day' : `Half Day — ${half_day_slot === 'morning' ? 'Morning (9am–1pm)' : 'Afternoon (1pm–5pm)'}`;
+export async function postLeaveAlertToTeams({
+  ob_name,
+  leave_date,
+  leave_type,
+  half_day_slot,
+  reason,
+}) {
+  const dateLabel = new Date(leave_date).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const slotLabel =
+    leave_type === 'full_day'
+      ? 'Full Day'
+      : `Half Day — ${half_day_slot === 'morning' ? 'Morning (9am–1pm)' : 'Afternoon (1pm–5pm)'}`;
   return postToPA({
-    event_type:    'ob_leave_alert',
+    event_type: 'ob_leave_alert',
     ob_name,
-    leave_date:    dateLabel,
-    leave_type:    slotLabel,
-    reason:        reason || 'Not specified',
-    message:       `${ob_name} is on leave — Cafeteria switches to Self-Pickup mode for that slot`,
-    time:          istNow(),
+    leave_date: dateLabel,
+    leave_type: slotLabel,
+    reason: reason || 'Not specified',
+    message: `${ob_name} is on leave — Cafeteria switches to Self-Pickup mode for that slot`,
+    time: istNow(),
   });
 }
 
 // ── AI Reminder Alert ────────────────────────────────────────────────────────
 export async function postAIReminderToTeams(employeeId, decision) {
   return postToPA({
-    event_type:  'ai_reminder',
+    event_type: 'ai_reminder',
     employee_id: employeeId,
-    type:        decision.notification_type,
-    tone:        decision.tone_used,
-    title:       decision.title,
-    message:     decision.message,
-    time:        istNow(),
+    type: decision.notification_type,
+    tone: decision.tone_used,
+    title: decision.title,
+    message: decision.message,
+    time: istNow(),
   });
 }
-

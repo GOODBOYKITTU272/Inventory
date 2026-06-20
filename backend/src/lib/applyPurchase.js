@@ -60,9 +60,7 @@ export async function applyPurchaseToInventory(purchase, { writeFinance = true }
       .update({ current_stock: (inv.current_stock || 0) + qty })
       .eq('product_id', productId);
   } else {
-    await supabaseAdmin
-      .from('inventory')
-      .insert({ product_id: productId, current_stock: qty });
+    await supabaseAdmin.from('inventory').insert({ product_id: productId, current_stock: qty });
   }
 
   // 3. Log transaction (finance record)

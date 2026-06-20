@@ -10,8 +10,8 @@
  * from the environment (never hard-coded, never sent to the browser).
  */
 
-const TENANT_ID     = process.env.MICROSOFT_TENANT_ID;
-const CLIENT_ID     = process.env.MICROSOFT_CLIENT_ID;
+const TENANT_ID = process.env.MICROSOFT_TENANT_ID;
+const CLIENT_ID = process.env.MICROSOFT_CLIENT_ID;
 const CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET;
 
 // Simple in-memory token cache so we don't fetch a new token on every login.
@@ -30,10 +30,10 @@ async function getGraphToken() {
 
   const url = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`;
   const body = new URLSearchParams({
-    client_id:     CLIENT_ID,
+    client_id: CLIENT_ID,
     client_secret: CLIENT_SECRET,
-    scope:         'https://graph.microsoft.com/.default',
-    grant_type:    'client_credentials',
+    scope: 'https://graph.microsoft.com/.default',
+    grant_type: 'client_credentials',
   });
 
   const res = await fetch(url, {

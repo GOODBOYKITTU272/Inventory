@@ -1,29 +1,28 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase.js';
 import { motion } from 'framer-motion';
-import { 
-  TrendingUp, 
-  Users, 
-  Clock, 
-  Package, 
-  ChevronRight,
-  DollarSign,
-  Star,
+import {
   Activity,
-  History
+  ChevronRight,
+  Clock,
+  DollarSign,
+  History,
+  Package,
+  Star,
+  TrendingUp,
 } from 'lucide-react';
-import { 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  BarChart,
+import { useEffect, useState } from 'react';
+import {
+  Area,
+  AreaChart,
   Bar,
-  Cell
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts';
+import { supabase } from '../lib/supabase.js';
 
 export default function AuditLog() {
   const [stats, setStats] = useState({
@@ -31,7 +30,7 @@ export default function AuditLog() {
     activeEmployees: 70,
     avgServiceTime: '12m',
     totalRequests: 0,
-    avgRating: 4.8
+    avgRating: 4.8,
   });
   const [logs, setLogs] = useState([]);
   const [spendingData, setSpendingData] = useState([]);
@@ -39,20 +38,26 @@ export default function AuditLog() {
 
   useEffect(() => {
     fetchInsights();
-  }, []);
+  }, [fetchInsights]);
 
   async function fetchInsights() {
     // 1. Calculate Total Pantry Value
-    const { data: inv } = await supabase.from('inventory').select('current_stock, products(cost_per_unit, category)');
-    const total = inv?.reduce((acc, item) => acc + (item.current_stock * (item.products?.cost_per_unit || 0)), 0) || 0;
-    
+    const { data: inv } = await supabase
+      .from('inventory')
+      .select('current_stock, products(cost_per_unit, category)');
+    const total =
+      inv?.reduce(
+        (acc, item) => acc + item.current_stock * (item.products?.cost_per_unit || 0),
+        0
+      ) || 0;
+
     // 2. Mock some visual data for the charts (In real app, aggregate from transactions/requests)
     setSpendingData([
       { name: 'Mon', amount: 4200 },
       { name: 'Tue', amount: 3800 },
       { name: 'Wed', amount: 5100 },
       { name: 'Thu', amount: 4600 },
-      { name: 'Fri', amount: 5900 }
+      { name: 'Fri', amount: 5900 },
     ]);
 
     setRatingData([
@@ -60,10 +65,10 @@ export default function AuditLog() {
       { score: '4★', count: 12, color: '#34d399' },
       { score: '3★', count: 5, color: '#fbbf24' },
       { score: '2★', count: 2, color: '#f87171' },
-      { score: '1★', count: 1, color: '#ef4444' }
+      { score: '1★', count: 1, color: '#ef4444' },
     ]);
 
-    setStats(prev => ({ ...prev, totalValue: total }));
+    setStats((prev) => ({ ...prev, totalValue: total }));
 
     // 3. Fetch Recent Audit Logs
     const { data: audit } = await supabase
@@ -79,7 +84,9 @@ export default function AuditLog() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Office Insights</h1>
-          <p className="text-slate-500 mt-1 font-medium">Real-time operational overview for Leadership only.</p>
+          <p className="text-slate-500 mt-1 font-medium">
+            Real-time operational overview for Leadership only.
+          </p>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100 font-bold text-sm">
           <Activity size={16} />
@@ -90,23 +97,42 @@ export default function AuditLog() {
       {/* 🚀 QUICK STATS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Total Pantry Value', value: `₹${stats.totalValue.toLocaleString()}`, icon: DollarSign, color: 'bg-brand' },
+          {
+            label: 'Total Pantry Value',
+            value: `₹${stats.totalValue.toLocaleString()}`,
+            icon: DollarSign,
+            color: 'bg-brand',
+          },
           { label: 'Total Requests', value: '342', icon: Package, color: 'bg-blue-500' },
-          { label: 'Avg Service Time', value: stats.avgServiceTime, icon: Clock, color: 'bg-amber-500' },
-          { label: 'Happiness Score', value: `${stats.avgRating}/5`, icon: Star, color: 'bg-rose-500' }
+          {
+            label: 'Avg Service Time',
+            value: stats.avgServiceTime,
+            icon: Clock,
+            color: 'bg-amber-500',
+          },
+          {
+            label: 'Happiness Score',
+            value: `${stats.avgRating}/5`,
+            icon: Star,
+            color: 'bg-rose-500',
+          },
         ].map((stat, i) => (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
             key={stat.label}
             className="card p-6 flex items-center gap-4"
           >
-            <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-white shadow-lg`}>
+            <div
+              className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-white shadow-lg`}
+            >
               <stat.icon size={24} />
             </div>
             <div>
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">{stat.label}</div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                {stat.label}
+              </div>
               <div className="text-2xl font-black text-slate-900">{stat.value}</div>
             </div>
           </motion.div>
@@ -131,17 +157,34 @@ export default function AuditLog() {
               <AreaChart data={spendingData}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#FB1159" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#FB1159" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#FB1159" stopOpacity={0.1} />
+                    <stop offset="95%" stopColor="#FB1159" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#94a3b8', fontSize: 12 }}
+                  dy={10}
                 />
-                <Area type="monotone" dataKey="amount" stroke="#FB1159" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: '16px',
+                    border: 'none',
+                    boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="amount"
+                  stroke="#FB1159"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorValue)"
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -157,8 +200,14 @@ export default function AuditLog() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={ratingData} layout="vertical">
                 <XAxis type="number" hide />
-                <YAxis dataKey="score" type="category" axisLine={false} tickLine={false} tick={{fill: '#475569', fontWeight: 700}} />
-                <Tooltip cursor={{fill: 'transparent'}} />
+                <YAxis
+                  dataKey="score"
+                  type="category"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#475569', fontWeight: 700 }}
+                />
+                <Tooltip cursor={{ fill: 'transparent' }} />
                 <Bar dataKey="count" radius={[0, 10, 10, 0]} barSize={20}>
                   {ratingData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
@@ -167,7 +216,9 @@ export default function AuditLog() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <p className="text-center text-xs text-slate-400 font-medium italic">"Jagan is currently the top-rated employee!"</p>
+          <p className="text-center text-xs text-slate-400 font-medium italic">
+            "Jagan is currently the top-rated employee!"
+          </p>
         </div>
       </div>
 
@@ -186,11 +237,21 @@ export default function AuditLog() {
           <table className="w-full text-left">
             <thead className="bg-slate-50">
               <tr>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Item</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Action</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cost</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Item
+                </th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Action
+                </th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Qty
+                </th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Cost
+                </th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Date
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -198,9 +259,13 @@ export default function AuditLog() {
                 <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-4 font-bold text-slate-900">{log.products?.name}</td>
                   <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${
-                      log.type === 'add' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                    }`}>
+                    <span
+                      className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${
+                        log.type === 'add'
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : 'bg-rose-50 text-rose-600'
+                      }`}
+                    >
                       {log.type}
                     </span>
                   </td>

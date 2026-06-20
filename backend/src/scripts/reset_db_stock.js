@@ -1,5 +1,5 @@
+import { resolve } from 'node:path';
 import dotenv from 'dotenv';
-import { resolve } from 'path';
 
 dotenv.config({ path: resolve('c:/Users/DELL/Desktop/inventory/backend/.env') });
 
@@ -33,7 +33,7 @@ async function resetStock() {
 
   // 3. Reset cafeteria_items stock
   console.log('- Resetting cafeteria_items stock to 0...');
-  
+
   // First, get all cafeteria items to ensure we don't clear Water Bottle
   const { data: items, error: fetchError } = await supabaseAdmin
     .from('cafeteria_items')
@@ -56,9 +56,9 @@ async function resetStock() {
       }
     } else {
       console.log(`  Resetting stock for: ${item.item_name} (ID: ${item.id})`);
-      
-      let updateFields = { stock_today: 0, stock_servings: 0 };
-      
+
+      const updateFields = { stock_today: 0, stock_servings: 0 };
+
       // Special configuration for unified bread items
       if (item.item_name === 'Bread') {
         updateFields.display_name = 'Milk Bread';
@@ -69,14 +69,14 @@ async function resetStock() {
         updateFields.available = true;
         updateFields.orderable = false;
       } else if (
-        item.item_name === 'MODERN MILK BRD 350G' || 
-        item.item_name === 'MRBWL MLK BREAD 400G' || 
+        item.item_name === 'MODERN MILK BRD 350G' ||
+        item.item_name === 'MRBWL MLK BREAD 400G' ||
         item.item_name === 'MRBWL BR BREAD 400G'
       ) {
         updateFields.available = false;
         updateFields.orderable = false;
       }
-      
+
       const { error: updateError } = await supabaseAdmin
         .from('cafeteria_items')
         .update(updateFields)

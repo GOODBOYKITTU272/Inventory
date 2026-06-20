@@ -7,7 +7,7 @@ if (!url || !serviceKey) {
   // eslint-disable-next-line no-console
   console.warn(
     '[supabase] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing — API calls will fail. ' +
-      'Copy backend/.env.example to backend/.env and fill it in.',
+      'Copy backend/.env.example to backend/.env and fill it in.'
   );
 }
 

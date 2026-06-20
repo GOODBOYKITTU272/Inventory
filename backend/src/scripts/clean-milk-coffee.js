@@ -1,5 +1,5 @@
+import { resolve } from 'node:path';
 import dotenv from 'dotenv';
-import { resolve } from 'path';
 
 // Config env from root or backend directory depending on where command is run
 dotenv.config({ path: resolve(process.cwd(), '.env') });
@@ -24,14 +24,14 @@ async function cleanDrinkPrefs() {
   let updatedCount = 0;
   for (const row of data) {
     if (Array.isArray(row.drink_prefs) && row.drink_prefs.includes('Milk Coffee')) {
-      const filtered = row.drink_prefs.filter(d => d !== 'Milk Coffee');
+      const filtered = row.drink_prefs.filter((d) => d !== 'Milk Coffee');
       console.log(`Updating preferences for user ${row.user_id}: removing "Milk Coffee"`);
-      
+
       const { error: updateErr } = await supabaseAdmin
         .from('employee_cafeteria_preferences')
         .update({ drink_prefs: filtered })
         .eq('user_id', row.user_id);
-      
+
       if (updateErr) {
         console.error(`❌ Error updating user ${row.user_id}:`, updateErr.message);
       } else {

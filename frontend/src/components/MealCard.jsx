@@ -1,19 +1,56 @@
-import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 
 const CHOICE_UI = {
-  veg:     { emoji: '🥬', label: 'Veg',     color: 'bg-emerald-500', bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
-  non_veg: { emoji: '🍗', label: 'Non-Veg', color: 'bg-red-500',     bg: 'bg-red-50 border-red-200',         text: 'text-red-700' },
-  egg:     { emoji: '🥚', label: 'Egg',     color: 'bg-amber-500',   bg: 'bg-amber-50 border-amber-200',     text: 'text-amber-700' },
-  skip:    { emoji: '🚫', label: 'Skip',    color: 'bg-slate-400',   bg: 'bg-slate-50 border-slate-200',     text: 'text-slate-600' },
+  veg: {
+    emoji: '🥬',
+    label: 'Veg',
+    color: 'bg-emerald-500',
+    bg: 'bg-emerald-50 border-emerald-200',
+    text: 'text-emerald-700',
+  },
+  non_veg: {
+    emoji: '🍗',
+    label: 'Non-Veg',
+    color: 'bg-red-500',
+    bg: 'bg-red-50 border-red-200',
+    text: 'text-red-700',
+  },
+  egg: {
+    emoji: '🥚',
+    label: 'Egg',
+    color: 'bg-amber-500',
+    bg: 'bg-amber-50 border-amber-200',
+    text: 'text-amber-700',
+  },
+  skip: {
+    emoji: '🚫',
+    label: 'Skip',
+    color: 'bg-slate-400',
+    bg: 'bg-slate-50 border-slate-200',
+    text: 'text-slate-600',
+  },
 };
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 
 function formatDate(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00+05:30');
+  const d = new Date(`${dateStr}T00:00:00+05:30`);
   return `${DAY_NAMES[d.getDay()]}, ${d.getDate()} ${MONTH_NAMES[d.getMonth()]}`;
 }
 
@@ -80,7 +117,9 @@ export default function MealCard() {
     }
   }, [targetDate]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function book(choice) {
     setBusy(true);
@@ -99,7 +138,7 @@ export default function MealCard() {
   }
 
   if (loading) return null;
-  if (!data || !data.working_day) return null;
+  if (!data?.working_day) return null;
 
   const { options, canBook, canSkip, reason, booking } = data;
   const currentChoice = booking?.choice;
@@ -142,7 +181,9 @@ export default function MealCard() {
 
       {/* Current booking display */}
       {currentChoice && currentChoice !== 'skip' && (reason === 'skip_only' || isLocked) && (
-        <div className={`flex items-center justify-between p-3 rounded-xl border ${CHOICE_UI[currentChoice]?.bg || 'bg-slate-50 border-slate-200'}`}>
+        <div
+          className={`flex items-center justify-between p-3 rounded-xl border ${CHOICE_UI[currentChoice]?.bg || 'bg-slate-50 border-slate-200'}`}
+        >
           <div className="flex items-center gap-2">
             <span className="text-lg">{CHOICE_UI[currentChoice]?.emoji}</span>
             <span className={`font-bold text-sm ${CHOICE_UI[currentChoice]?.text}`}>
@@ -167,9 +208,7 @@ export default function MealCard() {
         <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
           <span className="text-lg">🚫</span>
           <span className="font-bold text-sm text-slate-500">Skipped for this day</span>
-          {canBook && (
-            <span className="text-xs text-slate-400 ml-auto">Tap below to rebook</span>
-          )}
+          {canBook && <span className="text-xs text-slate-400 ml-auto">Tap below to rebook</span>}
         </div>
       )}
 
@@ -194,9 +233,10 @@ export default function MealCard() {
                 disabled={busy || !canBook}
                 onClick={() => book(opt)}
                 className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
-                  ${selected
-                    ? `${ui.color} text-white border-transparent shadow-lg`
-                    : `bg-white ${ui.text} border-slate-200 hover:border-current`
+                  ${
+                    selected
+                      ? `${ui.color} text-white border-transparent shadow-lg`
+                      : `bg-white ${ui.text} border-slate-200 hover:border-current`
                   }
                   ${busy || !canBook ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
                 `}
@@ -214,9 +254,10 @@ export default function MealCard() {
             disabled={busy}
             onClick={() => book('skip')}
             className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
-              ${currentChoice === 'skip'
-                ? 'bg-slate-400 text-white border-transparent'
-                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+              ${
+                currentChoice === 'skip'
+                  ? 'bg-slate-400 text-white border-transparent'
+                  : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
               }
               ${busy ? 'opacity-40' : ''}
             `}
@@ -236,7 +277,10 @@ export default function MealCard() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             className={`text-xs font-bold text-center py-2 rounded-lg ${
-              msg.includes('🚫') || msg.includes('Failed') || msg.includes('locked') || msg.includes('After')
+              msg.includes('🚫') ||
+              msg.includes('Failed') ||
+              msg.includes('locked') ||
+              msg.includes('After')
                 ? 'bg-rose-50 text-rose-600'
                 : 'bg-emerald-50 text-emerald-600'
             }`}

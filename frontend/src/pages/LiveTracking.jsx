@@ -1,73 +1,78 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ArrowRight, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, MapPin, ArrowRight } from 'lucide-react';
 
 const CANCEL_WINDOW_SEC = 30;
 
 const CATEGORY_EMOJI = {
-  beverage: '☕', food: '🥪', snack: '🍪',
-  meal: '🍱', stationery: '📎', cleaning: '🧹', other: '📦',
+  beverage: '☕',
+  food: '🥪',
+  snack: '🍪',
+  meal: '🍱',
+  stationery: '📎',
+  cleaning: '🧹',
+  other: '📦',
 };
 
 /* ── Stages definition ───────────────────────────────────────────── */
 const STAGES = [
   {
-    id:      'placed',
-    emoji:   '📋',
-    label:   'Order Placed',
-    sub:     'Your request is in the queue',
-    color:   'bg-slate-100 text-slate-600',
-    ring:    'ring-slate-300',
+    id: 'placed',
+    emoji: '📋',
+    label: 'Order Placed',
+    sub: 'Your request is in the queue',
+    color: 'bg-slate-100 text-slate-600',
+    ring: 'ring-slate-300',
   },
   {
-    id:      'accepted',
-    emoji:   '✅',
-    label:   'Accepted',
-    sub:     'Office boy is on it!',
-    color:   'bg-blue-50 text-blue-600',
-    ring:    'ring-blue-400',
+    id: 'accepted',
+    emoji: '✅',
+    label: 'Accepted',
+    sub: 'Office boy is on it!',
+    color: 'bg-blue-50 text-blue-600',
+    ring: 'ring-blue-400',
   },
   {
-    id:      'preparing',
-    emoji:   '☕',
-    label:   'Preparing',
-    sub:     'Being made with love ❤️',
-    color:   'bg-amber-50 text-amber-600',
-    ring:    'ring-amber-400',
+    id: 'preparing',
+    emoji: '☕',
+    label: 'Preparing',
+    sub: 'Being made with love ❤️',
+    color: 'bg-amber-50 text-amber-600',
+    ring: 'ring-amber-400',
   },
   {
-    id:      'ready_for_pickup',
-    emoji:   '🏃',
-    label:   'Ready for Pickup!',
-    sub:     'Come collect from the pantry counter 📣',
-    color:   'bg-teal-50 text-teal-600',
-    ring:    'ring-teal-400',
+    id: 'ready_for_pickup',
+    emoji: '🏃',
+    label: 'Ready for Pickup!',
+    sub: 'Come collect from the pantry counter 📣',
+    color: 'bg-teal-50 text-teal-600',
+    ring: 'ring-teal-400',
   },
   {
-    id:      'on_the_way',
-    emoji:   '🛵',
-    label:   'On the Way',
-    sub:     'Coming to you right now!',
-    color:   'bg-brand/10 text-brand',
-    ring:    'ring-brand',
+    id: 'on_the_way',
+    emoji: '🛵',
+    label: 'On the Way',
+    sub: 'Coming to you right now!',
+    color: 'bg-brand/10 text-brand',
+    ring: 'ring-brand',
   },
   {
-    id:      'done',
-    emoji:   '🎉',
-    label:   'Delivered!',
-    sub:     'Enjoy! Rate your experience below.',
-    color:   'bg-emerald-50 text-emerald-600',
-    ring:    'ring-emerald-400',
+    id: 'done',
+    emoji: '🎉',
+    label: 'Delivered!',
+    sub: 'Enjoy! Rate your experience below.',
+    color: 'bg-emerald-50 text-emerald-600',
+    ring: 'ring-emerald-400',
   },
 ];
 
 const CANCELLED = {
-  id:    'cancelled',
+  id: 'cancelled',
   emoji: '❌',
   label: 'Cancelled',
-  sub:   'This request was cancelled.',
+  sub: 'This request was cancelled.',
   color: 'bg-rose-50 text-rose-600',
 };
 
@@ -104,8 +109,8 @@ function StageRow({ stage, state }) {
           state === 'done'
             ? 'bg-emerald-50 ring-emerald-300'
             : state === 'active'
-            ? `${stage.color} ${stage.ring}`
-            : 'bg-slate-50 ring-slate-200 opacity-40'
+              ? `${stage.color} ${stage.ring}`
+              : 'bg-slate-50 ring-slate-200 opacity-40'
         }`}
       >
         {state === 'done' ? '✅' : stage.emoji}
@@ -113,9 +118,15 @@ function StageRow({ stage, state }) {
 
       {/* Labels */}
       <div className="min-w-0">
-        <div className={`font-semibold text-sm ${
-          state === 'active' ? 'text-slate-900' : state === 'done' ? 'text-slate-700' : 'text-slate-400'
-        }`}>
+        <div
+          className={`font-semibold text-sm ${
+            state === 'active'
+              ? 'text-slate-900'
+              : state === 'done'
+                ? 'text-slate-700'
+                : 'text-slate-400'
+          }`}
+        >
           {stage.label}
         </div>
         {state === 'active' && (
@@ -146,9 +157,9 @@ function StageRow({ stage, state }) {
 
 /* ── Rating sheet ────────────────────────────────────────────────── */
 function RatingSheet({ requestId, onDone }) {
-  const [rating, setRating]   = useState(0);
+  const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
-  const [busy, setBusy]       = useState(false);
+  const [busy, setBusy] = useState(false);
 
   async function submit() {
     if (!rating) return;
@@ -179,9 +190,7 @@ function RatingSheet({ requestId, onDone }) {
         <div className="text-center">
           <div className="text-5xl mb-3">🎉</div>
           <h2 className="text-2xl font-bold text-slate-900">Hope it hit the spot!</h2>
-          <p className="text-slate-500 text-sm mt-1">
-            Rate your experience — 1 to 10
-          </p>
+          <p className="text-slate-500 text-sm mt-1">Rate your experience — 1 to 10</p>
         </div>
 
         <div className="grid grid-cols-5 gap-2">
@@ -201,9 +210,7 @@ function RatingSheet({ requestId, onDone }) {
             </button>
           ))}
         </div>
-        {rating > 0 && (
-          <div className="text-center text-sm font-bold text-brand">{rating}/10</div>
-        )}
+        {rating > 0 && <div className="text-center text-sm font-bold text-brand">{rating}/10</div>}
 
         <textarea
           className="input min-h-[90px] bg-slate-50"
@@ -216,11 +223,7 @@ function RatingSheet({ requestId, onDone }) {
           <button className="btn-secondary flex-1" onClick={onDone}>
             Later
           </button>
-          <button
-            className="btn-primary flex-1"
-            disabled={!rating || busy}
-            onClick={submit}
-          >
+          <button className="btn-primary flex-1" disabled={!rating || busy} onClick={submit}>
             {busy ? 'Submitting…' : '🚀 Send Rating'}
           </button>
         </div>
@@ -269,9 +272,13 @@ function CircularTimer({ secsLeft, total }) {
         <circle cx="60" cy="60" r={radius} fill="none" stroke="#f1f5f9" strokeWidth="6" />
         {/* Progress circle */}
         <circle
-          cx="60" cy="60" r={radius} fill="none"
+          cx="60"
+          cy="60"
+          r={radius}
+          fill="none"
           stroke={secsLeft > 10 ? '#f43f5e' : '#ef4444'}
-          strokeWidth="6" strokeLinecap="round"
+          strokeWidth="6"
+          strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           style={{ transition: 'stroke-dashoffset 1s linear' }}
@@ -281,7 +288,9 @@ function CircularTimer({ secsLeft, total }) {
         <span className="text-xl sm:text-2xl font-extrabold text-slate-900 tabular-nums">
           {mins}:{secs.toString().padStart(2, '0')}
         </span>
-        <span className="text-[9px] sm:text-[10px] text-slate-400 font-medium mt-0.5">to cancel</span>
+        <span className="text-[9px] sm:text-[10px] text-slate-400 font-medium mt-0.5">
+          to cancel
+        </span>
       </div>
     </div>
   );
@@ -294,13 +303,16 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
     return Math.max(0, Math.ceil((created + CANCEL_WINDOW_SEC * 1000 - Date.now()) / 1000));
   });
   const [cancelling, setCancelling] = useState(false);
-  const [cancelled, setCancelled]   = useState(false);
+  const [cancelled, setCancelled] = useState(false);
   const confirmedRef = useRef(false);
 
   useEffect(() => {
     const t = setInterval(() => {
       const created = new Date(req.created_at).getTime();
-      const remaining = Math.max(0, Math.ceil((created + CANCEL_WINDOW_SEC * 1000 - Date.now()) / 1000));
+      const remaining = Math.max(
+        0,
+        Math.ceil((created + CANCEL_WINDOW_SEC * 1000 - Date.now()) / 1000)
+      );
       setSecsLeft(remaining);
       if (remaining <= 0) {
         clearInterval(t);
@@ -385,7 +397,7 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
             transition={{ delay: 0.3 + i * 0.1, duration: 0.8 }}
             className="absolute w-2 h-2 rounded-full bg-amber-400"
             style={{
-              top:  `${50 + 55 * Math.sin((i * Math.PI * 2) / 6)}%`,
+              top: `${50 + 55 * Math.sin((i * Math.PI * 2) / 6)}%`,
               left: `${50 + 55 * Math.cos((i * Math.PI * 2) / 6)}%`,
               transform: 'translate(-50%, -50%)',
             }}
@@ -422,23 +434,27 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
             {emoji}
           </div>
           <div className="min-w-0">
-            <h3 className="font-bold text-slate-900 text-sm truncate">{req.parsed_item || req.raw_text}</h3>
+            <h3 className="font-bold text-slate-900 text-sm truncate">
+              {req.parsed_item || req.raw_text}
+            </h3>
             {req.parsed_location && (
               <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                 <MapPin size={10} /> {req.parsed_location}
               </p>
             )}
           </div>
-          {qty > 1 && (
-            <span className="text-brand font-bold text-sm shrink-0">×{qty}</span>
-          )}
+          {qty > 1 && <span className="text-brand font-bold text-sm shrink-0">×{qty}</span>}
         </div>
 
         {/* ETA */}
         <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
           <div>
-            <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Estimated delivery</div>
-            <div className="text-lg font-extrabold text-slate-900">~{eta.min}-{eta.max} min</div>
+            <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+              Estimated delivery
+            </div>
+            <div className="text-lg font-extrabold text-slate-900">
+              ~{eta.min}-{eta.max} min
+            </div>
           </div>
           <div className="text-2xl">🕐</div>
         </div>
@@ -457,9 +473,14 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
           disabled={cancelling || secsLeft <= 0}
           className="mt-3 px-6 py-2.5 bg-rose-50 text-rose-600 text-sm font-bold rounded-xl border-2 border-rose-200 hover:bg-rose-100 active:scale-95 transition-all disabled:opacity-30"
         >
-          {cancelling
-            ? <span className="flex items-center gap-2"><span className="h-3.5 w-3.5 border-2 border-rose-300 border-t-rose-600 rounded-full animate-spin" /> Cancelling…</span>
-            : 'Cancel Order'}
+          {cancelling ? (
+            <span className="flex items-center gap-2">
+              <span className="h-3.5 w-3.5 border-2 border-rose-300 border-t-rose-600 rounded-full animate-spin" />{' '}
+              Cancelling…
+            </span>
+          ) : (
+            'Cancel Order'
+          )}
         </button>
       </motion.div>
 
@@ -480,13 +501,14 @@ function OrderConfirmedScreen({ req, queueAhead, onDismiss, onCancelled }) {
 /* ── Single Order View (extracted, unchanged logic) ──────────────── */
 function OrderView({ req, onRate, onRefresh }) {
   const isCancelled = req.status === 'cancelled';
-  const isDone      = req.status === 'done';
-  const isRecorded  = req.live_status === 'Recorded';
+  const isDone = req.status === 'done';
+  const isRecorded = req.live_status === 'Recorded';
 
   // 'confirming' is treated as 'placed' for the progress tracker
-  const effectiveLiveStatus = req.live_status === 'confirming' ? 'placed' : (req.live_status || 'placed');
-  const curIdx      = isCancelled ? -1 : stageIndex(effectiveLiveStatus);
-  const curStage    = isCancelled ? CANCELLED : STAGES[curIdx];
+  const effectiveLiveStatus =
+    req.live_status === 'confirming' ? 'placed' : req.live_status || 'placed';
+  const curIdx = isCancelled ? -1 : stageIndex(effectiveLiveStatus);
+  const curStage = isCancelled ? CANCELLED : STAGES[curIdx];
 
   const [confirmingCollection, setConfirmingCollection] = useState(false);
 
@@ -516,7 +538,8 @@ function OrderView({ req, onRate, onRefresh }) {
             <div className="min-w-0">
               <div className="text-lg font-extrabold text-indigo-800">Order Recorded!</div>
               <div className="text-xs opacity-95 mt-1 leading-relaxed">
-                Night shift order recorded for inventory and reporting. No delivery/office boy service is active at night. Collect your order from the pantry counter.
+                Night shift order recorded for inventory and reporting. No delivery/office boy
+                service is active at night. Collect your order from the pantry counter.
               </div>
             </div>
           </div>
@@ -569,14 +592,24 @@ function OrderView({ req, onRate, onRefresh }) {
           <div className="text-3xl mb-1">⚡</div>
           <div className="text-sm text-emerald-700 font-bold">
             Delivered in {(() => {
-              const mins = Math.round((new Date(req.fulfilled_at) - new Date(req.created_at)) / 60000);
+              const mins = Math.round(
+                (new Date(req.fulfilled_at) - new Date(req.created_at)) / 60000
+              );
               return mins <= 1 ? 'under a minute' : `${mins} minutes`;
             })()}
           </div>
           <div className="text-[10px] text-emerald-500 mt-1">
-            {new Date(req.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+            {new Date(req.created_at).toLocaleTimeString('en-IN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZone: 'Asia/Kolkata',
+            })}
             {' → '}
-            {new Date(req.fulfilled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+            {new Date(req.fulfilled_at).toLocaleTimeString('en-IN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZone: 'Asia/Kolkata',
+            })}
           </div>
         </motion.div>
       )}
@@ -584,16 +617,14 @@ function OrderView({ req, onRate, onRefresh }) {
       {/* Stage timeline */}
       {!isCancelled && !isRecorded && (
         <div className="card space-y-5">
-          <h3 className="font-semibold text-slate-900 text-sm uppercase tracking-wide">Live Status</h3>
+          <h3 className="font-semibold text-slate-900 text-sm uppercase tracking-wide">
+            Live Status
+          </h3>
           {STAGES.map((stage, idx) => (
             <StageRow
               key={stage.id}
               stage={stage}
-              state={
-                idx < curIdx ? 'done'
-                : idx === curIdx ? 'active'
-                : 'waiting'
-              }
+              state={idx < curIdx ? 'done' : idx === curIdx ? 'active' : 'waiting'}
             />
           ))}
         </div>
@@ -601,7 +632,9 @@ function OrderView({ req, onRate, onRefresh }) {
 
       {/* Order details */}
       <div className="card space-y-3">
-        <h3 className="font-semibold text-slate-900 text-sm uppercase tracking-wide">Order Details</h3>
+        <h3 className="font-semibold text-slate-900 text-sm uppercase tracking-wide">
+          Order Details
+        </h3>
         <div className="flex justify-between items-start">
           <div>
             <div className="font-medium text-slate-900 text-base">
@@ -613,7 +646,9 @@ function OrderView({ req, onRate, onRefresh }) {
           </div>
           <div className="text-right shrink-0">
             <div className="text-[10px] text-slate-400 uppercase">Request ID</div>
-            <div className="font-mono text-xs text-slate-600">{req.user_order_number || req.id?.slice(0, 8)}</div>
+            <div className="font-mono text-xs text-slate-600">
+              {req.user_order_number || req.id?.slice(0, 8)}
+            </div>
           </div>
         </div>
         {req.instruction && (
@@ -636,10 +671,7 @@ function OrderView({ req, onRate, onRefresh }) {
       )}
 
       {isDone && req.rating_status !== 'done' && (
-        <button
-          className="w-full btn-secondary text-sm"
-          onClick={() => onRate(req.id)}
-        >
+        <button className="w-full btn-secondary text-sm" onClick={() => onRate(req.id)}>
           ⭐ Rate this order
         </button>
       )}
@@ -652,7 +684,10 @@ function OrderView({ req, onRate, onRefresh }) {
           className="w-full h-12 bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-sm rounded-2xl shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 active:scale-[0.99] transition-all disabled:opacity-50"
         >
           {confirmingCollection ? (
-            <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Confirming...</>
+            <>
+              <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{' '}
+              Confirming...
+            </>
           ) : (
             <>✓ I've collected my order</>
           )}
@@ -664,18 +699,18 @@ function OrderView({ req, onRate, onRefresh }) {
 
 /* ── Main component ──────────────────────────────────────────────── */
 export default function LiveTracking() {
-  const { id }            = useParams();
-  const navigate          = useNavigate();
-  const [allOrders, setAllOrders] = useState([]);   // all active orders
-  const [req, setReq]     = useState(null);          // current viewed order
-  const [err, setErr]     = useState('');
-  const [showRate, setShowRate]   = useState(false);
-  const [rateId, setRateId]       = useState(null);
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [allOrders, setAllOrders] = useState([]); // all active orders
+  const [req, setReq] = useState(null); // current viewed order
+  const [err, setErr] = useState('');
+  const [showRate, setShowRate] = useState(false);
+  const [rateId, setRateId] = useState(null);
   const [queueAhead, setQueueAhead] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
-  const confirmChecked    = useRef(false);
-  const shownRatingRef    = useRef(false);
-  const touchStartX       = useRef(null);
+  const confirmChecked = useRef(false);
+  const shownRatingRef = useRef(false);
+  const touchStartX = useRef(null);
 
   // Load the current order + all active orders
   const load = useCallback(async () => {
@@ -694,15 +729,16 @@ export default function LiveTracking() {
         const created = new Date(data.created_at).getTime();
         const elapsed = (Date.now() - created) / 1000;
         const isConfirming = data.status === 'confirming';
-        const isPendingPlaced = data.status === 'pending' && (!data.live_status || data.live_status === 'placed');
+        const isPendingPlaced =
+          data.status === 'pending' && (!data.live_status || data.live_status === 'placed');
         if ((isConfirming || isPendingPlaced) && elapsed < CANCEL_WINDOW_SEC) {
           setShowConfirm(true);
         }
       }
 
       // Collect all active (non-done, non-cancelled) orders
-      const active = (allRequests || []).filter(
-        (r) => ['confirming', 'pending', 'in_progress'].includes(r.status)
+      const active = (allRequests || []).filter((r) =>
+        ['confirming', 'pending', 'in_progress'].includes(r.status)
       );
       // Make sure current order is included even if done/cancelled
       const hasCurrentInActive = active.some((r) => r.id === id);
@@ -711,7 +747,12 @@ export default function LiveTracking() {
 
       // Show rating once when order first reaches 'done'
       // Night shift orders (live_status='Recorded') skip rating — no real delivery happened
-      if (data.status === 'done' && data.rating_status !== 'done' && data.live_status !== 'Recorded' && !shownRatingRef.current) {
+      if (
+        data.status === 'done' &&
+        data.rating_status !== 'done' &&
+        data.live_status !== 'Recorded' &&
+        !shownRatingRef.current
+      ) {
         shownRatingRef.current = true;
         setTimeout(() => setShowRate(true), 1200);
       }
@@ -749,24 +790,29 @@ export default function LiveTracking() {
     const diff = touchStartX.current - e.changedTouches[0].clientX;
     touchStartX.current = null;
     if (Math.abs(diff) < 50) return; // too small, not a swipe
-    if (diff > 0) goToOrder(currentIndex + 1);  // swipe left → next
-    else goToOrder(currentIndex - 1);            // swipe right → prev
+    if (diff > 0)
+      goToOrder(currentIndex + 1); // swipe left → next
+    else goToOrder(currentIndex - 1); // swipe right → prev
   }
 
-  if (err) return (
-    <div className="flex flex-col items-center justify-center py-24 gap-3 text-rose-500">
-      <div className="text-4xl">😕</div>
-      <div className="text-sm">{err}</div>
-      <Link to="/request" className="btn-secondary text-sm mt-2">← Back to Request</Link>
-    </div>
-  );
+  if (err)
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-rose-500">
+        <div className="text-4xl">😕</div>
+        <div className="text-sm">{err}</div>
+        <Link to="/request" className="btn-secondary text-sm mt-2">
+          ← Back to Request
+        </Link>
+      </div>
+    );
 
-  if (!req) return (
-    <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
-      <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
-      <span className="text-sm">Loading your order…</span>
-    </div>
-  );
+  if (!req)
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+        <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
+        <span className="text-sm">Loading your order…</span>
+      </div>
+    );
 
   const hasMultiple = allOrders.length > 1;
 
@@ -778,7 +824,10 @@ export default function LiveTracking() {
     >
       {/* Back + order nav */}
       <div className="flex items-center justify-between pt-2">
-        <Link to="/request" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand">
+        <Link
+          to="/request"
+          className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand"
+        >
           <ChevronLeft size={16} /> Back to Request
         </Link>
 
@@ -798,9 +847,7 @@ export default function LiveTracking() {
                   key={o.id}
                   onClick={() => goToOrder(i)}
                   className={`h-2 rounded-full transition-all ${
-                    i === currentIndex
-                      ? 'w-5 bg-brand'
-                      : 'w-2 bg-slate-300 hover:bg-slate-400'
+                    i === currentIndex ? 'w-5 bg-brand' : 'w-2 bg-slate-300 hover:bg-slate-400'
                   }`}
                 />
               ))}
@@ -834,7 +881,10 @@ export default function LiveTracking() {
         >
           <OrderView
             req={req}
-            onRate={(rid) => { setRateId(rid); setShowRate(true); }}
+            onRate={(rid) => {
+              setRateId(rid);
+              setShowRate(true);
+            }}
             onRefresh={load}
           />
         </motion.div>
@@ -845,7 +895,11 @@ export default function LiveTracking() {
         {showRate && (
           <RatingSheet
             requestId={rateId || id}
-            onDone={() => { setShowRate(false); setRateId(null); load(); }}
+            onDone={() => {
+              setShowRate(false);
+              setRateId(null);
+              load();
+            }}
           />
         )}
       </AnimatePresence>
@@ -857,7 +911,10 @@ export default function LiveTracking() {
             req={req}
             queueAhead={Math.max(0, queueAhead - 1)}
             onDismiss={() => setShowConfirm(false)}
-            onCancelled={() => { setShowConfirm(false); load(); }}
+            onCancelled={() => {
+              setShowConfirm(false);
+              load();
+            }}
           />
         )}
       </AnimatePresence>

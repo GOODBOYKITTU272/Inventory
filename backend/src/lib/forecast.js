@@ -29,7 +29,7 @@ function getMondayIST(date = new Date()) {
 function getNextMondayIST() {
   const now = new Date();
   const thisMonday = getMondayIST(now);
-  const d = new Date(thisMonday + 'T00:00:00Z');
+  const d = new Date(`${thisMonday}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 7);
   return d.toISOString().slice(0, 10);
 }
@@ -55,7 +55,7 @@ function weightedAvg(weekEntries) {
   // Sort ascending by Monday date string so most-recent are last
   const sorted = [...weekEntries].sort((a, b) => a[0].localeCompare(b[0]));
   const recentVals = sorted.slice(-2).map(([, v]) => v);
-  const olderVals  = sorted.slice(0, -2).map(([, v]) => v);
+  const olderVals = sorted.slice(0, -2).map(([, v]) => v);
 
   const recentAvg = recentVals.reduce((s, v) => s + v, 0) / recentVals.length;
 
@@ -106,12 +106,12 @@ export async function computeForecasts(supabaseAdmin) {
 
   // ── 3. Compute forecast per product ─────────────────────────────────────
   const weekOf = getNextMondayIST();
-  const rows   = [];
+  const rows = [];
 
   for (const p of products) {
     try {
       const productTxns = txnsByProduct[p.product_id] || [];
-      const buckets     = bucketByWeek(productTxns);
+      const buckets = bucketByWeek(productTxns);
       const weekEntries = Object.entries(buckets); // [ [monday, total], ... ]
       const weeksOfData = weekEntries.length;
 
@@ -122,15 +122,15 @@ export async function computeForecasts(supabaseAdmin) {
       if (weeksOfData >= 2) {
         // Sufficient history → weighted average
         const simpleAvg = weekEntries.reduce((s, [, v]) => s + v, 0) / weeksOfData;
-        avg_weekly     = Number(simpleAvg.toFixed(2));
+        avg_weekly = Number(simpleAvg.toFixed(2));
         predicted_next = Number((weightedAvg(weekEntries) || simpleAvg).toFixed(2));
-        basis          = 'history';
+        basis = 'history';
       } else if (p.daily_usage != null && Number(p.daily_usage) > 0) {
         // Fall back to leadership-set daily_usage (5 working days Mon–Fri)
         const weeklyEstimate = Number(p.daily_usage) * 5;
-        avg_weekly     = Number(weeklyEstimate.toFixed(2));
+        avg_weekly = Number(weeklyEstimate.toFixed(2));
         predicted_next = avg_weekly;
-        basis          = 'daily_usage_fallback';
+        basis = 'daily_usage_fallback';
       } else {
         // No data at all — skip this product
         continue;
@@ -145,13 +145,13 @@ export async function computeForecasts(supabaseAdmin) {
       }
 
       rows.push({
-        product_id:     p.product_id,
-        week_of:        weekOf,
-        avg_weekly:     avg_weekly,
+        product_id: p.product_id,
+        week_of: weekOf,
+        avg_weekly: avg_weekly,
         predicted_next: predicted_next,
         suggested_order: Number(suggested_order.toFixed(2)),
         basis,
-        weeks_of_data:  weeksOfData,
+        weeks_of_data: weeksOfData,
       });
     } catch (e) {
       console.error(`[Forecast] error for product ${p.product_id}:`, e.message);

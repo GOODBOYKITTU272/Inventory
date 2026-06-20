@@ -1,7 +1,13 @@
 // Thin OpenAI client wrapper. Uses fetch directly so we don't need the npm package.
 const API = 'https://api.openai.com/v1';
 
-export async function chatCompletion({ system, user, model = 'gpt-4o-mini', temperature = 0.4, responseFormat }) {
+export async function chatCompletion({
+  system,
+  user,
+  model = 'gpt-4o-mini',
+  temperature = 0.4,
+  responseFormat,
+}) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
     throw new Error('OPENAI_API_KEY missing in backend/.env');
@@ -11,7 +17,7 @@ export async function chatCompletion({ system, user, model = 'gpt-4o-mini', temp
     temperature,
     messages: [
       { role: 'system', content: system },
-      { role: 'user',   content: user },
+      { role: 'user', content: user },
     ],
   };
   if (responseFormat) body.response_format = { type: responseFormat };
@@ -30,11 +36,17 @@ export async function chatCompletion({ system, user, model = 'gpt-4o-mini', temp
   const data = await res.json();
   return {
     content: data.choices?.[0]?.message?.content?.trim() || '',
-    model:   data.model,
-    usage:   data.usage || {},
+    model: data.model,
+    usage: data.usage || {},
   };
 }
-export async function visionCompletion({ system, user, imageUrl, model = 'gpt-4o', temperature = 0.1 }) {
+export async function visionCompletion({
+  system,
+  user,
+  imageUrl,
+  model = 'gpt-4o',
+  temperature = 0.1,
+}) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error('OPENAI_API_KEY missing');
 
@@ -67,8 +79,8 @@ export async function visionCompletion({ system, user, imageUrl, model = 'gpt-4o
   const data = await res.json();
   return {
     content: data.choices?.[0]?.message?.content?.trim() || '',
-    model:   data.model,
-    usage:   data.usage || {},
+    model: data.model,
+    usage: data.usage || {},
   };
 }
 

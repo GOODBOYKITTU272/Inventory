@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '../lib/api.js';
 import WakingUp from '../components/WakingUp.jsx';
+import { api } from '../lib/api.js';
 
 const INR = (n) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
-    .format(Number(n) || 0);
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(Number(n) || 0);
 
 export default function DailyUpdate() {
   const [items, setItems] = useState(null);
-  const [edits, setEdits] = useState({});       // { [productId]: { stock, unit_cost } }
-  const [err,   setErr]   = useState('');
+  const [edits, setEdits] = useState({}); // { [productId]: { stock, unit_cost } }
+  const [err, setErr] = useState('');
   const [okMsg, setOkMsg] = useState('');
-  const [busy,  setBusy]  = useState(false);
+  const [busy, setBusy] = useState(false);
 
   async function load() {
     setErr('');
@@ -21,7 +24,7 @@ export default function DailyUpdate() {
       const init = {};
       for (const r of data) {
         init[r.product_id] = {
-          stock:     String(r.current_stock ?? 0),
+          stock: String(r.current_stock ?? 0),
           unit_cost: String(r.cost_per_unit ?? 0),
         };
       }
@@ -31,7 +34,9 @@ export default function DailyUpdate() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const grouped = useMemo(() => {
     if (!items) return {};
@@ -50,17 +55,19 @@ export default function DailyUpdate() {
   }
 
   async function submit() {
-    setBusy(true); setErr(''); setOkMsg('');
+    setBusy(true);
+    setErr('');
+    setOkMsg('');
     try {
       const updates = items
         .map((r) => {
           const e = edits[r.product_id] || {};
           const nextStock = Number(e.stock);
-          const nextCost  = Number(e.unit_cost);
+          const nextCost = Number(e.unit_cost);
           if (Number.isNaN(nextStock)) return null;
 
           const stockChanged = nextStock !== Number(r.current_stock);
-          const costChanged  = !Number.isNaN(nextCost) && nextCost !== Number(r.cost_per_unit);
+          const costChanged = !Number.isNaN(nextCost) && nextCost !== Number(r.cost_per_unit);
 
           if (!stockChanged && !costChanged) return null;
 
@@ -80,9 +87,11 @@ export default function DailyUpdate() {
         `logged ${result.transactions_logged} transaction${result.transactions_logged === 1 ? '' : 's'}`,
       ];
       if (result.prices_updated) {
-        msgParts.push(`refreshed ${result.prices_updated} price${result.prices_updated === 1 ? '' : 's'}`);
+        msgParts.push(
+          `refreshed ${result.prices_updated} price${result.prices_updated === 1 ? '' : 's'}`
+        );
       }
-      setOkMsg(msgParts.join(', ') + '.');
+      setOkMsg(`${msgParts.join(', ')}.`);
       await load();
     } catch (e) {
       setErr(e.message);
@@ -92,15 +101,16 @@ export default function DailyUpdate() {
   }
 
   if (err && !items) return <div className="text-rose-600 p-4">{err}</div>;
-  if (!items) return (
-    <>
-      <WakingUp loading={!items} />
-      <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
-        <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
-        <span className="text-sm">Loading inventory…</span>
-      </div>
-    </>
-  );
+  if (!items)
+    return (
+      <>
+        <WakingUp loading={!items} />
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+          <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
+          <span className="text-sm">Loading inventory…</span>
+        </div>
+      </>
+    );
 
   return (
     <div className="space-y-6">
@@ -108,8 +118,8 @@ export default function DailyUpdate() {
         <div>
           <h1 className="text-2xl font-semibold">Daily stock update</h1>
           <p className="text-sm text-slate-500">
-            Count what is in the pantry, type it in. If today is a delivery, edit the unit price
-            to whatever you paid - the master price refreshes automatically.
+            Count what is in the pantry, type it in. If today is a delivery, edit the unit price to
+            whatever you paid - the master price refreshes automatically.
           </p>
         </div>
         <button className="btn-primary" disabled={busy} onClick={submit}>
@@ -129,7 +139,7 @@ export default function DailyUpdate() {
             {rows.map((r) => {
               const e = edits[r.product_id] || {};
               const stockChanged = Number(e.stock) !== Number(r.current_stock);
-              const costChanged  = Number(e.unit_cost) !== Number(r.cost_per_unit);
+              const costChanged = Number(e.unit_cost) !== Number(r.cost_per_unit);
               const changed = stockChanged || costChanged;
 
               return (
@@ -152,7 +162,9 @@ export default function DailyUpdate() {
                     <button
                       type="button"
                       className="btn-secondary px-2.5 py-1 text-xs"
-                      onClick={() => setStock(r.product_id, String(Math.max(0, Number(e.stock || 0) - 1)))}
+                      onClick={() =>
+                        setStock(r.product_id, String(Math.max(0, Number(e.stock || 0) - 1)))
+                      }
                     >
                       −
                     </button>
@@ -175,7 +187,10 @@ export default function DailyUpdate() {
 
                   {/* cost row */}
                   <label className="block text-[11px] uppercase tracking-wide text-slate-400 mt-3 mb-1">
-                    Unit price (₹) {costChanged && <span className="text-amber-600 normal-case">- price will update master</span>}
+                    Unit price (₹){' '}
+                    {costChanged && (
+                      <span className="text-amber-600 normal-case">- price will update master</span>
+                    )}
                   </label>
                   <input
                     type="number"

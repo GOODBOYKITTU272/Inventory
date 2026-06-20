@@ -24,7 +24,9 @@ router.get('/', async (req, res, next) => {
     const { data, error } = await q;
     if (error) throw error;
     res.json(data);
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // GET /api/products/:id
@@ -37,7 +39,9 @@ router.get('/:id', async (req, res, next) => {
       .single();
     if (error) return res.status(404).json({ error: error.message });
     res.json(data);
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // POST /api/products — create
@@ -55,7 +59,9 @@ router.post('/', requireRole('facility_manager', 'leadership'), async (req, res,
     });
 
     res.status(201).json(data);
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // PATCH /api/products/:id — update
@@ -70,7 +76,9 @@ router.patch('/:id', requireRole('facility_manager', 'leadership'), async (req, 
       .single();
     if (error) throw error;
     res.json(data);
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // DELETE — soft-delete (mark inactive). Hard delete intentionally omitted.
@@ -82,7 +90,9 @@ router.delete('/:id', requireRole('facility_manager', 'leadership'), async (req,
       .eq('id', req.params.id);
     if (error) throw error;
     res.status(204).end();
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 export default router;

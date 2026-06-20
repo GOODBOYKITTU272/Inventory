@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { supabaseAdmin } from '../lib/supabase.js';
 import { isDirectoryUser, isGraphConfigured } from '../lib/microsoftGraph.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 const router = Router();
 const ALLOWED_DOMAIN = 'applywizz.ai';
@@ -32,13 +32,11 @@ async function ensureProfile(userId, email, displayName) {
   if (readErr) throw readErr;
   if (existing) return;
 
-  const { error: insertErr } = await supabaseAdmin
-    .from('profiles')
-    .insert({
-      id: userId,
-      full_name: displayName || displayNameFromEmail(email),
-      role: 'staff',
-    });
+  const { error: insertErr } = await supabaseAdmin.from('profiles').insert({
+    id: userId,
+    full_name: displayName || displayNameFromEmail(email),
+    role: 'staff',
+  });
 
   if (insertErr && insertErr.code !== '23505') throw insertErr;
 }
@@ -55,8 +53,10 @@ router.post('/start-email-login', async (req, res, next) => {
     const existingUser = await findUserByEmail(email);
     if (existingUser) await ensureProfile(existingUser.id, email);
 
-    const origin = (req.get('origin') || process.env.ALLOWED_ORIGINS?.split(',')[0] || '')
-      .replace(/\/$/, '');
+    const origin = (req.get('origin') || process.env.ALLOWED_ORIGINS?.split(',')[0] || '').replace(
+      /\/$/,
+      ''
+    );
     const { error: linkErr } = await supabaseAdmin.auth.signInWithOtp({
       email,
       options: {
@@ -100,7 +100,9 @@ router.post('/verify-email', async (req, res, next) => {
     } catch (e) {
       // Directory lookup error → deny (fail closed), never allow on error.
       console.error('[Auth] directory lookup failed:', e.message);
-      return res.status(503).json({ error: 'Could not verify your account right now. Please try again.' });
+      return res
+        .status(503)
+        .json({ error: 'Could not verify your account right now. Please try again.' });
     }
 
     if (!dir.exists) {

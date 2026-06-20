@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
-import { useAuth } from '../hooks/useAuth.js';
 import WakingUp from '../components/WakingUp.jsx';
+import { useAuth } from '../hooks/useAuth.js';
+import { api } from '../lib/api.js';
 
 /* ── IST helpers ─────────────────────────────────────────────────── */
 const IST = { timeZone: 'Asia/Kolkata' };
@@ -11,11 +11,23 @@ function getIST() {
 }
 
 function formatTime(d) {
-  return d.toLocaleTimeString('en-IN', { ...IST, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  return d.toLocaleTimeString('en-IN', {
+    ...IST,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
 }
 
 function formatDate(d) {
-  return d.toLocaleDateString('en-IN', { ...IST, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return d.toLocaleDateString('en-IN', {
+    ...IST,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 /* ── IST Clock strip ─────────────────────────────────────────────── */
@@ -42,7 +54,20 @@ function ISTClock() {
 
 /* ── Mini Calendar ───────────────────────────────────────────────── */
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 function MiniCalendar({ today }) {
   const [view, setView] = useState(() => {
@@ -56,9 +81,7 @@ function MiniCalendar({ today }) {
 
   const todayIST = getIST();
   const isToday = (d) =>
-    todayIST.getFullYear() === year &&
-    todayIST.getMonth() === month &&
-    todayIST.getDate() === d;
+    todayIST.getFullYear() === year && todayIST.getMonth() === month && todayIST.getDate() === d;
 
   const cells = [];
   for (let i = 0; i < firstDay; i++) cells.push(null);
@@ -80,24 +103,31 @@ function MiniCalendar({ today }) {
   return (
     <div className="text-xs select-none shrink-0">
       <div className="flex items-center justify-between gap-3 mb-1">
-        <button onClick={prev} className="text-slate-400 hover:text-brand px-1">‹</button>
+        <button onClick={prev} className="text-slate-400 hover:text-brand px-1">
+          ‹
+        </button>
         <span className="font-semibold text-slate-700 whitespace-nowrap">
           {MONTHS[month]} {year}
         </span>
-        <button onClick={next} className="text-slate-400 hover:text-brand px-1">›</button>
+        <button onClick={next} className="text-slate-400 hover:text-brand px-1">
+          ›
+        </button>
       </div>
       <div className="grid grid-cols-7 gap-y-0.5">
         {DAYS.map((d) => (
-          <div key={d} className="text-center text-[10px] text-slate-400 font-semibold py-0.5">{d}</div>
+          <div key={d} className="text-center text-[10px] text-slate-400 font-semibold py-0.5">
+            {d}
+          </div>
         ))}
         {cells.map((d, i) => (
           <div
             key={i}
             className={`text-center py-0.5 rounded font-medium ${
-              d === null ? '' :
-              isToday(d)
-                ? 'bg-brand text-white rounded-full'
-                : 'text-slate-600 hover:bg-slate-100'
+              d === null
+                ? ''
+                : isToday(d)
+                  ? 'bg-brand text-white rounded-full'
+                  : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             {d || ''}
@@ -111,10 +141,10 @@ function MiniCalendar({ today }) {
 /* ── Status pills ────────────────────────────────────────────────── */
 function StatCard({ label, value, tone = 'slate' }) {
   const tones = {
-    slate:  'bg-slate-50 text-slate-700',
-    green:  'bg-emerald-50 text-emerald-700',
-    amber:  'bg-amber-50 text-amber-700',
-    rose:   'bg-rose-50 text-rose-700',
+    slate: 'bg-slate-50 text-slate-700',
+    green: 'bg-emerald-50 text-emerald-700',
+    amber: 'bg-amber-50 text-amber-700',
+    rose: 'bg-rose-50 text-rose-700',
     orange: 'bg-orange-50 text-orange-700',
   };
   return (
@@ -145,11 +175,12 @@ function StatusPill({ status }) {
 /* ── AI Summary ──────────────────────────────────────────────────── */
 function AISummaryCard() {
   const [data, setData] = useState(null);
-  const [err, setErr]   = useState('');
+  const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function load(refresh = false) {
-    setErr(''); setBusy(true);
+    setErr('');
+    setBusy(true);
     try {
       const r = await api.aiSummary(refresh);
       setData(r);
@@ -160,7 +191,9 @@ function AISummaryCard() {
     }
   }
 
-  useEffect(() => { load(false); }, []);
+  useEffect(() => {
+    load(false);
+  }, [load]);
 
   return (
     <div className="card">
@@ -201,24 +234,28 @@ function AISummaryCard() {
 export default function Dashboard() {
   const { profile } = useAuth();
   const [data, setData] = useState(null);
-  const [err, setErr]   = useState('');
+  const [err, setErr] = useState('');
 
   useEffect(() => {
-    api.dashboard().then(setData).catch((e) => setErr(e.message));
+    api
+      .dashboard()
+      .then(setData)
+      .catch((e) => setErr(e.message));
   }, []);
 
   const canSeeAI = profile && ['leadership', 'finance'].includes(profile.role);
 
   if (err) return <div className="text-rose-600 p-4">{err}</div>;
-  if (!data) return (
-    <>
-      <WakingUp loading={!data} />
-      <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
-        <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
-        <span className="text-sm">Loading dashboard…</span>
-      </div>
-    </>
-  );
+  if (!data)
+    return (
+      <>
+        <WakingUp loading={!data} />
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+          <div className="w-8 h-8 border-2 border-slate-200 border-t-brand rounded-full animate-spin" />
+          <span className="text-sm">Loading dashboard…</span>
+        </div>
+      </>
+    );
 
   return (
     <div className="space-y-6">
@@ -233,12 +270,12 @@ export default function Dashboard() {
       {canSeeAI && <AISummaryCard />}
 
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        <StatCard label="Products"      value={data.summary.total_products} />
-        <StatCard label="In stock"      value={data.summary.in_stock} tone="green" />
-        <StatCard label="Low"           value={data.summary.low} tone="amber" />
-        <StatCard label="Out of stock"  value={data.summary.out_of_stock} tone="rose" />
+        <StatCard label="Products" value={data.summary.total_products} />
+        <StatCard label="In stock" value={data.summary.in_stock} tone="green" />
+        <StatCard label="Low" value={data.summary.low} tone="amber" />
+        <StatCard label="Out of stock" value={data.summary.out_of_stock} tone="rose" />
         <StatCard label="Expiring soon" value={data.summary.expiring_soon} tone="orange" />
-        <StatCard label="Expired"       value={data.summary.expired} tone="rose" />
+        <StatCard label="Expired" value={data.summary.expired} tone="rose" />
       </div>
 
       <div className="card">
@@ -263,7 +300,9 @@ export default function Dashboard() {
                   <td className="py-2 pr-3 capitalize text-slate-500">
                     {r.category?.replace('_', ' ')}
                   </td>
-                  <td className="py-2 pr-3">{r.current_stock ?? 0} {r.unit}</td>
+                  <td className="py-2 pr-3">
+                    {r.current_stock ?? 0} {r.unit}
+                  </td>
                   <td className="py-2 pr-3 text-slate-500">{r.min_threshold ?? 0}</td>
                   <td className="py-2 pr-3 text-slate-500">
                     {r.days_of_cover != null ? (
@@ -277,7 +316,9 @@ export default function Dashboard() {
                       '-'
                     )}
                   </td>
-                  <td className="py-2 pr-3"><StatusPill status={r.stock_status} /></td>
+                  <td className="py-2 pr-3">
+                    <StatusPill status={r.stock_status} />
+                  </td>
                   <td className="py-2 pr-3 text-slate-500">
                     {r.expiry_date ? (
                       <span className="flex items-center gap-2">

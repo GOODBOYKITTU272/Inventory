@@ -8,7 +8,9 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "lint": "echo 'add eslint if desired' && exit 0",
+    "lint": "biome check src",
+    "lint:fix": "biome check --write src",
+    "format": "biome format --write src",
     "test": "node --test tests"
   },
   "dependencies": {
@@ -25,5 +27,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.0"
   }
 }

@@ -24,7 +24,10 @@ const VISION_USER =
 
 /** Strip ```json fences the model sometimes adds. */
 function cleanJson(content) {
-  return content.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+  return content
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
 }
 
 /**

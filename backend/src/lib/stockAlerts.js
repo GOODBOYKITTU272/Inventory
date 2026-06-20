@@ -7,8 +7,8 @@ async function sendTelegramMessage(botToken, chatId, text) {
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        parse_mode: 'Markdown'
-      })
+        parse_mode: 'Markdown',
+      }),
     });
     if (!res.ok) {
       const txt = await res.text();
@@ -54,7 +54,7 @@ export async function checkAndNotifyLowStock(supabaseAdmin, botToken) {
     if (totalRemoved > 0) {
       return totalRemoved / 5; // Average over 5 working days
     }
-    
+
     // Fallbacks
     if (n.includes('coffee beans') || n.includes('coffee')) return 0.6; // 600g (in kg)
     if (n.includes('milk')) return 4.0; // 4 liters
@@ -81,7 +81,7 @@ export async function checkAndNotifyLowStock(supabaseAdmin, botToken) {
     .select('telegram_chat_id, profiles!inner(role)')
     .eq('profiles.role', 'leadership');
 
-  const chatIds = mappings?.map(m => m.telegram_chat_id).filter(Boolean) || [];
+  const chatIds = mappings?.map((m) => m.telegram_chat_id).filter(Boolean) || [];
   if (chatIds.length === 0) return;
 
   // 4. Process each item
@@ -91,7 +91,7 @@ export async function checkAndNotifyLowStock(supabaseAdmin, botToken) {
     const stockVal = Number(item.current_stock);
     const minVal = Number(item.min_threshold);
 
-    const isBelowHalf = stockVal <= (minVal / 2);
+    const isBelowHalf = stockVal <= minVal / 2;
     const isBelowNextShift = stockVal < expectedShiftUsage;
 
     // Check if alert conditions met
@@ -133,7 +133,10 @@ export async function checkAndNotifyLowStock(supabaseAdmin, botToken) {
 
       // Format usage labels
       let usageDetail = `${dailyUsage} ${item.unit || 'units'}/day`;
-      if (item.product_name.toLowerCase().includes('coffee beans') || item.product_name.toLowerCase().includes('coffee')) {
+      if (
+        item.product_name.toLowerCase().includes('coffee beans') ||
+        item.product_name.toLowerCase().includes('coffee')
+      ) {
         usageDetail = `${Math.round(dailyUsage * 1000)}g/day (approx ${Math.round(dailyUsage * 140)} cups)`;
       } else if (item.product_name.toLowerCase().includes('milk')) {
         usageDetail = `${dailyUsage}L/day (approx ${Math.round(dailyUsage * 5)} servings)`;
@@ -141,7 +144,7 @@ export async function checkAndNotifyLowStock(supabaseAdmin, botToken) {
 
       let header = `⚠️ *Low Stock Alert*`;
       let reasonText = `📦 *${item.product_name}* is going less than ${minVal / 2} ${item.unit || 'units'}.`;
-      
+
       if (isBelowNextShift && !isBelowHalf) {
         header = `⚠️ *Upcoming Shift Warning*`;
         reasonText = `📦 *${item.product_name}* stock (${stockVal} ${item.unit}) is insufficient for the upcoming *${nextShiftName} Shift* (starts at ${nextShiftStart}) which expects to consume *${expectedShiftUsage.toFixed(1)} ${item.unit}*.`;
@@ -149,22 +152,23 @@ export async function checkAndNotifyLowStock(supabaseAdmin, botToken) {
         reasonText += ` Additionally, stock is insufficient for the upcoming *${nextShiftName} Shift* (needs *${expectedShiftUsage.toFixed(1)} ${item.unit}*).`;
       }
 
-      const msg = `${header}\n` +
-                  `${reasonText}\n\n` +
-                  `*Current stock:* ${stockVal} ${item.unit || 'units'}\n` +
-                  `*Daily usage:* ${usageDetail}\n` +
-                  `*Estimated remaining time:* ${daysLeft} days\n\n` +
-                  `👉 *Please order more soon!*`;
+      const msg =
+        `${header}\n` +
+        `${reasonText}\n\n` +
+        `*Current stock:* ${stockVal} ${item.unit || 'units'}\n` +
+        `*Daily usage:* ${usageDetail}\n` +
+        `*Estimated remaining time:* ${daysLeft} days\n\n` +
+        `👉 *Please order more soon!*`;
 
       // Dispatch to all leadership chat ids
-      await Promise.allSettled(chatIds.map(cid => sendTelegramMessage(botToken, cid, msg)));
+      await Promise.allSettled(chatIds.map((cid) => sendTelegramMessage(botToken, cid, msg)));
 
       // Log notification
       await supabaseAdmin.from('notification_logs').insert({
         notification_type: 'low_stock_alert',
         title: alertTitle,
         message: `Current stock: ${item.current_stock} ${item.unit}. Est remaining time: ${daysLeft} days`,
-        sent_at: new Date().toISOString()
+        sent_at: new Date().toISOString(),
       });
     }
   }
@@ -215,7 +219,9 @@ export async function sendDailyStockDigest(supabaseAdmin, botToken) {
   const sorted = [...rows].sort((a, b) => order[a.cover_status] - order[b.cover_status]);
 
   const dateLabel = new Date().toLocaleDateString('en-GB', {
-    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long',
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'long',
   });
 
   const lines = sorted.map((r) => {
@@ -228,7 +234,8 @@ export async function sendDailyStockDigest(supabaseAdmin, botToken) {
       return `🟡 *${r.product_name}* — ${r.days_of_cover} days left (order soon)`;
     }
     // waste_risk
-    const usable = r.max_safe_order != null ? `, only ~${r.max_safe_order} usable before expiry` : '';
+    const usable =
+      r.max_safe_order != null ? `, only ~${r.max_safe_order} usable before expiry` : '';
     return `⚠️ *${r.product_name}* — ${r.current_stock} ${unit} in stock${usable}`;
   });
 

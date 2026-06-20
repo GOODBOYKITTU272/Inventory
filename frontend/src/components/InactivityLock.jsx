@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Unlock, ShieldCheck, AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase.js';
+import { AnimatePresence, motion } from 'framer-motion';
+import { AlertCircle, Lock, ShieldCheck, Unlock } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
+import { supabase } from '../lib/supabase.js';
 
 const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 
@@ -12,16 +12,16 @@ export default function InactivityLock({ children }) {
   const userName = profile?.preferred_name || profile?.full_name;
 
   // 'idle' | 'locked' | 'verify'
-  const [step, setStep]         = useState('idle');
+  const [step, setStep] = useState('idle');
   const [totpCode, setTotpCode] = useState('');
-  const [error, setError]       = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   // Stored between challenge and verify
-  const factorIdRef    = useRef(null);
+  const factorIdRef = useRef(null);
   const challengeIdRef = useRef(null);
-  const timerRef       = useRef(null);
-  const inputRef       = useRef(null);
+  const timerRef = useRef(null);
+  const inputRef = useRef(null);
 
   const locked = step === 'locked' || step === 'verify';
 
@@ -34,10 +34,10 @@ export default function InactivityLock({ children }) {
 
   useEffect(() => {
     const events = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'];
-    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+    events.forEach((e) => window.addEventListener(e, resetTimer, { passive: true }));
     resetTimer();
     return () => {
-      events.forEach(e => window.removeEventListener(e, resetTimer));
+      events.forEach((e) => window.removeEventListener(e, resetTimer));
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [resetTimer]);
@@ -55,12 +55,11 @@ export default function InactivityLock({ children }) {
     setLoading(true);
 
     try {
-      const { data: factorsData, error: factorsErr } =
-        await supabase.auth.mfa.listFactors();
+      const { data: factorsData, error: factorsErr } = await supabase.auth.mfa.listFactors();
 
       if (factorsErr) throw factorsErr;
 
-      const totp = factorsData?.totp?.find(f => f.status === 'verified');
+      const totp = factorsData?.totp?.find((f) => f.status === 'verified');
 
       if (!totp) {
         // No enrolled TOTP factor — fallback unlock (avoids permanent lockout)
@@ -71,8 +70,9 @@ export default function InactivityLock({ children }) {
 
       factorIdRef.current = totp.id;
 
-      const { data: challengeData, error: challengeErr } =
-        await supabase.auth.mfa.challenge({ factorId: totp.id });
+      const { data: challengeData, error: challengeErr } = await supabase.auth.mfa.challenge({
+        factorId: totp.id,
+      });
 
       if (challengeErr) throw challengeErr;
 
@@ -97,9 +97,9 @@ export default function InactivityLock({ children }) {
 
     try {
       const { error: verifyErr } = await supabase.auth.mfa.verify({
-        factorId:    factorIdRef.current,
+        factorId: factorIdRef.current,
         challengeId: challengeIdRef.current,
-        code:        totpCode,
+        code: totpCode,
       });
 
       if (verifyErr) throw verifyErr;
@@ -120,7 +120,7 @@ export default function InactivityLock({ children }) {
     setStep('idle');
     setTotpCode('');
     setError('');
-    factorIdRef.current    = null;
+    factorIdRef.current = null;
     challengeIdRef.current = null;
     resetTimer();
   }
@@ -154,10 +154,11 @@ export default function InactivityLock({ children }) {
                 animate={{ y: [0, -8, 0] }}
                 transition={{ duration: 2, repeat: Infinity }}
               >
-                {step === 'verify'
-                  ? <ShieldCheck className="mx-auto text-brand" size={64} />
-                  : <Lock className="mx-auto text-white/80" size={64} />
-                }
+                {step === 'verify' ? (
+                  <ShieldCheck className="mx-auto text-brand" size={64} />
+                ) : (
+                  <Lock className="mx-auto text-white/80" size={64} />
+                )}
               </motion.div>
 
               {/* ── LOCKED step ── */}
@@ -175,10 +176,11 @@ export default function InactivityLock({ children }) {
                     disabled={loading}
                     className="bg-brand hover:bg-brand/90 disabled:opacity-50 text-white font-bold py-4 px-10 rounded-2xl text-base flex items-center gap-2 mx-auto transition-all active:scale-95 shadow-lg shadow-brand/30"
                   >
-                    {loading
-                      ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      : <Unlock size={18} />
-                    }
+                    {loading ? (
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Unlock size={18} />
+                    )}
                     {loading ? 'Starting…' : 'Tap to Unlock'}
                   </button>
 
@@ -206,7 +208,7 @@ export default function InactivityLock({ children }) {
                     maxLength={6}
                     autoComplete="one-time-code"
                     value={totpCode}
-                    onChange={e => {
+                    onChange={(e) => {
                       const val = e.target.value.replace(/\D/g, '').slice(0, 6);
                       setTotpCode(val);
                       setError('');
@@ -228,7 +230,11 @@ export default function InactivityLock({ children }) {
 
                   <div className="flex gap-3 justify-center">
                     <button
-                      onClick={() => { setStep('locked'); setTotpCode(''); setError(''); }}
+                      onClick={() => {
+                        setStep('locked');
+                        setTotpCode('');
+                        setError('');
+                      }}
                       className="px-5 py-2.5 rounded-xl text-white/60 hover:text-white text-sm transition-colors"
                     >
                       Back
@@ -238,16 +244,16 @@ export default function InactivityLock({ children }) {
                       disabled={loading || totpCode.length !== 6}
                       className="bg-brand hover:bg-brand/90 disabled:opacity-40 text-white font-bold py-2.5 px-8 rounded-xl text-sm flex items-center gap-2 transition-all active:scale-95"
                     >
-                      {loading
-                        ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                        : <ShieldCheck size={16} />
-                      }
+                      {loading ? (
+                        <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <ShieldCheck size={16} />
+                      )}
                       {loading ? 'Verifying…' : 'Verify'}
                     </button>
                   </div>
                 </>
               )}
-
             </motion.div>
           </motion.div>
         )}

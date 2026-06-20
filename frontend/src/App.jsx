@@ -1,31 +1,30 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { supabase } from './lib/supabase.js';
+import { useEffect, useState } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import InactivityLock from './components/InactivityLock.jsx';
 import Layout from './components/Layout.jsx';
-import LoginPage from './pages/Login.jsx';
-import DashboardPage from './pages/Dashboard.jsx';
-import DailyUpdatePage from './pages/DailyUpdate.jsx';
-import FinancePage from './pages/Finance.jsx';
-import StaffViewPage from './pages/StaffView.jsx';
+import { useAuth } from './hooks/useAuth.js';
+import { supabase } from './lib/supabase.js';
 import AdminPage from './pages/Admin.jsx';
-import RequestSubmitPage from './pages/RequestSubmit.jsx';
-import CafeteriaPage from './pages/Cafeteria.jsx';
-import RequestQueuePage from './pages/RequestQueue.jsx';
-import LiveTrackingPage from './pages/LiveTracking.jsx';
-import OrderHistoryPage from './pages/OrderHistory.jsx';
-import BillUploadPage from './pages/BillUpload.jsx';
-import BillApprovalPage from './pages/BillApproval.jsx';
-import PreferencesPage from './pages/Preferences.jsx';
 import AuditLogPage from './pages/AuditLog.jsx';
+import BillApprovalPage from './pages/BillApproval.jsx';
+import BillUploadPage from './pages/BillUpload.jsx';
+import CafeteriaPage from './pages/Cafeteria.jsx';
 import ConnectionsPage from './pages/Connections.jsx';
-import OnboardingPage from './pages/Onboarding.jsx';
+import DailyUpdatePage from './pages/DailyUpdate.jsx';
+import DashboardPage from './pages/Dashboard.jsx';
+import FinancePage from './pages/Finance.jsx';
+import LiveTrackingPage from './pages/LiveTracking.jsx';
+import LoginPage from './pages/Login.jsx';
+import ManualPurchasesPage from './pages/ManualPurchases.jsx';
 import MealBookingPage from './pages/MealBooking.jsx';
 import MealHistoryPage from './pages/MealHistory.jsx';
-import MyMealBoxPage from './pages/MyMealBox.jsx';
 import MealTokenDashboardPage from './pages/MealTokenDashboard.jsx';
-import ManualPurchasesPage from './pages/ManualPurchases.jsx';
-import InactivityLock from './components/InactivityLock.jsx';
-import { useAuth } from './hooks/useAuth.js';
+import MyMealBoxPage from './pages/MyMealBox.jsx';
+import OnboardingPage from './pages/Onboarding.jsx';
+import OrderHistoryPage from './pages/OrderHistory.jsx';
+import PreferencesPage from './pages/Preferences.jsx';
+import RequestQueuePage from './pages/RequestQueue.jsx';
+import StaffViewPage from './pages/StaffView.jsx';
 
 function Protected({ children, allow }) {
   const { session, profile, loading, aal } = useAuth();
@@ -52,20 +51,21 @@ function RoleHome() {
     }
   }, [loading, session, profile, signingOut]);
 
-  if (loading || signingOut) return (
-    <div className="min-h-screen grid place-items-center bg-white">
-      <div className="w-6 h-6 rounded-full border-2 border-brand border-t-transparent animate-spin" />
-    </div>
-  );
+  if (loading || signingOut)
+    return (
+      <div className="min-h-screen grid place-items-center bg-white">
+        <div className="w-6 h-6 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+      </div>
+    );
   if (!session) return <Navigate to="/login" replace />;
-  if (!profile)  return <Navigate to="/login" replace />;
+  if (!profile) return <Navigate to="/login" replace />;
 
   const roleHome = {
-    leadership:       '/dashboard',
-    finance:          '/dashboard',
+    leadership: '/dashboard',
+    finance: '/dashboard',
     facility_manager: '/dashboard',
-    office_boy:       '/queue',
-    staff:            '/request',
+    office_boy: '/queue',
+    staff: '/request',
   };
   return <Navigate to={roleHome[profile.role] || '/request'} replace />;
 }
@@ -77,7 +77,7 @@ function RoleHome() {
  */
 function OnboardingGate({ children }) {
   const { session, profile, loading: authLoading } = useAuth();
-  const [checking,   setChecking]   = useState(true);
+  const [checking, setChecking] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
 
   useEffect(() => {
@@ -92,7 +92,7 @@ function OnboardingGate({ children }) {
           .maybeSingle();
 
         // Show onboarding if row is missing OR onboarding_completed is false/null
-        setNeedsSetup(!data || !data.onboarding_completed);
+        setNeedsSetup(!data?.onboarding_completed);
       } catch {
         // Table might not exist yet — skip onboarding gracefully
         setNeedsSetup(false);
@@ -113,11 +113,7 @@ function OnboardingGate({ children }) {
   }
 
   if (needsSetup) {
-    return (
-      <OnboardingPage
-        onComplete={() => setNeedsSetup(false)}
-      />
-    );
+    return <OnboardingPage onComplete={() => setNeedsSetup(false)} />;
   }
 
   return children;
@@ -156,11 +152,11 @@ export default function App() {
           }
         />
         {/* /request now renders the full cafeteria UI for all roles */}
-        <Route path="/request"   element={<CafeteriaPage />} />
+        <Route path="/request" element={<CafeteriaPage />} />
         <Route path="/track/:id" element={<LiveTrackingPage />} />
-        <Route path="/meals"         element={<MealBookingPage />} />
-        <Route path="/meal-history"  element={<MealHistoryPage />} />
-        <Route path="/my-meal-box"   element={<MyMealBoxPage />} />
+        <Route path="/meals" element={<MealBookingPage />} />
+        <Route path="/meal-history" element={<MealHistoryPage />} />
+        <Route path="/my-meal-box" element={<MyMealBoxPage />} />
         <Route
           path="/meal-token-dashboard"
           element={
@@ -169,8 +165,8 @@ export default function App() {
             </Protected>
           }
         />
-        <Route path="/orders"   element={<OrderHistoryPage />} />
-        <Route path="/settings"  element={<PreferencesPage />} />
+        <Route path="/orders" element={<OrderHistoryPage />} />
+        <Route path="/settings" element={<PreferencesPage />} />
         <Route
           path="/queue"
           element={

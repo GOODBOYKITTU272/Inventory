@@ -8,7 +8,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
     `mailto:${process.env.VAPID_EMAIL || 'admin@applywizz.ai'}`,
     process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY,
+    process.env.VAPID_PRIVATE_KEY
   );
 }
 
@@ -18,17 +18,22 @@ router.post('/subscribe', async (req, res, next) => {
     const sub = req.body;
     if (!sub?.endpoint) return res.status(400).json({ error: 'Invalid subscription object' });
 
-    const { error } = await supabaseAdmin.from('push_subscriptions').upsert({
-      user_id:         req.user.id,
-      endpoint:        sub.endpoint,
-      p256dh:          sub.keys?.p256dh || null,
-      auth_key:        sub.keys?.auth   || null,
-      expiration_time: sub.expirationTime || null,
-    }, { onConflict: 'endpoint' });
+    const { error } = await supabaseAdmin.from('push_subscriptions').upsert(
+      {
+        user_id: req.user.id,
+        endpoint: sub.endpoint,
+        p256dh: sub.keys?.p256dh || null,
+        auth_key: sub.keys?.auth || null,
+        expiration_time: sub.expirationTime || null,
+      },
+      { onConflict: 'endpoint' }
+    );
 
     if (error) throw error;
     res.json({ ok: true });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // DELETE /api/push/subscribe — remove subscription
@@ -39,7 +44,9 @@ router.delete('/subscribe', async (req, res, next) => {
       await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', endpoint);
     }
     res.json({ ok: true });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 export default router;
@@ -66,7 +73,7 @@ export async function sendPushToUsers(userIds, payload) {
       webpush
         .sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth_key } },
-          notification,
+          notification
         )
         .catch(async (err) => {
           // 410 = subscription expired — clean it up
@@ -74,7 +81,7 @@ export async function sendPushToUsers(userIds, payload) {
             await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
           }
           console.error('[Push] send error', err.statusCode, sub.endpoint.slice(-30));
-        }),
-    ),
+        })
+    )
   );
 }

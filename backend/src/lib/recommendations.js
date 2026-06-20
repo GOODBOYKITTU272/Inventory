@@ -35,15 +35,40 @@ Return JSON ONLY.
 export async function getAIDecision(employeeId) {
   try {
     // 1. Fetch Context
-    const { data: prefs } = await supabaseAdmin.from('employee_ai_preferences').select('*').eq('employee_id', employeeId).single();
-    const { data: behavior } = await supabaseAdmin.from('employee_notification_behavior').select('*').eq('employee_id', employeeId);
-    const { data: scores } = await supabaseAdmin.from('employee_preference_scores').select('*').eq('employee_id', employeeId);
-    const { data: policy } = await supabaseAdmin.from('employee_reminder_policy').select('*').eq('employee_id', employeeId).single();
-    const { data: schedule } = await supabaseAdmin.from('office_schedule_settings').select('*').single();
-    const { data: profile } = await supabaseAdmin.from('profiles').select('full_name').eq('id', employeeId).single();
+    const { data: prefs } = await supabaseAdmin
+      .from('employee_ai_preferences')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .single();
+    const { data: behavior } = await supabaseAdmin
+      .from('employee_notification_behavior')
+      .select('*')
+      .eq('employee_id', employeeId);
+    const { data: scores } = await supabaseAdmin
+      .from('employee_preference_scores')
+      .select('*')
+      .eq('employee_id', employeeId);
+    const { data: policy } = await supabaseAdmin
+      .from('employee_reminder_policy')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .single();
+    const { data: schedule } = await supabaseAdmin
+      .from('office_schedule_settings')
+      .select('*')
+      .single();
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('full_name')
+      .eq('id', employeeId)
+      .single();
 
     const now = new Date();
-    const currentTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const currentTime = now.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
     const day = now.toLocaleDateString([], { weekday: 'long' });
 
     // 2. Prepare Context for GPT
@@ -56,7 +81,7 @@ export async function getAIDecision(employeeId) {
       behavior: behavior || [],
       policy: policy || {},
       schedule: schedule || {},
-      available_items: ['Coffee (CCD)', 'Tea', 'Lemon Tea', 'Bread', 'Peanut Butter', 'Jam']
+      available_items: ['Coffee (CCD)', 'Tea', 'Lemon Tea', 'Bread', 'Peanut Butter', 'Jam'],
     };
 
     // 3. Ask AI
@@ -64,7 +89,7 @@ export async function getAIDecision(employeeId) {
       system: DECISION_SYSTEM,
       user: JSON.stringify(context),
       model: 'gpt-4o-mini',
-      temperature: 0.7
+      temperature: 0.7,
     });
 
     const decision = JSON.parse(content.replace(/```json|```/g, '').trim());

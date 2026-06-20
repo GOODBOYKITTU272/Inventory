@@ -1,6 +1,6 @@
-import { useEffect, useState, useRef } from 'react';
-import { supabase } from '../lib/supabase.js';
+import { useEffect, useRef, useState } from 'react';
 import { isPushSupported, subscribeToPush } from '../lib/push.js';
+import { supabase } from '../lib/supabase.js';
 
 /** Silently subscribe to push notifications after AAL2 login.
  *  Never throws — a failed subscription must never block the login flow. */
@@ -30,7 +30,7 @@ export function useAuth() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [aal,     setAal]     = useState('aal1');
+  const [aal, setAal] = useState('aal1');
   const bootstrapped = useRef(false);
 
   useEffect(() => {
@@ -104,23 +104,28 @@ export function useAuth() {
           if (!cancelled) setProfile(data);
           return;
         }
-        if (i < 2) await new Promise(r => setTimeout(r, 1200));
+        if (i < 2) await new Promise((r) => setTimeout(r, 1200));
       }
       // No profile after retries — auto-create as staff
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (user) {
           const { data: created } = await supabase
             .from('profiles')
             .insert({
-              id:        userId,
+              id: userId,
               full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'New User',
-              role:      'staff',
-              email:     user.email,
+              role: 'staff',
+              email: user.email,
             })
             .select()
             .single();
-          if (created && !cancelled) { setProfile(created); return; }
+          if (created && !cancelled) {
+            setProfile(created);
+            return;
+          }
         }
       } catch (_) {}
       if (!cancelled) setProfile(null);

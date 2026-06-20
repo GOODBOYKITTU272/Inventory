@@ -10,9 +10,9 @@ import { chatCompletion, visionCompletion } from './openai.js';
 // ── Constants ────────────────────────────────────────────────────────────────
 
 export const AUTO_APPROVAL_LIMITS = {
-  leadership:       5000,
+  leadership: 5000,
   facility_manager: 2000,
-  office_boy:       500,
+  office_boy: 500,
 };
 
 export const ALLOWED_SUBMITTERS = ['office_boy', 'leadership'];
@@ -55,7 +55,8 @@ export async function classifyTelegramMessage(text, hasPhoto, hasDocument) {
   }
 
   // Strong manual purchase indicators
-  const purchaseKeywords = /bought|kharida|liya|purchase|no\s*bill|bina\s*bill|local\s*shop|market\s*se|₹|rs\.\s*\d|rupees?\s*\d/i;
+  const purchaseKeywords =
+    /bought|kharida|liya|purchase|no\s*bill|bina\s*bill|local\s*shop|market\s*se|₹|rs\.\s*\d|rupees?\s*\d/i;
   if (purchaseKeywords.test(lower)) {
     return 'manual_no_invoice_purchase';
   }
@@ -80,8 +81,19 @@ unclear`,
         model: 'gpt-4o-mini',
         temperature: 0.1,
       });
-      const result = content.trim().toLowerCase().replace(/[^a-z_]/g, '');
-      if (['invoice_bill', 'manual_no_invoice_purchase', 'payment_screenshot', 'personal_or_irrelevant', 'unclear'].includes(result)) {
+      const result = content
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z_]/g, '');
+      if (
+        [
+          'invoice_bill',
+          'manual_no_invoice_purchase',
+          'payment_screenshot',
+          'personal_or_irrelevant',
+          'unclear',
+        ].includes(result)
+      ) {
         return result;
       }
     } catch (e) {
@@ -135,7 +147,7 @@ export async function extractManualPurchase(text, imageUrls) {
     userParts.push({ type: 'text', text: `Message from office staff: "${text}"` });
   }
 
-  for (const url of (imageUrls || [])) {
+  for (const url of imageUrls || []) {
     userParts.push({
       type: 'image_url',
       image_url: { url, detail: 'high' },
@@ -146,7 +158,8 @@ export async function extractManualPurchase(text, imageUrls) {
     return {
       confidence_score: 0,
       clarification_needed: true,
-      clarification_question: 'No text or images received. Please describe what you bought and the amount.',
+      clarification_question:
+        'No text or images received. Please describe what you bought and the amount.',
     };
   }
 
@@ -166,7 +179,10 @@ export async function extractManualPurchase(text, imageUrls) {
         temperature: 0.1,
       });
 
-      const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+      const cleaned = content
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/i, '')
+        .trim();
       return JSON.parse(cleaned);
     }
 
@@ -178,7 +194,10 @@ export async function extractManualPurchase(text, imageUrls) {
       temperature: 0.1,
     });
 
-    const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+    const cleaned = content
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```$/i, '')
+      .trim();
     return JSON.parse(cleaned);
   } catch (e) {
     console.error('[PurchaseAI] extract error:', e.message);
@@ -186,14 +205,22 @@ export async function extractManualPurchase(text, imageUrls) {
       item_name: text || null,
       confidence_score: 0,
       clarification_needed: true,
-      clarification_question: 'I could not understand this purchase. Please describe the item, amount, and payment method.',
+      clarification_question:
+        'I could not understand this purchase. Please describe the item, amount, and payment method.',
     };
   }
 }
 
 // ── Auto-approval decision ───────────────────────────────────────────────────
 
-export function checkAutoApproval({ senderRole, amount, category, confidence, hasProof, duplicateRisk }) {
+export function checkAutoApproval({
+  senderRole,
+  amount,
+  category,
+  confidence,
+  hasProof,
+  duplicateRisk,
+}) {
   const reasons = [];
 
   // Must be a trusted submitter
@@ -213,7 +240,10 @@ export function checkAutoApproval({ senderRole, amount, category, confidence, ha
 
   // Check category
   if (!category || BLOCKED_AUTO_CATEGORIES.includes(category)) {
-    return { approved: false, reason: `Category "${category || 'Unknown'}" is not eligible for auto-approval` };
+    return {
+      approved: false,
+      reason: `Category "${category || 'Unknown'}" is not eligible for auto-approval`,
+    };
   }
   if (!ALLOWED_AUTO_CATEGORIES.includes(category)) {
     return { approved: false, reason: `Category "${category}" is not in the allowed list` };
@@ -221,8 +251,11 @@ export function checkAutoApproval({ senderRole, amount, category, confidence, ha
   reasons.push(`Category "${category}" is allowed`);
 
   // Check AI confidence
-  if (!confidence || confidence < 0.80) {
-    return { approved: false, reason: `AI confidence ${((confidence || 0) * 100).toFixed(0)}% is below 80% threshold` };
+  if (!confidence || confidence < 0.8) {
+    return {
+      approved: false,
+      reason: `AI confidence ${((confidence || 0) * 100).toFixed(0)}% is below 80% threshold`,
+    };
   }
   reasons.push(`AI confidence ${(confidence * 100).toFixed(0)}%`);
 

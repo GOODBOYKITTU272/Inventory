@@ -1,29 +1,42 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase.js';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Coffee, Save, CheckCircle2, ShieldCheck, Loader2, LogOut, BellRing, BellOff, KeyRound, Sun, Moon } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  Bell,
+  BellOff,
+  BellRing,
+  CheckCircle2,
+  Coffee,
+  KeyRound,
+  Loader2,
+  LogOut,
+  Moon,
+  Save,
+  ShieldCheck,
+  Sun,
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
-import { isPushSupported, getPushStatus, subscribeToPush, unsubscribeFromPush } from '../lib/push.js';
+import { getPushStatus, subscribeToPush, unsubscribeFromPush } from '../lib/push.js';
+import { supabase } from '../lib/supabase.js';
 
 const TONES = [
   { value: 'Professional', label: 'Professional' },
-  { value: 'Friendly',     label: 'Friendly' },
-  { value: 'Funny',        label: 'Funny' },
-  { value: 'Mom Mode',     label: '💝 Mom Mode' },
-  { value: 'Minimal',      label: 'Minimal' },
-  { value: 'gen_z',        label: 'Gen-Z' },
-  { value: 'boyfriend',    label: 'Boyfriend 💖' },
-  { value: 'girlfriend',   label: 'Girlfriend 💖' }
+  { value: 'Friendly', label: 'Friendly' },
+  { value: 'Funny', label: 'Funny' },
+  { value: 'Mom Mode', label: '💝 Mom Mode' },
+  { value: 'Minimal', label: 'Minimal' },
+  { value: 'gen_z', label: 'Gen-Z' },
+  { value: 'boyfriend', label: 'Boyfriend 💖' },
+  { value: 'girlfriend', label: 'Girlfriend 💖' },
 ];
 
 export default function Preferences() {
   const { profile, session } = useAuth();
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
-  const [success, setSuccess]   = useState(false);
-  const [pushStatus,  setPushStatus]  = useState('checking');
-  const [pushBusy,    setPushBusy]    = useState(false);
-  const [pushMsg,     setPushMsg]     = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [pushStatus, setPushStatus] = useState('checking');
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState('');
   const [prefs, setPrefs] = useState({
     tea_coffee_reminder_enabled: false,
     reminder_interval_hours: 2,
@@ -41,12 +54,18 @@ export default function Preferences() {
     loadPrefs();
     loadShift();
     loadEmployeeCode();
-    getPushStatus().then(setPushStatus).catch(() => setPushStatus('unsupported'));
-  }, [profile?.id]);
+    getPushStatus()
+      .then(setPushStatus)
+      .catch(() => setPushStatus('unsupported'));
+  }, [profile?.id, loadShift, loadPrefs, loadEmployeeCode]);
 
   async function loadEmployeeCode() {
     try {
-      const { data } = await supabase.from('profiles').select('employee_code').eq('id', profile.id).maybeSingle();
+      const { data } = await supabase
+        .from('profiles')
+        .select('employee_code')
+        .eq('id', profile.id)
+        .maybeSingle();
       if (data?.employee_code) setEmployeeCode(data.employee_code);
     } catch (_) {}
   }
@@ -55,7 +74,10 @@ export default function Preferences() {
     if (!employeeCode.trim()) return;
     setCodeSaving(true);
     try {
-      await supabase.from('profiles').update({ employee_code: employeeCode.trim().toUpperCase() }).eq('id', profile.id);
+      await supabase
+        .from('profiles')
+        .update({ employee_code: employeeCode.trim().toUpperCase() })
+        .eq('id', profile.id);
     } catch (_) {}
     setCodeSaving(false);
   }
@@ -99,7 +121,7 @@ export default function Preferences() {
       } else {
         await subscribeToPush(token);
         setPushStatus('subscribed');
-        setPushMsg('Push notifications enabled! You\'ll be notified when orders update.');
+        setPushMsg("Push notifications enabled! You'll be notified when orders update.");
       }
     } catch (e) {
       setPushMsg(e.message);
@@ -117,7 +139,7 @@ export default function Preferences() {
         .eq('user_id', profile.id)
         .maybeSingle();
       if (data) {
-        setPrefs(p => ({
+        setPrefs((p) => ({
           ...p,
           notification_tone: data.notification_tone || 'Friendly',
           tea_coffee_reminder_enabled: data.reminder_enabled || false,
@@ -135,19 +157,20 @@ export default function Preferences() {
     setSaving(true);
     setSuccess(false);
     try {
-      const { error } = await supabase
-        .from('employee_cafeteria_preferences')
-        .upsert({
+      const { error } = await supabase.from('employee_cafeteria_preferences').upsert(
+        {
           user_id: profile.id,
           notification_tone: prefs.notification_tone,
           reminder_enabled: prefs.tea_coffee_reminder_enabled,
           preferred_drink: prefs.preferred_drink,
-        }, { onConflict: 'user_id' });
+        },
+        { onConflict: 'user_id' }
+      );
       if (error) throw error;
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (e) {
-      alert('Error saving preferences: ' + e.message);
+      alert(`Error saving preferences: ${e.message}`);
     } finally {
       setSaving(false);
     }
@@ -165,7 +188,9 @@ export default function Preferences() {
     <div className="max-w-2xl mx-auto space-y-6 pb-10">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
-        <p className="text-slate-500 text-sm">Your account preferences and notification settings.</p>
+        <p className="text-slate-500 text-sm">
+          Your account preferences and notification settings.
+        </p>
       </div>
 
       {/* Profile info */}
@@ -192,7 +217,9 @@ export default function Preferences() {
         {/* Employee Code */}
         <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
           <div className="flex-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Employee Code</label>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Employee Code
+            </label>
             <input
               type="text"
               inputMode="numeric"
@@ -262,22 +289,37 @@ export default function Preferences() {
           <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
             <div>
               <div className="font-medium text-slate-900 text-sm">Enable Reminders</div>
-              <div className="text-xs text-slate-500">Get nudged every few hours to stay refreshed</div>
+              <div className="text-xs text-slate-500">
+                Get nudged every few hours to stay refreshed
+              </div>
             </div>
             <button
-              onClick={() => setPrefs((p) => ({ ...p, tea_coffee_reminder_enabled: !p.tea_coffee_reminder_enabled }))}
+              onClick={() =>
+                setPrefs((p) => ({
+                  ...p,
+                  tea_coffee_reminder_enabled: !p.tea_coffee_reminder_enabled,
+                }))
+              }
               className={`w-12 h-6 rounded-full transition-colors relative shrink-0 ${prefs.tea_coffee_reminder_enabled ? 'bg-brand' : 'bg-slate-300'}`}
             >
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${prefs.tea_coffee_reminder_enabled ? 'left-7' : 'left-1'}`} />
+              <div
+                className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${prefs.tea_coffee_reminder_enabled ? 'left-7' : 'left-1'}`}
+              />
             </button>
           </div>
 
-          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 transition-opacity ${prefs.tea_coffee_reminder_enabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+          <div
+            className={`grid grid-cols-1 sm:grid-cols-2 gap-4 transition-opacity ${prefs.tea_coffee_reminder_enabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}
+          >
             <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Interval</label>
+              <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">
+                Interval
+              </label>
               <select
                 value={prefs.reminder_interval_hours}
-                onChange={(e) => setPrefs((p) => ({ ...p, reminder_interval_hours: parseInt(e.target.value) }))}
+                onChange={(e) =>
+                  setPrefs((p) => ({ ...p, reminder_interval_hours: parseInt(e.target.value, 10) }))
+                }
                 className="input w-full"
               >
                 <option value={1}>Every 1 hour</option>
@@ -287,7 +329,9 @@ export default function Preferences() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Preferred Drink</label>
+              <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">
+                Preferred Drink
+              </label>
               <select
                 value={prefs.preferred_drink}
                 onChange={(e) => setPrefs((p) => ({ ...p, preferred_drink: e.target.value }))}
@@ -313,22 +357,24 @@ export default function Preferences() {
             </div>
           ) : pushStatus === 'denied' ? (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-              <strong>Blocked by browser.</strong> Click the lock icon in your browser address bar, reset notifications permission, then refresh.
+              <strong>Blocked by browser.</strong> Click the lock icon in your browser address bar,
+              reset notifications permission, then refresh.
             </div>
           ) : (
             <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
               <div className="flex items-center gap-3">
-                {pushStatus === 'subscribed'
-                  ? <BellRing size={18} className="text-brand" />
-                  : <BellOff  size={18} className="text-slate-400" />
-                }
+                {pushStatus === 'subscribed' ? (
+                  <BellRing size={18} className="text-brand" />
+                ) : (
+                  <BellOff size={18} className="text-slate-400" />
+                )}
                 <div>
                   <div className="font-medium text-slate-900 text-sm">
                     {pushStatus === 'subscribed' ? 'Notifications ON' : 'Notifications OFF'}
                   </div>
                   <div className="text-xs text-slate-500">
                     {pushStatus === 'subscribed'
-                      ? 'You\'ll get notified when your order status changes'
+                      ? "You'll get notified when your order status changes"
                       : 'Tap to enable — office boy gets notified on new orders'}
                   </div>
                 </div>
@@ -338,16 +384,23 @@ export default function Preferences() {
                 disabled={pushBusy || pushStatus === 'checking'}
                 className={`w-12 h-6 rounded-full transition-colors relative shrink-0 ${pushStatus === 'subscribed' ? 'bg-brand' : 'bg-slate-300'}`}
               >
-                {pushBusy
-                  ? <div className="absolute inset-0 flex items-center justify-center"><div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /></div>
-                  : <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${pushStatus === 'subscribed' ? 'left-7' : 'left-1'}`} />
-                }
+                {pushBusy ? (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <div
+                    className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${pushStatus === 'subscribed' ? 'left-7' : 'left-1'}`}
+                  />
+                )}
               </button>
             </div>
           )}
 
           {pushMsg && (
-            <div className={`text-xs p-3 rounded-xl ${pushMsg.includes('enabled') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+            <div
+              className={`text-xs p-3 rounded-xl ${pushMsg.includes('enabled') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}
+            >
               {pushMsg}
             </div>
           )}
@@ -372,16 +425,24 @@ export default function Preferences() {
             ))}
           </div>
           {prefs.notification_tone === 'Mom Mode' && (
-            <p className="text-xs text-brand italic">Mom Mode is warm and caring — the most "at-home" office experience.</p>
+            <p className="text-xs text-brand italic">
+              Mom Mode is warm and caring — the most "at-home" office experience.
+            </p>
           )}
           {prefs.notification_tone === 'boyfriend' && (
-            <p className="text-xs text-brand italic">Boyfriend mode is sweet, caring, and protective. 💕</p>
+            <p className="text-xs text-brand italic">
+              Boyfriend mode is sweet, caring, and protective. 💕
+            </p>
           )}
           {prefs.notification_tone === 'girlfriend' && (
-            <p className="text-xs text-brand italic">Girlfriend mode is playful, cute, and loving. 💖</p>
+            <p className="text-xs text-brand italic">
+              Girlfriend mode is playful, cute, and loving. 💖
+            </p>
           )}
           {prefs.notification_tone === 'gen_z' && (
-            <p className="text-xs text-brand italic">Gen-Z mode is no cap, aesthetic, and lowkey savage. 🔥</p>
+            <p className="text-xs text-brand italic">
+              Gen-Z mode is no cap, aesthetic, and lowkey savage. 🔥
+            </p>
           )}
         </div>
 
@@ -414,14 +475,16 @@ export default function Preferences() {
           <KeyRound size={18} className="text-brand" /> Security
         </h2>
         <p className="text-xs text-slate-500">
-          Your account is secured with <strong>Microsoft Authenticator</strong>. If you lose access to your authenticator app, contact your admin to reset it.
+          Your account is secured with <strong>Microsoft Authenticator</strong>. If you lose access
+          to your authenticator app, contact your admin to reset it.
         </p>
       </div>
 
       <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex gap-3 text-slate-600">
         <ShieldCheck size={20} className="shrink-0 text-brand mt-0.5" />
         <p className="text-xs leading-relaxed">
-          <strong>Privacy:</strong> Your preferences are visible only to you and the system admin. The Office Boy only sees requests when they are submitted.
+          <strong>Privacy:</strong> Your preferences are visible only to you and the system admin.
+          The Office Boy only sees requests when they are submitted.
         </p>
       </div>
     </div>

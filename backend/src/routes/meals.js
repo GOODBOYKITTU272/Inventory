@@ -7,11 +7,11 @@ const router = Router();
 // ── Day-of-week meal options ──────────────────────────────────────────────────
 // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
 const DAY_OPTIONS = {
-  1: ['veg'],                   // Monday: Veg only
-  2: ['veg', 'egg'],            // Tuesday: Veg / Egg
-  3: ['veg', 'non_veg'],        // Wednesday: Veg / Non-Veg
-  4: ['veg', 'egg'],            // Thursday: Veg / Egg
-  5: ['veg', 'non_veg'],        // Friday: Veg / Non-Veg
+  1: ['veg'], // Monday: Veg only
+  2: ['veg', 'egg'], // Tuesday: Veg / Egg
+  3: ['veg', 'non_veg'], // Wednesday: Veg / Non-Veg
+  4: ['veg', 'egg'], // Thursday: Veg / Egg
+  5: ['veg', 'non_veg'], // Friday: Veg / Non-Veg
 };
 
 function getISTParts(dateObj = new Date()) {
@@ -24,7 +24,7 @@ function getISTParts(dateObj = new Date()) {
       hour: 'numeric',
       minute: 'numeric',
       second: 'numeric',
-      hour12: false
+      hour12: false,
     });
     const parts = formatter.formatToParts(dateObj);
     const m = {};
@@ -37,7 +37,7 @@ function getISTParts(dateObj = new Date()) {
       day: parseInt(m.day, 10),
       hour: parseInt(m.hour, 10),
       minute: parseInt(m.minute, 10),
-      second: parseInt(m.second, 10)
+      second: parseInt(m.second, 10),
     };
   } catch (e) {
     console.error('Error formatting IST parts, falling back to local system:', e);
@@ -47,7 +47,7 @@ function getISTParts(dateObj = new Date()) {
       day: dateObj.getDate(),
       hour: dateObj.getHours(),
       minute: dateObj.getMinutes(),
-      second: dateObj.getSeconds()
+      second: dateObj.getSeconds(),
     };
   }
 }
@@ -100,7 +100,7 @@ function getNextWorkingDay(nowDate = new Date()) {
 function getAllowedActions(mealDate, shift = 'morning', mockDate) {
   const parts = getISTParts(mockDate || new Date());
   const currentHour = parts.hour + parts.minute / 60;
-  const todayStr = `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+  const _todayStr = `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 
   const [tYear, tMonth, tDay] = mealDate.split('-').map(Number);
   if (!tYear || !tMonth || !tDay) {
@@ -118,7 +118,11 @@ function getAllowedActions(mealDate, shift = 'morning', mockDate) {
   if (shift === 'morning') {
     const nextWD = getNextWorkingDay(mockDate || new Date());
     if (mealDate !== nextWD) {
-      return { canBook: false, canSkip: false, reason: mealDate < nextWD ? 'past' : 'future_locked' };
+      return {
+        canBook: false,
+        canSkip: false,
+        reason: mealDate < nextWD ? 'past' : 'future_locked',
+      };
     }
 
     const targetDateObj = new Date(Date.UTC(tYear, tMonth - 1, tDay));
@@ -197,11 +201,13 @@ router.get('/options', async (req, res, next) => {
     res.json({
       working_day: true,
       meal_date: date,
-      options,           // ['veg'] or ['veg','egg'] or ['veg','non_veg']
-      ...actions,        // canBook, canSkip, reason
+      options, // ['veg'] or ['veg','egg'] or ['veg','non_veg']
+      ...actions, // canBook, canSkip, reason
       booking: booking || null,
     });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // ── POST /api/meals/book ──────────────────────────────────────────────────────
@@ -240,7 +246,9 @@ router.post('/book', async (req, res, next) => {
       // Booking (veg/non_veg/egg) allowed only if canBook
       if (!actions.canBook) {
         if (actions.canSkip) {
-          return res.status(400).json({ error: 'After 6 PM you can only skip. Cannot change meal type.' });
+          return res
+            .status(400)
+            .json({ error: 'After 6 PM you can only skip. Cannot change meal type.' });
         }
         return res.status(400).json({ error: 'Booking is locked after 8 PM.' });
       }
@@ -249,7 +257,7 @@ router.post('/book', async (req, res, next) => {
       const validOptions = getOptionsForDate(date);
       if (!validOptions.includes(choice)) {
         return res.status(400).json({
-          error: `${choice} is not available on this day. Options: ${validOptions.join(', ')}`
+          error: `${choice} is not available on this day. Options: ${validOptions.join(', ')}`,
         });
       }
     }
@@ -302,11 +310,14 @@ router.post('/book', async (req, res, next) => {
     res.json({
       ok: true,
       booking: data,
-      message: choice === 'skip'
-        ? '🚫 Meal skipped for this day'
-        : `${emoji[choice] || '🍱'} Booked ${choice} successfully!`
+      message:
+        choice === 'skip'
+          ? '🚫 Meal skipped for this day'
+          : `${emoji[choice] || '🍱'} Booked ${choice} successfully!`,
     });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // ── GET /api/meals/my-bookings?month=2026-05 ─────────────────────────────────
@@ -332,12 +343,15 @@ router.get('/my-bookings', async (req, res, next) => {
 
     if (error) throw error;
     res.json(data || []);
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // ── GET /api/meals/summary?date=2026-05-21 ───────────────────────────────────
 // FM + Finance: headcount summary for a date
-router.get('/summary',
+router.get(
+  '/summary',
   requireRole('facility_manager', 'finance', 'leadership'),
   async (req, res, next) => {
     try {
@@ -361,7 +375,7 @@ router.get('/summary',
         skip: [],
       };
 
-      for (const b of (bookings || [])) {
+      for (const b of bookings || []) {
         const name = b.profiles?.preferred_name || b.profiles?.full_name || 'Unknown';
         if (summary[b.choice]) {
           summary[b.choice].push(name);
@@ -387,38 +401,41 @@ router.get('/summary',
           veg: summary.veg.length * (settings.cost_per_veg || 80),
           non_veg: summary.non_veg.length * (settings.cost_per_non_veg || 120),
           egg: summary.egg.length * (settings.cost_per_egg || 100),
-          total: (summary.veg.length * (settings.cost_per_veg || 80)) +
-                 (summary.non_veg.length * (settings.cost_per_non_veg || 120)) +
-                 (summary.egg.length * (settings.cost_per_egg || 100)),
+          total:
+            summary.veg.length * (settings.cost_per_veg || 80) +
+            summary.non_veg.length * (settings.cost_per_non_veg || 120) +
+            summary.egg.length * (settings.cost_per_egg || 100),
         },
       });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   }
 );
 
 // ── GET /api/meals/settings ───────────────────────────────────────────────────
-router.get('/settings', async (req, res, next) => {
+router.get('/settings', async (_req, res, next) => {
   try {
     const settings = await getSettings();
     res.json(settings);
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 async function getSettings() {
-  const { data } = await supabaseAdmin
-    .from('meal_settings')
-    .select('*')
-    .limit(1)
-    .single();
-  return data || {
-    cutoff_time: '18:00',
-    skip_cutoff_time: '20:00',
-    cost_per_veg: 80,
-    cost_per_non_veg: 120,
-    cost_per_egg: 100,
-    active_from: '2026-05-20',
-    active_until: '2026-12-31',
-  };
+  const { data } = await supabaseAdmin.from('meal_settings').select('*').limit(1).single();
+  return (
+    data || {
+      cutoff_time: '18:00',
+      skip_cutoff_time: '20:00',
+      cost_per_veg: 80,
+      cost_per_non_veg: 120,
+      cost_per_egg: 100,
+      active_from: '2026-05-20',
+      active_until: '2026-12-31',
+    }
+  );
 }
 
 // ── POST /api/meals/:date/rate ───────────────────────────────────────────────
@@ -471,7 +488,9 @@ router.post('/:date/rate', async (req, res, next) => {
 
     if (error) throw error;
     res.json({ ok: true, booking: data });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 export default router;

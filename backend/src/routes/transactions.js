@@ -33,68 +33,68 @@ router.get(
       const { data, error } = await q;
       if (error) throw error;
       res.json(data);
-    } catch (e) { next(e); }
-  },
+    } catch (e) {
+      next(e);
+    }
+  }
 );
 
 // POST /api/transactions
-router.post(
-  '/',
-  requireRole('facility_manager', 'leadership'),
-  async (req, res, next) => {
-    try {
-      const payload = txnSchema.parse(req.body);
+router.post('/', requireRole('facility_manager', 'leadership'), async (req, res, next) => {
+  try {
+    const payload = txnSchema.parse(req.body);
 
-      let unitCost = payload.unit_cost;
-      if (unitCost === undefined) {
-        const { data: product, error: pErr } = await supabaseAdmin
-          .from('products')
-          .select('cost_per_unit')
-          .eq('id', payload.product_id)
-          .single();
-        if (pErr) throw pErr;
-        unitCost = Number(product.cost_per_unit);
-      }
-      const totalCost = Number((payload.quantity * unitCost).toFixed(2));
-
-      const { data, error } = await supabaseAdmin
-        .from('transactions')
-        .insert({
-          ...payload,
-          unit_cost: unitCost,
-          total_cost: totalCost,
-          facility_manager_id: req.user.id,
-        })
-        .select()
+    let unitCost = payload.unit_cost;
+    if (unitCost === undefined) {
+      const { data: product, error: pErr } = await supabaseAdmin
+        .from('products')
+        .select('cost_per_unit')
+        .eq('id', payload.product_id)
         .single();
-      if (error) throw error;
+      if (pErr) throw pErr;
+      unitCost = Number(product.cost_per_unit);
+    }
+    const totalCost = Number((payload.quantity * unitCost).toFixed(2));
 
-      // Reflect in inventory.
-      // add => +qty, remove/waste => -qty, adjust => set absolute.
-      const { data: invRow, error: invErr } = await supabaseAdmin
-        .from('inventory')
-        .select('current_stock')
-        .eq('product_id', payload.product_id)
-        .single();
-      if (invErr) throw invErr;
+    const { data, error } = await supabaseAdmin
+      .from('transactions')
+      .insert({
+        ...payload,
+        unit_cost: unitCost,
+        total_cost: totalCost,
+        facility_manager_id: req.user.id,
+      })
+      .select()
+      .single();
+    if (error) throw error;
 
-      let newStock;
-      if (payload.type === 'adjust') {
-        newStock = Math.max(0, payload.quantity);
-      } else {
-        const sign = payload.type === 'add' ? 1 : -1;
-        const cur = Number(invRow.current_stock);
-        newStock = Math.max(0, cur + sign * payload.quantity);
-      }
+    // Reflect in inventory.
+    // add => +qty, remove/waste => -qty, adjust => set absolute.
+    const { data: invRow, error: invErr } = await supabaseAdmin
+      .from('inventory')
+      .select('current_stock')
+      .eq('product_id', payload.product_id)
+      .single();
+    if (invErr) throw invErr;
 
-      await supabaseAdmin
-        .from('inventory')
-        .update({ current_stock: newStock, last_updated_by: req.user.id })
-        .eq('product_id', payload.product_id);
+    let newStock;
+    if (payload.type === 'adjust') {
+      newStock = Math.max(0, payload.quantity);
+    } else {
+      const sign = payload.type === 'add' ? 1 : -1;
+      const cur = Number(invRow.current_stock);
+      newStock = Math.max(0, cur + sign * payload.quantity);
+    }
 
-      res.status(201).json(data);
-    } catch (e) { next(e); }
-  },
-);
+    await supabaseAdmin
+      .from('inventory')
+      .update({ current_stock: newStock, last_updated_by: req.user.id })
+      .eq('product_id', payload.product_id);
+
+    res.status(201).json(data);
+  } catch (e) {
+    next(e);
+  }
+});
 
 export default router;

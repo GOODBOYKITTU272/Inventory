@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { supabaseAdmin } from '../lib/supabase.js';
 import { fileCompletion, fileUrlCompletion, visionCompletion } from '../lib/openai.js';
 import { processInvoiceItems, saveConversions } from '../lib/productConversion.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 const router = Router();
 
@@ -25,7 +25,10 @@ const DUPLICATE_MESSAGES = [
 ];
 
 function cleanJson(content) {
-  return content.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+  return content
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
 }
 
 function normalizeNumber(value) {
@@ -40,12 +43,10 @@ function safeName(name = 'bill') {
 
 async function uploadFile(file) {
   const path = `power-automate/${Date.now()}-${safeName(file.originalname)}`;
-  const { error } = await supabaseAdmin.storage
-    .from('bills')
-    .upload(path, file.buffer, {
-      contentType: file.mimetype || 'application/octet-stream',
-      upsert: false,
-    });
+  const { error } = await supabaseAdmin.storage.from('bills').upload(path, file.buffer, {
+    contentType: file.mimetype || 'application/octet-stream',
+    upsert: false,
+  });
   if (error) throw error;
 
   const { data } = supabaseAdmin.storage.from('bills').getPublicUrl(path);
@@ -93,14 +94,14 @@ async function saveBill({ parsed, fileUrl }) {
   const items = Array.isArray(parsed.items) ? parsed.items : [];
   if (items.length) {
     const rows = items.map((item) => ({
-      bill_id:          bill.id,
-      item_name:        item.item_name || 'Unknown item',
-      category:         item.category || null,
-      quantity:         normalizeNumber(item.quantity) || 0,
-      unit:             item.unit || null,
-      unit_rate:        normalizeNumber(item.unit_rate),
-      tax:              normalizeNumber(item.tax) || 0,
-      total_amount:     normalizeNumber(item.total_amount),
+      bill_id: bill.id,
+      item_name: item.item_name || 'Unknown item',
+      category: item.category || null,
+      quantity: normalizeNumber(item.quantity) || 0,
+      unit: item.unit || null,
+      unit_rate: normalizeNumber(item.unit_rate),
+      tax: normalizeNumber(item.tax) || 0,
+      total_amount: normalizeNumber(item.total_amount),
       inventory_action: item.inventory_action || null,
     }));
 
@@ -112,9 +113,9 @@ async function saveBill({ parsed, fileUrl }) {
 
     // Run conversion matching (non-blocking)
     const savedItems = insertedItems || [];
-    processInvoiceItems(savedItems).then(conversions =>
-      saveConversions(savedItems, conversions)
-    ).catch(() => {});
+    processInvoiceItems(savedItems)
+      .then((conversions) => saveConversions(savedItems, conversions))
+      .catch(() => {});
   }
 
   return bill;

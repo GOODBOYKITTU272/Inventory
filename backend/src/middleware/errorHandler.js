@@ -2,7 +2,7 @@ import { ZodError } from 'zod';
 
 // Centralized error handler. Express picks it up because it has 4 args.
 // eslint-disable-next-line no-unused-vars
-export function errorHandler(err, req, res, _next) {
+export function errorHandler(err, _req, res, _next) {
   if (err instanceof ZodError) {
     return res.status(400).json({
       error: 'Validation failed',

@@ -4,16 +4,17 @@
  */
 
 import { Router } from 'express';
+import { applyPurchaseToInventory } from '../lib/applyPurchase.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
-import { applyPurchaseToInventory } from '../lib/applyPurchase.js';
 
 const router = Router();
 
 // ── GET / — List all manual purchases ────────────────────────────────────────
 // Finance + Leadership see all. FM sees all. Office Boy sees own only.
 // Query params: ?status=pending_review&limit=50&offset=0
-router.get('/',
+router.get(
+  '/',
   requireRole('finance', 'leadership', 'facility_manager', 'office_boy'),
   async (req, res, next) => {
     try {
@@ -39,12 +40,15 @@ router.get('/',
       if (error) throw error;
 
       res.json({ purchases: data || [], count: data?.length || 0 });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   }
 );
 
 // ── GET /:id — Get single purchase ───────────────────────────────────────────
-router.get('/:id',
+router.get(
+  '/:id',
   requireRole('finance', 'leadership', 'facility_manager', 'office_boy'),
   async (req, res, next) => {
     try {
@@ -63,98 +67,104 @@ router.get('/:id',
       }
 
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   }
 );
 
 // ── POST /:id/approve — Approve a purchase ───────────────────────────────────
-router.post('/:id/approve',
-  requireRole('finance', 'leadership'),
-  async (req, res, next) => {
+router.post('/:id/approve', requireRole('finance', 'leadership'), async (req, res, next) => {
+  try {
+    const { data: purchase, error: fetchErr } = await supabaseAdmin
+      .from('manual_purchases')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+    if (!purchase) return res.status(404).json({ error: 'Purchase not found' });
+
+    if (purchase.status === 'approved' || purchase.status === 'synced_to_inventory') {
+      return res.status(400).json({ error: 'Already approved' });
+    }
+
+    // Mark approved first so a sync failure leaves a clear, recoverable state.
+    const { error } = await supabaseAdmin
+      .from('manual_purchases')
+      .update({
+        status: 'approved',
+        approved_by: req.user.id,
+        approved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+
+    // Approve now syncs inventory + finance directly (no separate Sync step).
+    let productId;
     try {
-      const { data: purchase, error: fetchErr } = await supabaseAdmin
-        .from('manual_purchases')
-        .select('*')
-        .eq('id', req.params.id)
-        .single();
+      ({ productId } = await applyPurchaseToInventory(purchase, { writeFinance: true }));
+    } catch (syncErr) {
+      console.error(
+        `[ManualPurchase] Approve-sync failed for #${req.params.id.slice(0, 8)}:`,
+        syncErr.message
+      );
+      // Leave status 'approved' so the standalone /sync can retry later.
+      return res.status(500).json({
+        error: 'Approved, but inventory sync failed. Use Sync to retry.',
+      });
+    }
 
-      if (fetchErr) throw fetchErr;
-      if (!purchase) return res.status(404).json({ error: 'Purchase not found' });
+    const { error: syncMarkErr } = await supabaseAdmin
+      .from('manual_purchases')
+      .update({
+        synced_to_inventory: true,
+        synced_to_finance: true,
+        synced_at: new Date().toISOString(),
+        status: 'synced_to_inventory',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id);
 
-      if (purchase.status === 'approved' || purchase.status === 'synced_to_inventory') {
-        return res.status(400).json({ error: 'Already approved' });
-      }
+    if (syncMarkErr) throw syncMarkErr;
 
-      // Mark approved first so a sync failure leaves a clear, recoverable state.
-      const { error } = await supabaseAdmin
-        .from('manual_purchases')
-        .update({
-          status: 'approved',
-          approved_by: req.user.id,
-          approved_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', req.params.id);
-
-      if (error) throw error;
-
-      // Approve now syncs inventory + finance directly (no separate Sync step).
-      let productId;
-      try {
-        ({ productId } = await applyPurchaseToInventory(purchase, { writeFinance: true }));
-      } catch (syncErr) {
-        console.error(`[ManualPurchase] Approve-sync failed for #${req.params.id.slice(0, 8)}:`, syncErr.message);
-        // Leave status 'approved' so the standalone /sync can retry later.
-        return res.status(500).json({
-          error: 'Approved, but inventory sync failed. Use Sync to retry.',
-        });
-      }
-
-      const { error: syncMarkErr } = await supabaseAdmin
-        .from('manual_purchases')
-        .update({
-          synced_to_inventory: true,
-          synced_to_finance: true,
-          synced_at: new Date().toISOString(),
-          status: 'synced_to_inventory',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', req.params.id);
-
-      if (syncMarkErr) throw syncMarkErr;
-
-      console.log(`[ManualPurchase] Approved + synced #${req.params.id.slice(0, 8)} by ${req.user.full_name}`);
-      res.json({ ok: true, status: 'synced_to_inventory', productId });
-    } catch (e) { next(e); }
+    console.log(
+      `[ManualPurchase] Approved + synced #${req.params.id.slice(0, 8)} by ${req.user.full_name}`
+    );
+    res.json({ ok: true, status: 'synced_to_inventory', productId });
+  } catch (e) {
+    next(e);
   }
-);
+});
 
 // ── POST /:id/reject — Reject a purchase ─────────────────────────────────────
-router.post('/:id/reject',
-  requireRole('finance', 'leadership'),
-  async (req, res, next) => {
-    try {
-      const { reason } = req.body;
+router.post('/:id/reject', requireRole('finance', 'leadership'), async (req, res, next) => {
+  try {
+    const { reason } = req.body;
 
-      const { error } = await supabaseAdmin
-        .from('manual_purchases')
-        .update({
-          status: 'rejected',
-          rejection_reason: reason || 'Rejected by reviewer',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', req.params.id);
+    const { error } = await supabaseAdmin
+      .from('manual_purchases')
+      .update({
+        status: 'rejected',
+        rejection_reason: reason || 'Rejected by reviewer',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id);
 
-      if (error) throw error;
+    if (error) throw error;
 
-      console.log(`[ManualPurchase] Rejected #${req.params.id.slice(0, 8)} by ${req.user.full_name}`);
-      res.json({ ok: true, status: 'rejected' });
-    } catch (e) { next(e); }
+    console.log(`[ManualPurchase] Rejected #${req.params.id.slice(0, 8)} by ${req.user.full_name}`);
+    res.json({ ok: true, status: 'rejected' });
+  } catch (e) {
+    next(e);
   }
-);
+});
 
 // ── POST /:id/clarify — Ask a clarification question ─────────────────────────
-router.post('/:id/clarify',
+router.post(
+  '/:id/clarify',
   requireRole('finance', 'leadership', 'facility_manager'),
   async (req, res, next) => {
     try {
@@ -201,57 +211,62 @@ router.post('/:id/clarify',
         }
       }
 
-      console.log(`[ManualPurchase] Clarification asked for #${req.params.id.slice(0, 8)} by ${req.user.full_name}`);
+      console.log(
+        `[ManualPurchase] Clarification asked for #${req.params.id.slice(0, 8)} by ${req.user.full_name}`
+      );
       res.json({ ok: true, status: 'draft_needs_clarification' });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   }
 );
 
 // ── POST /:id/sync — Sync approved purchase to inventory + finance ───────────
-router.post('/:id/sync',
-  requireRole('finance', 'leadership'),
-  async (req, res, next) => {
-    try {
-      const { data: purchase, error: fetchErr } = await supabaseAdmin
-        .from('manual_purchases')
-        .select('*')
-        .eq('id', req.params.id)
-        .single();
+router.post('/:id/sync', requireRole('finance', 'leadership'), async (req, res, next) => {
+  try {
+    const { data: purchase, error: fetchErr } = await supabaseAdmin
+      .from('manual_purchases')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
 
-      if (fetchErr) throw fetchErr;
-      if (!purchase) return res.status(404).json({ error: 'Purchase not found' });
+    if (fetchErr) throw fetchErr;
+    if (!purchase) return res.status(404).json({ error: 'Purchase not found' });
 
-      if (!['approved', 'auto_approved'].includes(purchase.status)) {
-        return res.status(400).json({ error: 'Purchase must be approved before syncing' });
-      }
+    if (!['approved', 'auto_approved'].includes(purchase.status)) {
+      return res.status(400).json({ error: 'Purchase must be approved before syncing' });
+    }
 
-      if (purchase.synced_to_inventory && purchase.synced_to_finance) {
-        return res.status(400).json({ error: 'Already synced' });
-      }
+    if (purchase.synced_to_inventory && purchase.synced_to_finance) {
+      return res.status(400).json({ error: 'Already synced' });
+    }
 
-      const { productId } = await applyPurchaseToInventory(purchase, { writeFinance: true });
+    const { productId } = await applyPurchaseToInventory(purchase, { writeFinance: true });
 
-      const itemName = purchase.item_name || 'Unknown Item';
-      const qty = Number(purchase.quantity) || 1;
+    const itemName = purchase.item_name || 'Unknown Item';
+    const qty = Number(purchase.quantity) || 1;
 
-      // Mark as synced
-      const { error: updateErr } = await supabaseAdmin
-        .from('manual_purchases')
-        .update({
-          synced_to_inventory: true,
-          synced_to_finance: true,
-          synced_at: new Date().toISOString(),
-          status: 'synced_to_inventory',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', req.params.id);
+    // Mark as synced
+    const { error: updateErr } = await supabaseAdmin
+      .from('manual_purchases')
+      .update({
+        synced_to_inventory: true,
+        synced_to_finance: true,
+        synced_at: new Date().toISOString(),
+        status: 'synced_to_inventory',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id);
 
-      if (updateErr) throw updateErr;
+    if (updateErr) throw updateErr;
 
-      console.log(`[ManualPurchase] Synced #${req.params.id.slice(0, 8)} — ${itemName} x${qty} — by ${req.user.full_name}`);
-      res.json({ ok: true, status: 'synced_to_inventory', productId });
-    } catch (e) { next(e); }
+    console.log(
+      `[ManualPurchase] Synced #${req.params.id.slice(0, 8)} — ${itemName} x${qty} — by ${req.user.full_name}`
+    );
+    res.json({ ok: true, status: 'synced_to_inventory', productId });
+  } catch (e) {
+    next(e);
   }
-);
+});
 
 export default router;

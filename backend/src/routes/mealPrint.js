@@ -78,13 +78,16 @@ router.get('/my-token', async (req, res, next) => {
           ? 'Reprint opens at 11:00 AM'
           : 'Reprint window has closed (after 1:30 PM)',
     });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // ── GET /api/meal-print/status?date=YYYY-MM-DD ──────────────────────────────
 // Returns cabin-wise print job status for a given date.
 // Used by the Office Boy dashboard.
-router.get('/status',
+router.get(
+  '/status',
   requireRole('office_boy', 'facility_manager', 'leadership', 'finance'),
   async (req, res, next) => {
     try {
@@ -109,9 +112,10 @@ router.get('/status',
 
       // Build cabin count map
       const cabinCounts = {};
-      for (const b of (counts || [])) {
+      for (const b of counts || []) {
         if (!b.cabin_name) continue;
-        if (!cabinCounts[b.cabin_name]) cabinCounts[b.cabin_name] = { total: 0, veg: 0, non_veg: 0, egg: 0 };
+        if (!cabinCounts[b.cabin_name])
+          cabinCounts[b.cabin_name] = { total: 0, veg: 0, non_veg: 0, egg: 0 };
         cabinCounts[b.cabin_name].total++;
         if (cabinCounts[b.cabin_name][b.choice] !== undefined) {
           cabinCounts[b.cabin_name][b.choice]++;
@@ -119,8 +123,8 @@ router.get('/status',
       }
 
       // Merge cabin config with job status and counts
-      const cabinStatus = CABIN_PRINT_ORDER.map(cabin => {
-        const job = (jobs || []).find(j => j.cabin_name === cabin.name);
+      const cabinStatus = CABIN_PRINT_ORDER.map((cabin) => {
+        const job = (jobs || []).find((j) => j.cabin_name === cabin.name);
         const counts = cabinCounts[cabin.name] || { total: 0, veg: 0, non_veg: 0, egg: 0 };
         return {
           cabin_name: cabin.name,
@@ -135,7 +139,7 @@ router.get('/status',
       });
 
       const totalMeals = Object.values(cabinCounts).reduce((sum, c) => sum + c.total, 0);
-      const printedCabins = (jobs || []).filter(j => j.status === 'completed').length;
+      const printedCabins = (jobs || []).filter((j) => j.status === 'completed').length;
 
       res.json({
         date,
@@ -146,7 +150,9 @@ router.get('/status',
           totalCabins: CABIN_PRINT_ORDER.length,
         },
       });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   }
 );
 
@@ -154,7 +160,8 @@ router.get('/status',
 // Office boy manually triggers printing for a specific cabin.
 // Creates a new meal_print_jobs row with scheduled_for = now.
 // Body: { cabin_name: "Tech Cabin", date?: "YYYY-MM-DD" }
-router.post('/trigger-cabin',
+router.post(
+  '/trigger-cabin',
   requireRole('office_boy', 'facility_manager', 'leadership'),
   async (req, res, next) => {
     try {
@@ -173,7 +180,9 @@ router.post('/trigger-cabin',
         .maybeSingle();
 
       if (existing?.status === 'printing') {
-        return res.status(409).json({ error: 'This cabin is currently being printed. Please wait.' });
+        return res
+          .status(409)
+          .json({ error: 'This cabin is currently being printed. Please wait.' });
       }
 
       // Count bookings for this cabin
@@ -205,9 +214,13 @@ router.post('/trigger-cabin',
 
       if (jobErr) throw jobErr;
 
-      console.log(`[MealPrint] Manual trigger for ${cabin_name} on ${mealDate} by ${req.user.full_name}`);
+      console.log(
+        `[MealPrint] Manual trigger for ${cabin_name} on ${mealDate} by ${req.user.full_name}`
+      );
       res.json({ ok: true, job });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   }
 );
 
@@ -244,8 +257,12 @@ router.post('/reprint-token', async (req, res, next) => {
       'id, meal_date, choice, token_number, cabin_name, print_count, user_id'
     );
     if (!booking) return res.status(404).json({ error: 'No booking found for this date' });
-    if (booking.choice === 'skip') return res.status(400).json({ error: 'Cannot reprint a skipped meal' });
-    if (!booking.token_number) return res.status(400).json({ error: 'Token not assigned yet. Printing starts at 11:00 AM.' });
+    if (booking.choice === 'skip')
+      return res.status(400).json({ error: 'Cannot reprint a skipped meal' });
+    if (!booking.token_number)
+      return res
+        .status(400)
+        .json({ error: 'Token not assigned yet. Printing starts at 11:00 AM.' });
 
     // Insert a reprint job — print agent handles the actual printing
     const { data: job, error: jobErr } = await supabaseAdmin
@@ -285,12 +302,15 @@ router.post('/reprint-token', async (req, res, next) => {
         is_duplicate: true,
       },
     });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 // ── GET /api/meal-print/cabin-bookings?date=...&cabin=... ───────────────────
 // Office boy: list all bookings for a specific cabin on a date (for dashboard display)
-router.get('/cabin-bookings',
+router.get(
+  '/cabin-bookings',
   requireRole('office_boy', 'facility_manager', 'leadership'),
   async (req, res, next) => {
     try {
@@ -311,7 +331,9 @@ router.get('/cabin-bookings',
 
       if (error) throw error;
       res.json(bookings || []);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   }
 );
 
