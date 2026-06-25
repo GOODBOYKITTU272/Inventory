@@ -544,6 +544,65 @@ describe('POST /api/auth/complete-totp-enrollment', () => {
       await close();
     }
   });
+
+  it('calls generateLink with type magiclink and no options/shouldCreateUser', async () => {
+    let capturedLinkArgs = null;
+    const { post, close } = await startServer({
+      supabaseAdmin: {
+        auth: {
+          admin: {
+            listUsers: async () => ({ data: { users: [ALICE] }, error: null }),
+            generateLink: async (args) => {
+              capturedLinkArgs = args;
+              return { data: { properties: { email_otp: 'magic-otp-123' } }, error: null };
+            },
+          },
+        },
+        from: () => makeChain(null),
+      },
+      supabaseAnon: makeSupabaseAnon(),
+      supabaseAsUser: makeSupabaseAsUser(),
+      verifyEnrollmentToken: async () => true,
+      normalizeEmail: (e) => e.trim().toLowerCase(),
+    });
+    try {
+      await post('/complete-totp-enrollment', {
+        email: 'alice@applywizz.ai',
+        enrollmentToken: VALID_TOKEN,
+      });
+      assert.equal(capturedLinkArgs?.type, 'magiclink', 'generateLink must use type magiclink');
+      assert.equal(capturedLinkArgs?.options, undefined, 'generateLink must not pass options');
+    } finally {
+      await close();
+    }
+  });
+
+  it('calls verifyOtp with type magiclink', async () => {
+    let capturedVerifyArgs = null;
+    const { post, close } = await startServer({
+      supabaseAdmin: makeSupabaseAdmin({ authUsers: [ALICE] }),
+      supabaseAnon: {
+        auth: {
+          verifyOtp: async (args) => {
+            capturedVerifyArgs = args;
+            return { data: { session: { access_token: 'user-jwt' } }, error: null };
+          },
+        },
+      },
+      supabaseAsUser: makeSupabaseAsUser(),
+      verifyEnrollmentToken: async () => true,
+      normalizeEmail: (e) => e.trim().toLowerCase(),
+    });
+    try {
+      await post('/complete-totp-enrollment', {
+        email: 'alice@applywizz.ai',
+        enrollmentToken: VALID_TOKEN,
+      });
+      assert.equal(capturedVerifyArgs?.type, 'magiclink', 'verifyOtp must use type magiclink');
+    } finally {
+      await close();
+    }
+  });
 });
 
 // ── POST /api/auth/verify-email (existing endpoint) ───────────────────────

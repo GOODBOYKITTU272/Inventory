@@ -328,9 +328,8 @@ export function createAuthRouter(overrides = {}) {
       // Generate a short-lived user-scoped session for the mfa.enroll() call.
       // service-role key is used here server-side only; it never leaves the backend.
       const { data: linkData, error: linkErr } = await d.supabaseAdmin.auth.admin.generateLink({
-        type: 'email',
+        type: 'magiclink',
         email,
-        options: { shouldCreateUser: false },
       });
       if (linkErr) throw linkErr;
 
@@ -341,7 +340,7 @@ export function createAuthRouter(overrides = {}) {
       const { data: sessionData, error: sessionErr } = await d.supabaseAnon.auth.verifyOtp({
         email,
         token: emailOtp,
-        type: 'email',
+        type: 'magiclink',
       });
       if (sessionErr) throw sessionErr;
 
