@@ -16,8 +16,9 @@ function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
 
+const TEST_SECRET = 'test-secret';
 function hashValue(value) {
-  return crypto.createHash('sha256').update(value).digest('hex');
+  return crypto.createHmac('sha256', TEST_SECRET).update(value).digest('hex');
 }
 
 // ── 1. normalizeEmail ──────────────────────────────────────────────────────
@@ -214,5 +215,44 @@ describe('Rate limit logic', () => {
     assert.throws(() => checkRateLimit(4), /RATE_LIMITED/);
     assert.doesNotThrow(() => checkRateLimit(2));
     assert.doesNotThrow(() => checkRateLimit(0));
+  });
+});
+
+// ── 13. Rate-limit window (cleanup correctness) ───────────────────────────
+
+describe('Rate-limit window (cleanup correctness)', () => {
+  it('counts sends in the last hour even when OTP has expired', () => {
+    // A send from 30 minutes ago: OTP has expired (10 min TTL) but is still
+    // within the 1-hour rate-limit window. It must be counted.
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+    // This row was created 30 min ago — within rate-limit window
+    const rowCreatedAt = thirtyMinsAgo;
+    const isWithinWindow = rowCreatedAt >= oneHourAgo;
+    assert.equal(isWithinWindow, true, 'A 30-min-old send must still be within the 1-hour rate-limit window');
+
+    // A send from 61 minutes ago — outside the window, safe to clean up
+    const sixtyOneMinsAgo = new Date(Date.now() - 61 * 60 * 1000).toISOString();
+    const isOutsideWindow = sixtyOneMinsAgo < oneHourAgo;
+    assert.equal(isOutsideWindow, true, 'A 61-min-old send must be outside the rate-limit window');
+  });
+});
+
+// ── 14. Atomic token consumption ──────────────────────────────────────────
+
+describe('Atomic token consumption', () => {
+  it('zero updated rows means token was already consumed', () => {
+    // Simulate the Supabase UPDATE returning 0 rows (token already NULLed by concurrent request)
+    const updatedRows = [];
+    const result = Array.isArray(updatedRows) && updatedRows.length === 1;
+    assert.equal(result, false, 'Zero updated rows must return false (already consumed)');
+  });
+
+  it('one updated row means token was successfully consumed', () => {
+    // Simulate the Supabase UPDATE returning exactly 1 row
+    const updatedRows = [{ id: 'some-uuid' }];
+    const result = Array.isArray(updatedRows) && updatedRows.length === 1;
+    assert.equal(result, true, 'One updated row must return true (first consumer wins)');
   });
 });

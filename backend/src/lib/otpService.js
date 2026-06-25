@@ -7,31 +7,43 @@ const MAX_ATTEMPTS = 3;
 const RESEND_COOLDOWN_MS = 60 * 1000; // 60 sec
 const MAX_SENDS_PER_HOUR = 3;
 
+const OTP_HASH_SECRET = process.env.OTP_HASH_SECRET;
+if (!OTP_HASH_SECRET) {
+  console.warn(
+    '[otpService] OTP_HASH_SECRET is not set — OTP hashing is insecure. Set this env var in production.'
+  );
+}
+
 export function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
 
 export function hashValue(value) {
-  return crypto.createHash('sha256').update(value).digest('hex');
+  return crypto
+    .createHmac('sha256', OTP_HASH_SECRET || 'dev-secret-not-for-production')
+    .update(value)
+    .digest('hex');
 }
 
 export async function generateOtp(email) {
   const normalized = normalizeEmail(email);
 
-  // Cleanup expired rows for this email
+  // Only delete rows outside the rate-limit window (> 1 hour old)
+  // Rows within the last hour are preserved for rate-limit counting
+  // even after their 10-minute OTP expiry has passed
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   await supabaseAdmin
     .from('enrollment_otps')
     .delete()
     .eq('email', normalized)
-    .lt('expires_at', new Date().toISOString());
+    .lt('created_at', oneHourAgo);
 
   // Rate limit: count sends in last 1 hour
-  const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { count } = await supabaseAdmin
     .from('enrollment_otps')
     .select('id', { count: 'exact', head: true })
     .eq('email', normalized)
-    .gte('created_at', hourAgo);
+    .gte('created_at', oneHourAgo);
 
   if (count >= MAX_SENDS_PER_HOUR) throw new Error('RATE_LIMITED');
 
@@ -107,24 +119,16 @@ export async function verifyOtp(email, code) {
 export async function verifyEnrollmentToken(email, token) {
   const normalized = normalizeEmail(email);
 
-  const { data } = await supabaseAdmin
+  // Atomic: UPDATE only if token matches, is unexpired, and has not been consumed.
+  // Returns the updated row — zero rows means consumed by concurrent request or invalid.
+  const { data, error } = await supabaseAdmin
     .from('enrollment_otps')
-    .select('id')
+    .update({ enrollment_token_hash: null, enrollment_token_expires_at: null })
     .eq('email', normalized)
     .eq('enrollment_token_hash', hashValue(token))
     .gt('enrollment_token_expires_at', new Date().toISOString())
-    .maybeSingle();
+    .select('id');
 
-  if (!data) return false;
-
-  // Consume the token to prevent replay attacks
-  await supabaseAdmin
-    .from('enrollment_otps')
-    .update({
-      enrollment_token_hash: null,
-      enrollment_token_expires_at: null,
-    })
-    .eq('id', data.id);
-
-  return true;
+  if (error) throw error;
+  return Array.isArray(data) && data.length === 1;
 }
