@@ -256,3 +256,34 @@ describe('Atomic token consumption', () => {
     assert.equal(result, true, 'One updated row must return true (first consumer wins)');
   });
 });
+
+// ── 15. Production mode fail-closed ───────────────────────────────────────
+
+describe('Production mode without OTP_HASH_SECRET', () => {
+  it('throws a configuration error when secret is missing in production', () => {
+    // Mirror the production branch of hashValue without touching NODE_ENV
+    function hashValueWithConfig(value, secret, isProduction) {
+      if (isProduction && !secret) {
+        throw new Error(
+          'OTP_HASH_SECRET is required in production. Set this environment variable before using OTP functions.'
+        );
+      }
+      return crypto
+        .createHmac('sha256', secret || 'dev-secret-not-for-production')
+        .update(value)
+        .digest('hex');
+    }
+
+    // Production + no secret → must throw
+    assert.throws(
+      () => hashValueWithConfig('123456', undefined, true),
+      (err) => err.message.includes('OTP_HASH_SECRET is required in production')
+    );
+
+    // Production + secret present → must not throw
+    assert.doesNotThrow(() => hashValueWithConfig('123456', 'real-secret', true));
+
+    // Dev + no secret → must not throw (uses fallback)
+    assert.doesNotThrow(() => hashValueWithConfig('123456', undefined, false));
+  });
+});

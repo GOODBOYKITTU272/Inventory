@@ -8,10 +8,18 @@ const RESEND_COOLDOWN_MS = 60 * 1000; // 60 sec
 const MAX_SENDS_PER_HOUR = 3;
 
 const OTP_HASH_SECRET = process.env.OTP_HASH_SECRET;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 if (!OTP_HASH_SECRET) {
-  console.warn(
-    '[otpService] OTP_HASH_SECRET is not set — OTP hashing is insecure. Set this env var in production.'
-  );
+  if (IS_PRODUCTION) {
+    console.error(
+      '[otpService] FATAL: OTP_HASH_SECRET is required in production but is not set. All OTP operations will fail.'
+    );
+  } else {
+    console.warn(
+      '[otpService] OTP_HASH_SECRET is not set — using dev fallback. Never use this in production.'
+    );
+  }
 }
 
 export function normalizeEmail(email) {
@@ -19,6 +27,11 @@ export function normalizeEmail(email) {
 }
 
 export function hashValue(value) {
+  if (IS_PRODUCTION && !OTP_HASH_SECRET) {
+    throw new Error(
+      'OTP_HASH_SECRET is required in production. Set this environment variable before using OTP functions.'
+    );
+  }
   return crypto
     .createHmac('sha256', OTP_HASH_SECRET || 'dev-secret-not-for-production')
     .update(value)
