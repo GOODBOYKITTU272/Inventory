@@ -88,3 +88,44 @@ export async function isDirectoryUser(email) {
 
   return { exists: true, displayName: user.displayName || undefined };
 }
+
+/**
+ * Send the Snackify login OTP to the user's corporate inbox.
+ * Requires Mail.Send application permission on the Azure app registration.
+ * @param {string} email — recipient address
+ * @param {string} code  — 6-digit plaintext code (NEVER log this value)
+ */
+export async function sendOtpEmail(email, code) {
+  const token = await getGraphToken();
+  const res = await fetch('https://graph.microsoft.com/v1.0/users/support@applywizz.ai/sendMail', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: {
+        subject: 'Your Snackify verification code',
+        body: {
+          contentType: 'Text',
+          content:
+            `Your Snackify verification code is: ${code}\n\n` +
+            'This code expires in 10 minutes. Do not share it with anyone.\n\n' +
+            'If you did not request this code, please contact support@applywizz.ai.',
+        },
+        toRecipients: [{ emailAddress: { address: email } }],
+      },
+      saveToSentItems: false,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Graph sendMail failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+}
+
+/** True when Graph credentials are configured — same condition as directory lookup. */
+export function isSendMailConfigured() {
+  return isGraphConfigured();
+}
