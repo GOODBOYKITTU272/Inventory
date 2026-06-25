@@ -89,6 +89,21 @@ export async function generateOtp(email) {
   return code;
 }
 
+/**
+ * Rescinds a freshly-generated OTP row when delivery fails.
+ * Matches by code hash so only this exact row is deleted — earlier rows untouched.
+ * Callers must never log `code`.
+ */
+export async function cancelOtp(email, code) {
+  const normalized = normalizeEmail(email);
+  await supabaseAdmin
+    .from('enrollment_otps')
+    .delete()
+    .eq('email', normalized)
+    .eq('code_hash', hashValue(code))
+    .eq('used', false);
+}
+
 export async function verifyOtp(email, code) {
   const normalized = normalizeEmail(email);
 

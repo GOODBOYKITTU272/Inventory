@@ -7,6 +7,7 @@ import {
   sendOtpEmail,
 } from '../lib/microsoftGraph.js';
 import {
+  cancelOtp,
   generateOtp,
   normalizeEmail,
   verifyEnrollmentToken,
@@ -36,6 +37,7 @@ export function createAuthRouter(overrides = {}) {
     isSendMailConfigured,
     isDirectoryUser,
     sendOtpEmail,
+    cancelOtp,
     generateOtp,
     verifyOtp,
     verifyEnrollmentToken,
@@ -243,6 +245,9 @@ export function createAuthRouter(overrides = {}) {
       try {
         await d.sendOtpEmail(email, code);
       } catch (e) {
+        // ponytail: rescind the row so a failed delivery doesn't burn cooldown/rate-limit slot.
+        // Best-effort: if the delete itself fails we still return 503 — user retries anyway.
+        await d.cancelOtp(email, code).catch(() => {});
         console.error('[Auth] sendOtpEmail failed:', e.message);
         return res
           .status(503)

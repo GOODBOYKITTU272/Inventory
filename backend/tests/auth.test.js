@@ -267,6 +267,31 @@ describe('POST /api/auth/start-enrollment', () => {
     }
   });
 
+  it('Graph send failure rescinds OTP row (cancelOtp called) and returns 503', async () => {
+    let cancelOtpCalled = false;
+    let cancelOtpEmail = null;
+    const { post, close } = await startServer({
+      supabaseAdmin: makeSupabaseAdmin({
+        authUsers: [ALICE],
+        fromResults: [{ data: ALICE_PROFILE, error: null }],
+      }),
+      isSendMailConfigured: () => true,
+      isDirectoryUser: async () => ({ exists: true }),
+      generateOtp: async () => '482910',
+      sendOtpEmail: async () => { throw new Error('Graph sendMail 503'); },
+      cancelOtp: async (email) => { cancelOtpCalled = true; cancelOtpEmail = email; },
+      normalizeEmail: (e) => e.trim().toLowerCase(),
+    });
+    try {
+      const r = await post('/start-enrollment', { email: 'alice@applywizz.ai' });
+      assert.equal(r.status, 503);
+      assert.equal(cancelOtpCalled, true, 'cancelOtp must be called to rescind the OTP row');
+      assert.equal(cancelOtpEmail, 'alice@applywizz.ai', 'cancelOtp must receive the normalized email');
+    } finally {
+      await close();
+    }
+  });
+
   it('returns ok: true and calls sendOtpEmail exactly once on success', async () => {
     let sendOtpCalled = 0;
     let generateOtpCalled = 0;
