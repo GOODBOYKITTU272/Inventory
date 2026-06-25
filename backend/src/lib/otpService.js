@@ -76,31 +76,34 @@ export async function generateOtp(email) {
   // Generate cryptographically secure 6-digit code
   const code = crypto.randomInt(100000, 1000000).toString();
 
-  const { error } = await supabaseAdmin.from('enrollment_otps').insert({
-    email: normalized,
-    code_hash: hashValue(code),
-    expires_at: new Date(Date.now() + OTP_EXPIRY_MS).toISOString(),
-    attempts: 0,
-    used: false,
-  });
+  const { data, error } = await supabaseAdmin
+    .from('enrollment_otps')
+    .insert({
+      email: normalized,
+      code_hash: hashValue(code),
+      expires_at: new Date(Date.now() + OTP_EXPIRY_MS).toISOString(),
+      attempts: 0,
+      used: false,
+    })
+    .select('id')
+    .single();
 
   if (error) throw error;
 
-  return code;
+  return { code, otpId: data.id };
 }
 
 /**
  * Rescinds a freshly-generated OTP row when delivery fails.
- * Matches by code hash so only this exact row is deleted — earlier rows untouched.
- * Callers must never log `code`.
+ * Deletes by primary key — only the specific row is affected; older rows for the
+ * same email are untouched. The `used = false` guard prevents accidental deletion
+ * of a row that was already verified between generate and the failed send.
  */
-export async function cancelOtp(email, code) {
-  const normalized = normalizeEmail(email);
+export async function cancelOtp(otpId) {
   await supabaseAdmin
     .from('enrollment_otps')
     .delete()
-    .eq('email', normalized)
-    .eq('code_hash', hashValue(code))
+    .eq('id', otpId)
     .eq('used', false);
 }
 

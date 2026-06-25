@@ -230,8 +230,9 @@ export function createAuthRouter(overrides = {}) {
       }
 
       let code;
+      let otpId;
       try {
-        code = await d.generateOtp(email);
+        ({ code, otpId } = await d.generateOtp(email));
       } catch (e) {
         if (e.message === 'COOLDOWN') {
           return res.status(429).json({ error: 'Please wait before requesting another code.' });
@@ -245,9 +246,14 @@ export function createAuthRouter(overrides = {}) {
       try {
         await d.sendOtpEmail(email, code);
       } catch (e) {
-        // ponytail: rescind the row so a failed delivery doesn't burn cooldown/rate-limit slot.
-        // Best-effort: if the delete itself fails we still return 503 — user retries anyway.
-        await d.cancelOtp(email, code).catch(() => {});
+        // Rescind the specific row by primary key so a failed delivery doesn't burn
+        // the cooldown or hourly rate-limit slot. Logs generically on cleanup failure —
+        // never the code, token, or row ID.
+        try {
+          await d.cancelOtp(otpId);
+        } catch (cleanupErr) {
+          console.error('[Auth] OTP cleanup failed after send error — row may persist:', cleanupErr.message);
+        }
         console.error('[Auth] sendOtpEmail failed:', e.message);
         return res
           .status(503)

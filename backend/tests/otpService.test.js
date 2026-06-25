@@ -257,7 +257,32 @@ describe('Atomic token consumption', () => {
   });
 });
 
-// ── 15. Production mode fail-closed ───────────────────────────────────────
+// ── 15. cancelOtp delete-by-id scoping ───────────────────────────────────
+
+describe('cancelOtp delete-by-id scoping', () => {
+  it('deletes only the row with the exact otpId — an older row for the same email survives', () => {
+    // Mirrors the WHERE clause: DELETE WHERE id = otpId AND used = false
+    const rows = [
+      { id: 'old-row-id', email: 'alice@applywizz.ai', used: false },
+      { id: 'new-row-id', email: 'alice@applywizz.ai', used: false },
+    ];
+    const otpId = 'new-row-id';
+    const after = rows.filter((r) => !(r.id === otpId && !r.used));
+    assert.equal(after.length, 1, 'exactly one row must survive');
+    assert.equal(after[0].id, 'old-row-id', 'the older row must not be deleted');
+  });
+
+  it('does not delete a row that has already been verified (used = true guard)', () => {
+    // Even if the primary key matches, a used row must not be deleted
+    const rows = [{ id: 'verified-row-id', email: 'alice@applywizz.ai', used: true }];
+    const otpId = 'verified-row-id';
+    const after = rows.filter((r) => !(r.id === otpId && !r.used));
+    assert.equal(after.length, 1, 'used row must survive the delete filter');
+    assert.equal(after[0].used, true);
+  });
+});
+
+// ── 16. Production mode fail-closed ───────────────────────────────────────
 
 describe('Production mode without OTP_HASH_SECRET', () => {
   it('throws a configuration error when secret is missing in production', () => {

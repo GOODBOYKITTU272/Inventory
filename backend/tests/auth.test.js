@@ -119,7 +119,7 @@ describe('POST /api/auth/start-enrollment', () => {
       supabaseAdmin: makeSupabaseAdmin({ authUsers: [], fromResults: [] }),
       isSendMailConfigured: () => true,
       isDirectoryUser: async () => ({ exists: true }),
-      generateOtp: async () => { generateOtpCalled = true; return '111111'; },
+      generateOtp: async () => { generateOtpCalled = true; return { code: '111111', otpId: 'otp-1' }; },
       sendOtpEmail: async () => { sendOtpCalled = true; },
       normalizeEmail: (e) => e.trim().toLowerCase(),
     });
@@ -143,7 +143,7 @@ describe('POST /api/auth/start-enrollment', () => {
       }),
       isSendMailConfigured: () => true,
       isDirectoryUser: async () => ({ exists: true }),
-      generateOtp: async () => { generateOtpCalled = true; return '111111'; },
+      generateOtp: async () => { generateOtpCalled = true; return { code: '111111', otpId: 'otp-1' }; },
       sendOtpEmail: async () => {},
       normalizeEmail: (e) => e.trim().toLowerCase(),
     });
@@ -166,7 +166,7 @@ describe('POST /api/auth/start-enrollment', () => {
       }),
       isSendMailConfigured: () => true,
       isDirectoryUser: async () => ({ exists: false }),
-      generateOtp: async () => { generateOtpCalled = true; return '111111'; },
+      generateOtp: async () => { generateOtpCalled = true; return { code: '111111', otpId: 'otp-1' }; },
       sendOtpEmail: async () => {},
       normalizeEmail: (e) => e.trim().toLowerCase(),
     });
@@ -189,7 +189,7 @@ describe('POST /api/auth/start-enrollment', () => {
       }),
       isSendMailConfigured: () => true,
       isDirectoryUser: async () => { throw new Error('Graph network timeout'); },
-      generateOtp: async () => { generateOtpCalled = true; return '111111'; },
+      generateOtp: async () => { generateOtpCalled = true; return { code: '111111', otpId: 'otp-1' }; },
       sendOtpEmail: async () => {},
       normalizeEmail: (e) => e.trim().toLowerCase(),
     });
@@ -208,7 +208,7 @@ describe('POST /api/auth/start-enrollment', () => {
       supabaseAdmin: makeSupabaseAdmin({ authUsers: [ALICE] }),
       isSendMailConfigured: () => false,
       isDirectoryUser: async () => ({ exists: true }),
-      generateOtp: async () => { generateOtpCalled = true; return '111111'; },
+      generateOtp: async () => { generateOtpCalled = true; return { code: '111111', otpId: 'otp-1' }; },
       sendOtpEmail: async () => {},
       normalizeEmail: (e) => e.trim().toLowerCase(),
     });
@@ -267,9 +267,9 @@ describe('POST /api/auth/start-enrollment', () => {
     }
   });
 
-  it('Graph send failure rescinds OTP row (cancelOtp called) and returns 503', async () => {
-    let cancelOtpCalled = false;
-    let cancelOtpEmail = null;
+  it('cancelOtp receives the exact otpId returned by generateOtp on send failure', async () => {
+    const OTP_ROW_ID = '11111111-aaaa-4bbb-8ccc-dddddddddddd';
+    let capturedId = null;
     const { post, close } = await startServer({
       supabaseAdmin: makeSupabaseAdmin({
         authUsers: [ALICE],
@@ -277,17 +277,98 @@ describe('POST /api/auth/start-enrollment', () => {
       }),
       isSendMailConfigured: () => true,
       isDirectoryUser: async () => ({ exists: true }),
-      generateOtp: async () => '482910',
+      generateOtp: async () => ({ code: '482910', otpId: OTP_ROW_ID }),
       sendOtpEmail: async () => { throw new Error('Graph sendMail 503'); },
-      cancelOtp: async (email) => { cancelOtpCalled = true; cancelOtpEmail = email; },
+      cancelOtp: async (otpId) => { capturedId = otpId; },
       normalizeEmail: (e) => e.trim().toLowerCase(),
     });
     try {
       const r = await post('/start-enrollment', { email: 'alice@applywizz.ai' });
       assert.equal(r.status, 503);
-      assert.equal(cancelOtpCalled, true, 'cancelOtp must be called to rescind the OTP row');
-      assert.equal(cancelOtpEmail, 'alice@applywizz.ai', 'cancelOtp must receive the normalized email');
+      assert.equal(capturedId, OTP_ROW_ID, 'cancelOtp must receive the exact row ID from generateOtp');
     } finally {
+      await close();
+    }
+  });
+
+  it('cancelOtp is called with only the new row ID — an older row ID is never passed', async () => {
+    const OLD_ROW_ID = 'old-row-0000-4aaa-8bbb-cccccccccccc';
+    const NEW_ROW_ID = 'new-row-1111-4bbb-8ccc-dddddddddddd';
+    const receivedIds = [];
+    const { post, close } = await startServer({
+      supabaseAdmin: makeSupabaseAdmin({
+        authUsers: [ALICE],
+        fromResults: [{ data: ALICE_PROFILE, error: null }],
+      }),
+      isSendMailConfigured: () => true,
+      isDirectoryUser: async () => ({ exists: true }),
+      generateOtp: async () => ({ code: '482910', otpId: NEW_ROW_ID }),
+      sendOtpEmail: async () => { throw new Error('Graph sendMail 503'); },
+      cancelOtp: async (otpId) => { receivedIds.push(otpId); },
+      normalizeEmail: (e) => e.trim().toLowerCase(),
+    });
+    try {
+      await post('/start-enrollment', { email: 'alice@applywizz.ai' });
+      assert.equal(receivedIds.length, 1, 'cancelOtp must be called exactly once');
+      assert.equal(receivedIds[0], NEW_ROW_ID, 'must receive the new row ID');
+      assert.equal(receivedIds.includes(OLD_ROW_ID), false, 'must not receive any older row ID');
+    } finally {
+      await close();
+    }
+  });
+
+  it('cancelOtp failure is logged generically and endpoint still returns 503', async () => {
+    const errorLogs = [];
+    const origError = console.error;
+    console.error = (...args) => errorLogs.push(args.join(' '));
+    const { post, close } = await startServer({
+      supabaseAdmin: makeSupabaseAdmin({
+        authUsers: [ALICE],
+        fromResults: [{ data: ALICE_PROFILE, error: null }],
+      }),
+      isSendMailConfigured: () => true,
+      isDirectoryUser: async () => ({ exists: true }),
+      generateOtp: async () => ({ code: '482910', otpId: 'otp-cleanup-fail' }),
+      sendOtpEmail: async () => { throw new Error('Graph sendMail 503'); },
+      cancelOtp: async () => { throw new Error('DB connection lost'); },
+      normalizeEmail: (e) => e.trim().toLowerCase(),
+    });
+    try {
+      const r = await post('/start-enrollment', { email: 'alice@applywizz.ai' });
+      assert.equal(r.status, 503, 'cleanup failure must not change the 503 response');
+      const logsText = errorLogs.join('\n');
+      assert.ok(logsText.toLowerCase().includes('cleanup'), 'a generic cleanup-failure log must appear');
+    } finally {
+      console.error = origError;
+      await close();
+    }
+  });
+
+  it('no OTP code or row ID appears in error logs on send failure', async () => {
+    const errorLogs = [];
+    const origError = console.error;
+    console.error = (...args) => errorLogs.push(args.join(' '));
+    const SECRET_CODE = '737291';
+    const SECRET_OTP_ID = 'secret-otp-row-uuid-should-not-log';
+    const { post, close } = await startServer({
+      supabaseAdmin: makeSupabaseAdmin({
+        authUsers: [ALICE],
+        fromResults: [{ data: ALICE_PROFILE, error: null }],
+      }),
+      isSendMailConfigured: () => true,
+      isDirectoryUser: async () => ({ exists: true }),
+      generateOtp: async () => ({ code: SECRET_CODE, otpId: SECRET_OTP_ID }),
+      sendOtpEmail: async () => { throw new Error('Graph sendMail 503'); },
+      cancelOtp: async () => {},
+      normalizeEmail: (e) => e.trim().toLowerCase(),
+    });
+    try {
+      await post('/start-enrollment', { email: 'alice@applywizz.ai' });
+      const logsText = errorLogs.join('\n');
+      assert.equal(logsText.includes(SECRET_CODE), false, `OTP code '${SECRET_CODE}' must not appear in logs`);
+      assert.equal(logsText.includes(SECRET_OTP_ID), false, 'otpId must not appear in logs');
+    } finally {
+      console.error = origError;
       await close();
     }
   });
@@ -302,7 +383,7 @@ describe('POST /api/auth/start-enrollment', () => {
       }),
       isSendMailConfigured: () => true,
       isDirectoryUser: async () => ({ exists: true, displayName: 'Alice' }),
-      generateOtp: async () => { generateOtpCalled++; return '482910'; },
+      generateOtp: async () => { generateOtpCalled++; return { code: '482910', otpId: 'otp-row-1' }; },
       sendOtpEmail: async () => { sendOtpCalled++; },
       normalizeEmail: (e) => e.trim().toLowerCase(),
     });
