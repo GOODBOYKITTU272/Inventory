@@ -711,16 +711,45 @@ export default function LiveTracking() {
   const confirmChecked = useRef(false);
   const shownRatingRef = useRef(false);
   const touchStartX = useRef(null);
+  // Polling state
+  const activeRef = useRef(false);         // false when unmounted or id changed
+  const inFlightRef = useRef(false);       // true while a load() is awaiting
+  const timerRef = useRef(null);           // handle for the 5-second poll timer
+  const retryTimerRef = useRef(null);      // handle for the 429 backoff timer
+  const pollCountRef = useRef(0);          // increments each tick for aux throttle
+  const lastAuxRef = useRef({             // cached auxiliary data between 30-s fetches
+    allRequests: [],
+    queueData: { pending: 0, in_progress: 0 },
+  });
 
-  // Load the current order + all active orders
+  // Load the current order + auxiliary data.
+  // Critical: api.getRequest(id) every 5 s.
+  // Auxiliary: api.listRequests() + api.queueCount() on first load, then every 30 s.
+  // Self-scheduling setTimeout replaces setInterval so the next poll only starts
+  // after the current one completes, preventing overlapping requests by design.
   const load = useCallback(async () => {
+    if (!activeRef.current || inFlightRef.current) return;
+    inFlightRef.current = true;
+    pollCountRef.current += 1;
+    const fetchAuxiliary = pollCountRef.current % 6 === 1; // tick 1, 7, 13 … = every 30 s
+
     try {
-      const [data, allRequests, queueData] = await Promise.all([
+      const [data, rawRequests, rawQueue] = await Promise.all([
         api.getRequest(id),
-        api.listRequests(),
-        api.queueCount().catch(() => ({ pending: 0, in_progress: 0 })),
+        fetchAuxiliary ? api.listRequests().catch(() => null) : Promise.resolve(null),
+        fetchAuxiliary ? api.queueCount().catch(() => null) : Promise.resolve(null),
       ]);
+
+      if (!activeRef.current) return; // unmounted or id changed while awaiting
+
+      // Update auxiliary cache only when freshly fetched
+      if (rawRequests !== null) lastAuxRef.current.allRequests = rawRequests;
+      if (rawQueue !== null) lastAuxRef.current.queueData = rawQueue;
+
+      const { allRequests, queueData } = lastAuxRef.current;
+
       setReq(data);
+      setErr(''); // clear any previous error on success
       setQueueAhead((queueData.pending || 0) + (queueData.in_progress || 0));
 
       // Show confirmation screen for freshly placed orders (< 30s old)
@@ -756,15 +785,47 @@ export default function LiveTracking() {
         shownRatingRef.current = true;
         setTimeout(() => setShowRate(true), 1200);
       }
+
+      // Schedule next critical poll in 5 s
+      timerRef.current = setTimeout(() => {
+        if (activeRef.current) load();
+      }, 5000);
     } catch (e) {
-      setErr(e.message);
+      if (!activeRef.current) return;
+
+      if (e.status === 429) {
+        // Keep last known order data visible; show a friendly non-technical banner
+        setErr('Updates are temporarily busy. Retrying shortly.');
+        const pauseMs = (e.retryAfterSeconds || 30) * 1000;
+        // Clear both timers before setting the single retry timer
+        clearTimeout(timerRef.current);
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = setTimeout(() => {
+          if (activeRef.current) load();
+        }, pauseMs);
+      } else {
+        setErr(e.message);
+        // Continue polling even on non-429 errors (preserve existing behaviour)
+        timerRef.current = setTimeout(() => {
+          if (activeRef.current) load();
+        }, 5000);
+      }
+    } finally {
+      inFlightRef.current = false;
     }
   }, [id]);
 
   useEffect(() => {
+    activeRef.current = true;
+    inFlightRef.current = false;
+    pollCountRef.current = 0;
+    lastAuxRef.current = { allRequests: [], queueData: { pending: 0, in_progress: 0 } };
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    return () => {
+      activeRef.current = false;
+      clearTimeout(timerRef.current);
+      clearTimeout(retryTimerRef.current);
+    };
   }, [load]);
 
   // ── Swipe handling ──
@@ -795,11 +856,12 @@ export default function LiveTracking() {
     else goToOrder(currentIndex - 1); // swipe right → prev
   }
 
-  if (err)
+  // Full-screen error only when no order data has ever loaded (e.g. auth failure, network down).
+  // If req is already loaded, show the order UI with a banner instead (see below).
+  if (err && !req)
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-3 text-rose-500">
-        <div className="text-4xl">😕</div>
-        <div className="text-sm">{err}</div>
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-500">
+        <div className="text-sm text-center px-6">{err}</div>
         <Link to="/request" className="btn-secondary text-sm mt-2">
           ← Back to Request
         </Link>
@@ -822,6 +884,13 @@ export default function LiveTracking() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Non-critical error banner — shown when req data is available but a poll failed */}
+      {err && (
+        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center">
+          {err}
+        </div>
+      )}
+
       {/* Back + order nav */}
       <div className="flex items-center justify-between pt-2">
         <Link

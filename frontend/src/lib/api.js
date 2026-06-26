@@ -16,6 +16,15 @@ async function request(path, opts = {}) {
   };
   const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   if (!res.ok) {
+    if (res.status === 429) {
+      const raw = res.headers.get('retry-after');
+      const parsed = parseInt(raw, 10);
+      const retryAfterSeconds = Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+      const e = new Error('Updates are temporarily busy. Retrying shortly.');
+      e.status = 429;
+      e.retryAfterSeconds = retryAfterSeconds;
+      throw e;
+    }
     let msg = `${res.status} ${res.statusText}`;
     try {
       // Only parse as JSON if the response actually is JSON.
