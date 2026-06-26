@@ -393,7 +393,7 @@ export function createAuthRouter(overrides = {}) {
       }
 
       // Call Supabase TOTP verification via a server-side user session.
-      let aal2Session;
+      let aal2Tokens;
       try {
         const aal1Token = await getUserAal1Session(tx.email);
         const { data: verifyData, error: verifyErr } = await d
@@ -407,8 +407,8 @@ export function createAuthRouter(overrides = {}) {
           }
           return sendVerificationFailure(res, 'enrollment_transactions', enrollmentTransactionId);
         }
-        aal2Session = verifyData?.session;
-        if (!aal2Session?.access_token || !aal2Session?.refresh_token) {
+        aal2Tokens = verifyData;
+        if (!aal2Tokens?.access_token || !aal2Tokens?.refresh_token) {
           return sendVerificationFailure(res, 'enrollment_transactions', enrollmentTransactionId);
         }
       } catch (e) {
@@ -421,7 +421,7 @@ export function createAuthRouter(overrides = {}) {
         .update({ used_at: nowIso(), verifying_at: null, updated_at: nowIso() })
         .eq('id', enrollmentTransactionId);
 
-      res.json({ access_token: aal2Session.access_token, refresh_token: aal2Session.refresh_token });
+      res.json({ access_token: aal2Tokens.access_token, refresh_token: aal2Tokens.refresh_token });
     } catch (e) {
       if (e instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid request.' });
@@ -522,7 +522,7 @@ export function createAuthRouter(overrides = {}) {
         return res.status(409).json({ error: 'Another verification is in progress. Please retry.' });
       }
 
-      let aal2Session;
+      let aal2Tokens;
       try {
         const aal1Token = await getUserAal1Session(tx.email);
         const { data: verifyData, error: verifyErr } = await d
@@ -536,7 +536,7 @@ export function createAuthRouter(overrides = {}) {
           }
           return sendVerificationFailure(res, 'login_transactions', transactionId);
         }
-        aal2Session = verifyData?.session;
+        aal2Tokens = verifyData;
       } catch (e) {
         return sendVerificationFailure(res, 'login_transactions', transactionId);
       }
@@ -547,7 +547,7 @@ export function createAuthRouter(overrides = {}) {
         .delete()
         .eq('id', transactionId);
 
-      res.json({ access_token: aal2Session.access_token, refresh_token: aal2Session.refresh_token });
+      res.json({ access_token: aal2Tokens.access_token, refresh_token: aal2Tokens.refresh_token });
     } catch (e) {
       if (e instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid request.' });
@@ -653,7 +653,7 @@ export function createAuthRouter(overrides = {}) {
         return res.status(409).json({ error: 'Another verification is in progress. Please retry.' });
       }
 
-      let aal2Session;
+      let aal2Tokens;
       try {
         const aal1Token = await getUserAal1Session(user.email);
         const { data: verifyData, error: verifyErr } = await d
@@ -667,7 +667,7 @@ export function createAuthRouter(overrides = {}) {
           }
           return sendVerificationFailure(res, 'login_transactions', transactionId);
         }
-        aal2Session = verifyData?.session;
+        aal2Tokens = verifyData;
       } catch (e) {
         return sendVerificationFailure(res, 'login_transactions', transactionId);
       }
@@ -677,7 +677,7 @@ export function createAuthRouter(overrides = {}) {
         .delete()
         .eq('id', transactionId);
 
-      res.json({ access_token: aal2Session.access_token, refresh_token: aal2Session.refresh_token });
+      res.json({ access_token: aal2Tokens.access_token, refresh_token: aal2Tokens.refresh_token });
     } catch (e) {
       if (e instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid request.' });

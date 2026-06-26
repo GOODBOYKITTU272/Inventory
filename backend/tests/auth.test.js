@@ -101,7 +101,11 @@ function makeSupabaseAsUser({
         enroll: async () => ({ data: enrollData, error: null }),
         challengeAndVerify: async () =>
           challengeAndVerifyResult || {
-            data: { session: { access_token: 'aal2-access-token', refresh_token: 'aal2-refresh-token' } },
+            data: {
+              access_token: 'aal2-access-token',
+              refresh_token: 'aal2-refresh-token',
+              user: { id: 'uid-alice', email: 'alice@applywizz.ai' },
+            },
             error: null,
           },
       },
@@ -1025,7 +1029,7 @@ describe('POST /api/auth/verify-totp-enrollment', () => {
       supabaseAdmin: admin,
       supabaseAnon: makeSupabaseAnon(),
       supabaseAsUser: makeSupabaseAsUser({
-        challengeAndVerifyResult: { data: {}, error: null },
+        challengeAndVerifyResult: { data: { user: { id: 'uid-alice', email: 'alice@applywizz.ai' } }, error: null },
       }),
       normalizeEmail: (e) => e.trim().toLowerCase(),
     });
