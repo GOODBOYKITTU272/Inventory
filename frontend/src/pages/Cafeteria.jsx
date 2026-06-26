@@ -53,6 +53,10 @@ const CATEGORY_EMOJI = {
   other: '📦',
 };
 
+const CUSTOMER_CATALOG_CATEGORIES = new Set(['food', 'snack', 'meal', 'beverage', 'refreshment']);
+const INTERNAL_ONLY_CATEGORY_NAMES = new Set(['accessory', 'accessories', 'rental', 'rentals', 'asset', 'assets']);
+const INTERNAL_ONLY_TEXT_PATTERNS = ['rental', 'charger', 'accessor', 'asset', 'internal', 'admin-only'];
+
 // ── Out-of-stock messages by tone ─────────────────────────────────────────────
 const _OOS_BY_TONE = {
   Professional: [
@@ -207,6 +211,54 @@ function getItemDisplayName(item) {
     item?.item_name ||
     ''
   );
+}
+
+function getCatalogSearchText(item) {
+  return [
+    itemSearchText(item),
+    item?.description,
+    ...(Array.isArray(item?.tags) ? item.tags : []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function isCustomerWaterItem(item) {
+  const text = itemSearchText(item);
+  return text === 'water' || text === 'water bottle';
+}
+
+function isInternalOnlyCatalogItem(item) {
+  const category = String(item?.category || '').toLowerCase();
+  const text = getCatalogSearchText(item);
+  return (
+    INTERNAL_ONLY_CATEGORY_NAMES.has(category) ||
+    INTERNAL_ONLY_TEXT_PATTERNS.some((pattern) => text.includes(pattern))
+  );
+}
+
+function isCustomerCatalogItem(item) {
+  if (!item) return false;
+  if (isInternalOnlyCatalogItem(item)) return false;
+  if (isSandwichSpreadItem(item) || item._missing_stock || item._needs_milk || item._virtual) return true;
+
+  const category = String(item.category || '').toLowerCase();
+  if (!CUSTOMER_CATALOG_CATEGORIES.has(category) && !isCustomerWaterItem(item)) return false;
+
+  // Hide backing stock rows and other admin-only records that are not direct customer items.
+  return item.orderable !== false;
+}
+
+function dedupeItemsById(items) {
+  const seen = new Set();
+  return (items || []).filter((item) => {
+    const id = item?.id;
+    if (!id) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 
 function getOrderItemName(item) {
@@ -504,7 +556,7 @@ function ItemChip({
               {item.calories_per_serving} kcal
             </div>
           )}
-          <div className="text-[10px] text-blue-500 font-bold mt-1">🥛 No Milk</div>
+          <div className="text-[10px] text-blue-500 font-bold mt-1">Out of stock</div>
         </div>
       </div>
     );
@@ -523,7 +575,7 @@ function ItemChip({
               {item.calories_per_serving} kcal
             </div>
           )}
-          <div className="text-[10px] text-amber-600 font-bold mt-1">Out of stock / No Bread</div>
+          <div className="text-[10px] text-amber-600 font-bold mt-1">Out of stock</div>
         </div>
       </div>
     );
@@ -1997,13 +2049,7 @@ export default function Cafeteria() {
   // ── Group items by category ────────────────────────────────────────────────────
   // Include greyed-out dependency-backed items so users understand why they cannot order.
   // Exclude only items that are truly hidden backing stock rows.
-  const visibleItems = items.filter(
-    (item) =>
-      item.orderable !== false ||
-      item._needs_milk ||
-      item._missing_stock ||
-      isSandwichSpreadItem(item)
-  );
+  const visibleItems = dedupeItemsById(items.filter(isCustomerCatalogItem));
   const grouped = visibleItems.reduce((acc, item) => {
     const cat = getDisplayCategory(item);
     if (!acc[cat]) acc[cat] = [];
@@ -2017,7 +2063,6 @@ export default function Cafeteria() {
     'hot_mixes',
     'refreshments',
     'food_pantry',
-    'accessories',
   ];
   const catLabels = {
     caffeine_fix: 'Caffeine Fix ☕',
@@ -2025,7 +2070,6 @@ export default function Cafeteria() {
     hot_mixes: 'Hot Mixes 🍫',
     refreshments: 'Refreshments 💧',
     food_pantry: 'Food / Pantry 🥪',
-    accessories: 'Accessories 📎',
   };
   const sortedGroups = catOrder.filter((c) => grouped[c]?.length);
 

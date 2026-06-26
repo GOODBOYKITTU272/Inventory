@@ -9,7 +9,7 @@ function mockJwt(payload) {
 }
 
 async function loginAsStaff(page) {
-  const tokenKey = 'sb-twmadauhauuypioznpus-auth-token';
+  const tokenKeys = ['sb-twmadauhauuypioznpus-auth-token', 'sb-localhost-auth-token'];
   const session = {
     access_token: mockJwt({
       aal: 'aal2',
@@ -30,8 +30,10 @@ async function loginAsStaff(page) {
   };
 
   await page.addInitScript(
-    ({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)),
-    { key: tokenKey, value: session },
+    ({ keys, value }) => {
+      for (const key of keys) window.localStorage.setItem(key, JSON.stringify(value));
+    },
+    { keys: tokenKeys, value: session },
   );
 
   await page.route('**/auth/v1/user', route => route.fulfill({ json: session.user }));
@@ -43,6 +45,7 @@ async function loginAsStaff(page) {
       preferred_name: 'Sandwich',
       role: 'staff',
       email: 'sandwich.flow@applywizz.ai',
+      active: true,
     },
   }));
   await page.route('**/rest/v1/employee_cafeteria_preferences**', route => route.fulfill({
@@ -182,8 +185,105 @@ test.describe('cafeteria sandwich spread flow', () => {
     await page.goto('/request');
 
     await expect(page.getByText('Mix Fruit Jam Sandwich')).toBeVisible();
-    await expect(page.getByText('Out of stock / No Bread').first()).toBeVisible();
+    await expect(page.getByText('Out of stock').first()).toBeVisible();
     await page.getByText('Mix Fruit Jam Sandwich').click();
     await expect(page.getByText('Choose bread')).not.toBeVisible();
+  });
+
+  test('hides internal items, keeps water visible, and deduplicates repeated item ids', async ({ page }) => {
+    const items = [
+      ...baseItems(),
+      {
+        id: 'jam-dup-001',
+        item_name: 'Mix Fruit Jam Sandwich',
+        display_name: 'Mix Fruit Jam Sandwich',
+        frontend_name: 'Mix Fruit Jam Sandwich',
+        category: 'food',
+        emoji: '🍓',
+        description: 'Choose bread and spread on one or both slices',
+        tags: ['sandwich', 'spread'],
+        available: true,
+        orderable: true,
+        stock_today: 1,
+        stock_servings: 6,
+        dependencies: ['Bread'],
+        sides_option: true,
+        sandwich_type: 'mix_fruit_jam',
+      },
+      {
+        id: 'jam-dup-001',
+        item_name: 'Mix Fruit Jam Sandwich',
+        display_name: 'Mix Fruit Jam Sandwich',
+        frontend_name: 'Mix Fruit Jam Sandwich',
+        category: 'food',
+        emoji: '🍓',
+        description: 'Choose bread and spread on one or both slices',
+        tags: ['sandwich', 'spread'],
+        available: true,
+        orderable: true,
+        stock_today: 1,
+        stock_servings: 6,
+        dependencies: ['Bread'],
+        sides_option: true,
+        sandwich_type: 'mix_fruit_jam',
+      },
+      {
+        id: 'water-001',
+        item_name: 'Water',
+        display_name: 'Water',
+        frontend_name: 'Water',
+        category: 'refreshment',
+        emoji: '💧',
+        description: '',
+        tags: [],
+        available: true,
+        orderable: true,
+        stock_today: null,
+        stock_servings: null,
+        dependencies: [],
+        sides_option: false,
+      },
+      {
+        id: 'internal-001',
+        item_name: 'Monthly rental chargers for May',
+        display_name: 'Monthly rental chargers for May',
+        frontend_name: 'Monthly rental chargers for May',
+        category: 'food',
+        emoji: '🔌',
+        description: '',
+        tags: ['asset'],
+        available: true,
+        orderable: true,
+        stock_today: 1,
+        stock_servings: 1,
+        dependencies: [],
+        sides_option: false,
+      },
+      {
+        id: 'accessory-001',
+        item_name: 'Coffee Stirrers',
+        display_name: 'Coffee Stirrers',
+        frontend_name: 'Coffee Stirrers',
+        category: 'food',
+        emoji: '🥄',
+        description: '',
+        tags: ['accessory'],
+        available: true,
+        orderable: true,
+        stock_today: 1,
+        stock_servings: 20,
+        dependencies: [],
+        sides_option: false,
+      },
+    ];
+    await mockCafeteriaApis(page, items);
+
+    await page.goto('/request');
+
+    await expect(page.getByText('Water')).toBeVisible();
+    await expect(page.getByText('Monthly rental chargers for May')).toHaveCount(0);
+    await expect(page.getByText('Coffee Stirrers')).toHaveCount(0);
+    await expect(page.getByText(/Accessories/i)).toHaveCount(0);
+    await expect(page.getByText('Mix Fruit Jam Sandwich')).toHaveCount(1);
   });
 });
