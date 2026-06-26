@@ -2,8 +2,7 @@ import crypto from 'node:crypto';
 import { supabaseAdmin } from './supabase.js';
 
 const OTP_EXPIRY_MS = 10 * 60 * 1000; // 10 min
-const ENROLLMENT_TOKEN_EXPIRY_MS = 5 * 60 * 1000; // 5 min
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 5;
 const RESEND_COOLDOWN_MS = 60 * 1000; // 60 sec
 const MAX_SENDS_PER_HOUR = 3;
 
@@ -40,6 +39,17 @@ export function hashValue(value) {
 
 export async function generateOtp(email) {
   const normalized = normalizeEmail(email);
+
+  // Invalidate all active (unused, non-invalidated) OTPs for this email.
+  // This makes resends explicit and distinguishable from consumed OTPs:
+  //   used=true, invalidated_at IS NULL  → correctly verified
+  //   used=true, invalidated_at IS NOT NULL → superseded by resend
+  await supabaseAdmin
+    .from('enrollment_otps')
+    .update({ used: true, invalidated_at: new Date().toISOString() })
+    .eq('email', normalized)
+    .eq('used', false)
+    .is('invalidated_at', null);
 
   // Only delete rows outside the rate-limit window (> 1 hour old)
   // Rows within the last hour are preserved for rate-limit counting
@@ -131,35 +141,13 @@ export async function verifyOtp(email, code) {
 
   if (hashValue(code) !== otp.code_hash) return { valid: false, reason: 'invalid_code' };
 
-  const enrollmentToken = crypto.randomUUID();
-
   const { error } = await supabaseAdmin
     .from('enrollment_otps')
-    .update({
-      used: true,
-      enrollment_token_hash: hashValue(enrollmentToken),
-      enrollment_token_expires_at: new Date(Date.now() + ENROLLMENT_TOKEN_EXPIRY_MS).toISOString(),
-    })
+    .update({ used: true })
     .eq('id', otp.id);
 
   if (error) throw error;
 
-  return { valid: true, enrollmentToken };
+  return { valid: true };
 }
 
-export async function verifyEnrollmentToken(email, token) {
-  const normalized = normalizeEmail(email);
-
-  // Atomic: UPDATE only if token matches, is unexpired, and has not been consumed.
-  // Returns the updated row — zero rows means consumed by concurrent request or invalid.
-  const { data, error } = await supabaseAdmin
-    .from('enrollment_otps')
-    .update({ enrollment_token_hash: null, enrollment_token_expires_at: null })
-    .eq('email', normalized)
-    .eq('enrollment_token_hash', hashValue(token))
-    .gt('enrollment_token_expires_at', new Date().toISOString())
-    .select('id');
-
-  if (error) throw error;
-  return Array.isArray(data) && data.length === 1;
-}

@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { AlertCircle, Lock, ShieldCheck, Unlock } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
+import { api } from '../lib/api.js';
 import { supabase } from '../lib/supabase.js';
 
 const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes
@@ -17,9 +18,7 @@ export default function InactivityLock({ children }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Stored between challenge and verify
-  const factorIdRef = useRef(null);
-  const challengeIdRef = useRef(null);
+  const transactionIdRef = useRef(null);
   const timerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -49,38 +48,17 @@ export default function InactivityLock({ children }) {
     }
   }, [step]);
 
-  // ── "Tap to Unlock" — issue MFA challenge ────────────────────────────────
+  // ── "Tap to Unlock" — create backend reauth transaction ──────────────────
   async function handleUnlockClick() {
     setError('');
     setLoading(true);
 
     try {
-      const { data: factorsData, error: factorsErr } = await supabase.auth.mfa.listFactors();
-
-      if (factorsErr) throw factorsErr;
-
-      const totp = factorsData?.totp?.find((f) => f.status === 'verified');
-
-      if (!totp) {
-        // No enrolled TOTP factor — fallback unlock (avoids permanent lockout)
-        console.warn('[InactivityLock] No verified TOTP factor found — fallback unlock');
-        doUnlock();
-        return;
-      }
-
-      factorIdRef.current = totp.id;
-
-      const { data: challengeData, error: challengeErr } = await supabase.auth.mfa.challenge({
-        factorId: totp.id,
-      });
-
-      if (challengeErr) throw challengeErr;
-
-      challengeIdRef.current = challengeData.id;
+      const data = await api.startReauth();
+      transactionIdRef.current = data.transactionId;
       setStep('verify');
     } catch (err) {
       setError('Could not start verification. Try again.');
-      console.error('[InactivityLock] challenge error:', err.message);
     } finally {
       setLoading(false);
     }
@@ -96,21 +74,18 @@ export default function InactivityLock({ children }) {
     setLoading(true);
 
     try {
-      const { error: verifyErr } = await supabase.auth.mfa.verify({
-        factorId: factorIdRef.current,
-        challengeId: challengeIdRef.current,
-        code: totpCode,
+      const data = await api.verifyReauth(transactionIdRef.current, totpCode);
+      const { error: sessionErr } = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
       });
-
-      if (verifyErr) throw verifyErr;
+      if (sessionErr) throw sessionErr;
 
       doUnlock();
     } catch (err) {
-      // Supabase returns "Invalid TOTP code" on wrong digit
-      setError('Incorrect code. Check Microsoft Authenticator and try again.');
+      setError(err.message || 'Could not verify code. Try again.');
       setTotpCode('');
       inputRef.current?.focus();
-      console.error('[InactivityLock] verify error:', err.message);
     } finally {
       setLoading(false);
     }
@@ -120,8 +95,7 @@ export default function InactivityLock({ children }) {
     setStep('idle');
     setTotpCode('');
     setError('');
-    factorIdRef.current = null;
-    challengeIdRef.current = null;
+    transactionIdRef.current = null;
     resetTimer();
   }
 

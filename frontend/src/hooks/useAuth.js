@@ -45,26 +45,9 @@ export function useAuth() {
       }
     }, 6000);
 
-    async function checkAal(sess) {
-      // Read AAL from JWT instantly (no network call)
+    function checkAal(sess) {
       const jwtAal = readAalFromSession(sess);
-      if (jwtAal) {
-        console.log('[useAuth] AAL from JWT:', jwtAal);
-        if (!cancelled) setAal(jwtAal);
-        return;
-      }
-
-      // Fallback: ask Supabase API
-      try {
-        const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        console.log('[useAuth] AAL from API:', aalData?.currentLevel);
-        if (!cancelled && aalData) {
-          setAal(aalData.currentLevel || 'aal1');
-        }
-      } catch (e) {
-        console.warn('[useAuth] MFA AAL check failed:', e.message);
-        if (!cancelled) setAal('aal1');
-      }
+      if (!cancelled) setAal(jwtAal || 'aal1');
     }
 
     async function bootstrap() {
@@ -79,7 +62,7 @@ export function useAuth() {
 
         if (sess) {
           console.log('[useAuth] session exists, checking AAL + profile');
-          await checkAal(sess);
+          checkAal(sess);
           await loadProfile(sess.user.id);
         }
       } catch (e) {
@@ -97,7 +80,7 @@ export function useAuth() {
       for (let i = 0; i < 3; i++) {
         const { data } = await supabase
           .from('profiles')
-          .select('id, full_name, preferred_name, role, email')
+          .select('id, full_name, preferred_name, role, email, active')
           .eq('id', userId)
           .maybeSingle();
         if (data) {
@@ -106,28 +89,6 @@ export function useAuth() {
         }
         if (i < 2) await new Promise((r) => setTimeout(r, 1200));
       }
-      // No profile after retries — auto-create as staff
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          const { data: created } = await supabase
-            .from('profiles')
-            .insert({
-              id: userId,
-              full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'New User',
-              role: 'staff',
-              email: user.email,
-            })
-            .select()
-            .single();
-          if (created && !cancelled) {
-            setProfile(created);
-            return;
-          }
-        }
-      } catch (_) {}
       if (!cancelled) setProfile(null);
     }
 
@@ -136,15 +97,11 @@ export function useAuth() {
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       console.log('[useAuth] onAuthStateChange:', _event, !!newSession);
       if (newSession) {
-        // Read AAL BEFORE setting session to avoid race condition
-        // where Protected sees session + stale aal1 and bounces to /login
-        const jwtAal = readAalFromSession(newSession);
-        if (jwtAal) setAal(jwtAal);
+        const jwtAal = readAalFromSession(newSession) || 'aal1';
+        setAal(jwtAal);
         setSession(newSession);
-        if (!jwtAal) await checkAal(newSession);
         loadProfile(newSession.user.id);
-        // Auto-subscribe push notifications once AAL2 is reached (silently, never blocks)
-        if ((jwtAal || 'aal1') === 'aal2') tryAutoSubscribePush(newSession);
+        if (jwtAal === 'aal2') tryAutoSubscribePush(newSession);
       } else {
         setSession(null);
         setProfile(null);

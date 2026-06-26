@@ -1,21 +1,23 @@
 /**
- * Focused tests for getDefaultPassword() in backend/src/routes/admin.js.
+ * Focused tests for admin route helpers in backend/src/routes/admin.js.
  * Run: node --test backend/tests/admin.test.js
  *
  * Pure-logic tests — no HTTP, no Supabase, no mock middleware.
- * process.env.DEFAULT_PASSWORD is manipulated per-test and restored in afterEach.
+ * process.env values are manipulated per-test and restored in afterEach.
  */
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-import { getDefaultPassword } from '../src/routes/admin.js';
+import { getDefaultPassword, getInviteRedirectUrl } from '../src/routes/admin.js';
 
 describe('getDefaultPassword() — DEFAULT_PASSWORD env var', () => {
   let savedPassword;
   let savedNodeEnv;
+  let savedAppPublicUrl;
 
   beforeEach(() => {
     savedPassword = process.env.DEFAULT_PASSWORD;
     savedNodeEnv = process.env.NODE_ENV;
+    savedAppPublicUrl = process.env.APP_PUBLIC_URL;
   });
 
   afterEach(() => {
@@ -23,6 +25,8 @@ describe('getDefaultPassword() — DEFAULT_PASSWORD env var', () => {
     else process.env.DEFAULT_PASSWORD = savedPassword;
     if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = savedNodeEnv;
+    if (savedAppPublicUrl === undefined) delete process.env.APP_PUBLIC_URL;
+    else process.env.APP_PUBLIC_URL = savedAppPublicUrl;
   });
 
   it('returns null and logs console.error in production when DEFAULT_PASSWORD is not set', () => {
@@ -69,5 +73,34 @@ describe('getDefaultPassword() — DEFAULT_PASSWORD env var', () => {
     } finally {
       console.error = origError;
     }
+  });
+});
+
+describe('getInviteRedirectUrl() — APP_PUBLIC_URL env var', () => {
+  let savedAppPublicUrl;
+
+  beforeEach(() => {
+    savedAppPublicUrl = process.env.APP_PUBLIC_URL;
+  });
+
+  afterEach(() => {
+    if (savedAppPublicUrl === undefined) delete process.env.APP_PUBLIC_URL;
+    else process.env.APP_PUBLIC_URL = savedAppPublicUrl;
+  });
+
+  it('uses APP_PUBLIC_URL when present', () => {
+    process.env.APP_PUBLIC_URL = 'https://snackify.applywizz.ai';
+    assert.equal(
+      getInviteRedirectUrl(),
+      'https://snackify.applywizz.ai/dashboard'
+    );
+  });
+
+  it('falls back to localhost when APP_PUBLIC_URL is missing', () => {
+    delete process.env.APP_PUBLIC_URL;
+    assert.equal(
+      getInviteRedirectUrl(),
+      'http://localhost:5173/dashboard'
+    );
   });
 });

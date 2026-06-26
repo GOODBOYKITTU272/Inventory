@@ -5,7 +5,6 @@ import { api } from '../lib/api.js';
 import { supabase } from '../lib/supabase.js';
 
 const ALLOWED_DOMAIN = 'applywizz.ai';
-const HIDDEN_PASSWORD = 'Applywizz@2026';
 
 const fade = (delay = 0) => ({
   initial: { opacity: 0, y: 20 },
@@ -52,14 +51,14 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
   const [qrCode, setQrCode] = useState('');
-  const [factorId, setFactorId] = useState('');
-  const [challengeId, setChallengeId] = useState('');
+  const [transactionId, setTransactionId] = useState('');
+  const [enrollmentTransactionId, setEnrollmentTransactionId] = useState('');
   const [totpCode, setTotpCode] = useState('');
 
   const submitting = useRef(false);
 
-  // ── Auth Logic (byte-for-byte identical to original) ────────
   async function submitEmail(e) {
     e.preventDefault();
     if (submitting.current) return;
@@ -77,115 +76,42 @@ export default function Login() {
     setBusy(true);
 
     try {
-      // Gate 1: verify email exists in the Azure directory.
-      // Hard-blocks on explicit 403 (email not in directory).
-      // Silently continues on network errors / 503 (backend env vars not set yet)
-      // so users are never locked out during backend setup.
-      try {
-        await api.verifyEmail(trimmed);
-      } catch (gateErr) {
-        const msg = gateErr.message || '';
-        if (msg.includes('not in the ApplyWizz directory')) {
-          setErr(msg);
-          setBusy(false);
-          submitting.current = false;
-          return;
-        }
-        console.warn('[Login] verifyEmail unavailable, continuing:', msg);
-      }
-
-      // Gate 2: sign in. The account is guaranteed to exist by verifyEmail above,
-      // so a failure here is a real error (not a "create account" case).
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email: trimmed,
-        password: HIDDEN_PASSWORD,
-      });
-
-      if (signInErr) {
-        setErr(`Could not sign in: ${signInErr.message}`);
-        setBusy(false);
-        submitting.current = false;
-        return;
-      }
-
-      console.log('[Login] Signed in, checking MFA...');
-      await handleMfaAfterSignIn();
-    } catch (ex) {
-      setErr(`Something went wrong: ${ex.message || ex}`);
-      setBusy(false);
-      submitting.current = false;
-    }
-  }
-
-  async function handleMfaAfterSignIn() {
-    try {
-      const { data: factors, error: fErr } = await supabase.auth.mfa.listFactors();
-      console.log('[Login] MFA factors:', JSON.stringify(factors), fErr?.message);
-
-      if (fErr) {
-        setErr(`Could not check authenticator: ${fErr.message}`);
-        setBusy(false);
-        submitting.current = false;
-        return;
-      }
-
-      const totp = factors?.totp?.find((f) => f.status === 'verified');
-      const unverified = factors?.totp?.find((f) => f.status === 'unverified');
-
-      if (totp) {
-        console.log('[Login] Existing TOTP factor, creating challenge...');
-        const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
-          factorId: totp.id,
-        });
-        if (cErr) {
-          setErr(`Authenticator challenge failed: ${cErr.message}`);
-          setBusy(false);
-          submitting.current = false;
-          return;
-        }
-        setFactorId(totp.id);
-        setChallengeId(challenge.id);
-        setBusy(false);
+      const data = await api.startLogin(trimmed);
+      if (data.nextStep === 'authenticator') {
+        setTransactionId(data.transactionId);
+        setTotpCode('');
         setStep('verify');
       } else {
-        if (unverified) {
-          await supabase.auth.mfa.unenroll({ factorId: unverified.id }).catch(() => {});
-        }
-        console.log('[Login] No TOTP factor, enrolling...');
-        await enrollNewTotp();
+        await api.startEnrollment(trimmed);
+        setOtpCode('');
+        setStep('otp');
       }
     } catch (ex) {
-      setErr(`MFA setup error: ${ex.message || ex}`);
+      setErr(`Something went wrong: ${ex.message || ex}`);
+    } finally {
       setBusy(false);
       submitting.current = false;
     }
   }
 
-  async function enrollNewTotp() {
+  async function submitOtp(e) {
+    e.preventDefault();
+    setErr('');
+    if (otpCode.length !== 6) {
+      setErr('Enter the 6-digit code from your email.');
+      return;
+    }
+    setBusy(true);
     try {
-      const { data, error } = await supabase.auth.mfa.enroll({
-        factorType: 'totp',
-        friendlyName: 'Microsoft Authenticator',
-      });
-
-      console.log('[Login] MFA enroll result:', !!data, error?.message);
-
-      if (error) {
-        setErr(`Could not set up authenticator: ${error.message}`);
-        setBusy(false);
-        submitting.current = false;
-        return;
-      }
-
-      setFactorId(data.id);
-      setQrCode(data.totp.qr_code);
-      setBusy(false);
+      const data = await api.verifyEnrollmentOtp(email, otpCode);
+      setEnrollmentTransactionId(data.enrollmentTransactionId);
+      setQrCode(data.qrCode);
+      setTotpCode('');
       setStep('enroll');
-      console.log('[Login] QR code ready, showing enroll screen');
     } catch (ex) {
-      setErr(`Authenticator setup failed: ${ex.message || ex}`);
+      setErr(ex.message || 'Could not verify code.');
+    } finally {
       setBusy(false);
-      submitting.current = false;
     }
   }
 
@@ -201,40 +127,26 @@ export default function Login() {
     setBusy(true);
 
     try {
-      let cId = challengeId;
+      const data =
+        step === 'enroll'
+          ? await api.verifyTotpEnrollment(enrollmentTransactionId, totpCode)
+          : await api.verifyTotpLogin(transactionId, totpCode);
 
-      if (!cId) {
-        const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({
-          factorId,
-        });
-        if (cErr) {
-          setErr(`Challenge failed: ${cErr.message}`);
-          setBusy(false);
-          return;
-        }
-        cId = challenge.id;
-        setChallengeId(cId);
-      }
-
-      const { error: vErr } = await supabase.auth.mfa.verify({
-        factorId,
-        challengeId: cId,
-        code: totpCode,
+      const { error: sessionErr } = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
       });
 
-      if (vErr) {
-        setErr('Invalid code. Check Microsoft Authenticator and try again.');
-        setTotpCode('');
-        setChallengeId('');
+      if (sessionErr) {
+        setErr(`Could not finish sign-in: ${sessionErr.message}`);
         setBusy(false);
         return;
       }
-
-      console.log('[Login] MFA verified! Navigating home...');
       setStep('done');
       navigate('/', { replace: true });
     } catch (ex) {
-      setErr(`Verification failed: ${ex.message || ex}`);
+      setErr(ex.message || 'Verification failed.');
+      setTotpCode('');
       setBusy(false);
     }
   }
@@ -242,9 +154,12 @@ export default function Login() {
   function resetToEmail() {
     setStep('email');
     setErr('');
+    setOtpCode('');
     setTotpCode('');
+    setQrCode('');
+    setTransactionId('');
+    setEnrollmentTransactionId('');
     submitting.current = false;
-    supabase.auth.signOut();
   }
 
   // ── RENDER ──────────────────────────────────────────────────
@@ -512,6 +427,43 @@ export default function Login() {
                       </motion.div>
                     )}
 
+                    {/* ═══ STEP: OTP ═══ */}
+                    {step === 'otp' && (
+                      <motion.div
+                        key="otp"
+                        className="space-y-4"
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.4 }}
+                      >
+                        <div
+                          className="w-14 h-14 mx-auto rounded-2xl grid place-items-center text-2xl"
+                          style={{
+                            background: 'rgba(44,118,255,0.1)',
+                            border: '1px solid rgba(44,118,255,0.2)',
+                          }}
+                        >
+                          ✉️
+                        </div>
+                        <div className="text-center">
+                          <h2 className="text-xl font-bold text-white mb-1">Check your email</h2>
+                          <p className="text-sm text-white/40 leading-relaxed">
+                            Enter the 6-digit code sent to
+                            <br />
+                            <strong style={{ color: '#29FE29' }}>{email}</strong>
+                          </p>
+                        </div>
+
+                        <form onSubmit={submitOtp} className="space-y-3">
+                          <CodeInput value={otpCode} onChange={setOtpCode} />
+                          {err && <Msg text={err} />}
+                          <GradientBtn busy={busy}>{busy ? 'Verifying…' : 'Verify email →'}</GradientBtn>
+                        </form>
+                        <BackBtn onClick={resetToEmail} />
+                      </motion.div>
+                    )}
+
                     {/* ═══ STEP: Enroll ═══ */}
                     {step === 'enroll' && (
                       <motion.div
@@ -558,7 +510,7 @@ export default function Login() {
                             className="block text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-1"
                             style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                           >
-                            Enter the 6-digit code
+                            Enter the 6-digit code from Microsoft Authenticator
                           </label>
                           <CodeInput value={totpCode} onChange={setTotpCode} />
                           {err && <Msg text={err} />}

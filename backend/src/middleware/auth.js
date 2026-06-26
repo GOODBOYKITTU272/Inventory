@@ -17,12 +17,16 @@ export async function authMiddleware(req, res, next) {
 
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from('profiles')
-      .select('id, full_name, preferred_name, role')
+      .select('id, full_name, preferred_name, role, active')
       .eq('id', userData.user.id)
       .single();
 
     if (profileErr || !profile) {
       return res.status(403).json({ error: 'No profile found for user' });
+    }
+
+    if (!profile.active) {
+      return res.status(403).json({ error: 'Account is disabled.' });
     }
 
     req.user = { id: userData.user.id, email: userData.user.email, ...profile };

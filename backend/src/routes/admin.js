@@ -22,6 +22,13 @@ export function getDefaultPassword() {
   return pw;
 }
 
+// Invite emails should always land on the canonical public app URL in production.
+// Named export for focused tests — not a public API.
+export function getInviteRedirectUrl() {
+  const base = process.env.APP_PUBLIC_URL || 'http://localhost:5173';
+  return `${base.replace(/\/$/, '')}/dashboard`;
+}
+
 // Every admin route is leadership-only.
 router.use(requireRole('leadership'));
 
@@ -163,7 +170,7 @@ router.post('/users/invite', async (req, res, next) => {
       email,
       {
         data: { full_name: full_name || email },
-        redirectTo: `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173'}/dashboard`,
+        redirectTo: getInviteRedirectUrl(),
       }
     );
     if (invErr) {

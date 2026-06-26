@@ -34,11 +34,31 @@ async function request(path, opts = {}) {
 }
 
 export const api = {
-  startEmailLogin: (email) =>
-    request('/api/auth/start-email-login', { method: 'POST', body: JSON.stringify({ email }) }),
-  // Gate login: confirm the email is a real user in the Azure directory before sign-in.
-  verifyEmail: (email) =>
-    request('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ email }) }),
+  startEnrollment: (email) =>
+    request('/api/auth/start-enrollment', { method: 'POST', body: JSON.stringify({ email }) }),
+  verifyEnrollmentOtp: (email, code) =>
+    request('/api/auth/verify-enrollment-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    }),
+  verifyTotpEnrollment: (enrollmentTransactionId, code) =>
+    request('/api/auth/verify-totp-enrollment', {
+      method: 'POST',
+      body: JSON.stringify({ enrollmentTransactionId, code }),
+    }),
+  startLogin: (email) =>
+    request('/api/auth/start-login', { method: 'POST', body: JSON.stringify({ email }) }),
+  verifyTotpLogin: (transactionId, code) =>
+    request('/api/auth/verify-totp-login', {
+      method: 'POST',
+      body: JSON.stringify({ transactionId, code }),
+    }),
+  startReauth: () => request('/api/auth/start-reauth', { method: 'POST', body: JSON.stringify({}) }),
+  verifyReauth: (transactionId, code) =>
+    request('/api/auth/verify-reauth', {
+      method: 'POST',
+      body: JSON.stringify({ transactionId, code }),
+    }),
 
   listProducts: () => request('/api/products'),
   createProduct: (body) => request('/api/products', { method: 'POST', body: JSON.stringify(body) }),

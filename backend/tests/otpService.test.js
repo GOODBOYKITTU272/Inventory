@@ -101,85 +101,91 @@ describe('Invalid code check', () => {
 // ── 7. Max attempts ────────────────────────────────────────────────────────
 
 describe('Max attempts logic', () => {
-  it('attempts >= 3 triggers max_attempts path', () => {
-    const MAX_ATTEMPTS = 3;
+  it('attempts >= 5 triggers max_attempts path', () => {
+    const MAX_ATTEMPTS = 5;
 
     function checkAttempts(attempts) {
       if (attempts >= MAX_ATTEMPTS) return 'max_attempts';
       return 'proceed';
     }
 
-    assert.equal(checkAttempts(3), 'max_attempts');
-    assert.equal(checkAttempts(4), 'max_attempts');
-    assert.equal(checkAttempts(2), 'proceed');
+    assert.equal(checkAttempts(5), 'max_attempts');
+    assert.equal(checkAttempts(6), 'max_attempts');
+    assert.equal(checkAttempts(4), 'proceed');
     assert.equal(checkAttempts(0), 'proceed');
+  });
+
+  it('4 attempts still allows another try (old limit of 3 must not block)', () => {
+    const MAX_ATTEMPTS = 5;
+    function checkAttempts(attempts) {
+      if (attempts >= MAX_ATTEMPTS) return 'max_attempts';
+      return 'proceed';
+    }
+    assert.equal(checkAttempts(4), 'proceed', '4 attempts should not lock (max is 5)');
   });
 });
 
-// ── 8. Enrollment token UUID format ───────────────────────────────────────
+// ── 8. OTP invalidation on resend ─────────────────────────────────────────
 
-describe('Enrollment token', () => {
-  it('crypto.randomUUID() produces a valid UUID v4 format', () => {
-    const token = crypto.randomUUID();
-    assert.match(token, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+describe('OTP invalidation on resend', () => {
+  it('resend marks prior active OTPs as used=true and sets invalidated_at', () => {
+    // Mirror the UPDATE in generateOtp before inserting a new OTP:
+    //   UPDATE enrollment_otps SET used=true, invalidated_at=now()
+    //   WHERE email=:email AND used=false AND invalidated_at IS NULL
+    const rows = [
+      { id: 'old-otp-1', email: 'alice@applywizz.ai', used: false, invalidated_at: null },
+      { id: 'old-otp-2', email: 'alice@applywizz.ai', used: false, invalidated_at: null },
+    ];
+    const now = new Date().toISOString();
+    const invalidated = rows.map((r) =>
+      r.email === 'alice@applywizz.ai' && !r.used && r.invalidated_at === null
+        ? { ...r, used: true, invalidated_at: now }
+        : r
+    );
+    for (const r of invalidated) {
+      assert.equal(r.used, true, `row ${r.id} must be marked used`);
+      assert.ok(r.invalidated_at, `row ${r.id} must have invalidated_at set`);
+    }
   });
 
-  it('two generated tokens are unique', () => {
+  it('already-used OTPs are NOT touched during invalidation', () => {
+    const alreadyUsed = { id: 'verified-otp', email: 'alice@applywizz.ai', used: true, invalidated_at: null };
+    const now = new Date().toISOString();
+    // WHERE used=false AND invalidated_at IS NULL — already-used rows are excluded
+    const shouldUpdate = !alreadyUsed.used && alreadyUsed.invalidated_at === null;
+    assert.equal(shouldUpdate, false, 'already-used row must not be touched');
+  });
+
+  it('can distinguish resend-invalidated from verified: used=true, invalidated_at IS NOT NULL', () => {
+    const verified = { used: true, invalidated_at: null };       // correctly completed
+    const invalidated = { used: true, invalidated_at: new Date().toISOString() }; // superseded by resend
+
+    const isVerified = (row) => row.used && row.invalidated_at === null;
+    const isInvalidated = (row) => row.used && row.invalidated_at !== null;
+
+    assert.equal(isVerified(verified), true);
+    assert.equal(isInvalidated(invalidated), true);
+    assert.equal(isVerified(invalidated), false);
+    assert.equal(isInvalidated(verified), false);
+  });
+});
+
+// ── 9. Transaction ID UUID format ─────────────────────────────────────────
+
+describe('Transaction ID format', () => {
+  it('crypto.randomUUID() produces a valid UUID v4 format', () => {
+    const id = crypto.randomUUID();
+    assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it('two generated transaction IDs are unique', () => {
     const a = crypto.randomUUID();
     const b = crypto.randomUUID();
     assert.notEqual(a, b);
   });
 });
 
-// ── 9. Enrollment token expiry ────────────────────────────────────────────
-
-describe('Enrollment token expiry', () => {
-  it('token_expires_at in the past is expired', () => {
-    const expiredAt = new Date(Date.now() - 1000).toISOString(); // 1s ago
-    const now = new Date().toISOString();
-    // verifyEnrollmentToken: .gt('enrollment_token_expires_at', now) excludes past
-    const isExpired = expiredAt <= now;
-    assert.equal(isExpired, true);
-  });
-
-  it('token_expires_at in the future is still valid', () => {
-    const futureAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // +5 min
-    const now = new Date().toISOString();
-    const isValid = futureAt > now;
-    assert.equal(isValid, true);
-  });
-});
-
-// ── 10. Enrollment token replay prevention ────────────────────────────────
-
-describe('Enrollment token replay prevention', () => {
-  it('consuming a token sets hash to null, rejecting a second call', () => {
-    // Simulate the row state after consumption
-    let row = {
-      enrollment_token_hash: hashValue('some-uuid-token'),
-      enrollment_token_expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-    };
-
-    // First verification: matches
-    const token = 'some-uuid-token';
-    const nowIso = new Date().toISOString();
-    const firstResult =
-      row.enrollment_token_hash === hashValue(token) &&
-      row.enrollment_token_expires_at > nowIso;
-    assert.equal(firstResult, true);
-
-    // Consume: set to null (mirroring UPDATE in verifyEnrollmentToken)
-    row = { ...row, enrollment_token_hash: null, enrollment_token_expires_at: null };
-
-    // Second call: null hash cannot match anything
-    const secondResult =
-      row.enrollment_token_hash !== null &&
-      row.enrollment_token_hash === hashValue(token);
-    assert.equal(secondResult, false);
-  });
-});
-
-// ── 11. Cooldown logic ────────────────────────────────────────────────────
+// ── 10. Cooldown logic ────────────────────────────────────────────────────
 
 describe('Cooldown logic', () => {
   it('second generateOtp within 60s triggers COOLDOWN', () => {

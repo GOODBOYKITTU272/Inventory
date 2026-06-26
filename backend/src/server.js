@@ -40,7 +40,12 @@ const configuredOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173
 const allowedOrigins = [...new Set([...configuredOrigins, 'https://snackify.applywizz.ai'])];
 
 if (process.env.NODE_ENV !== 'production') {
-  allowedOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173');
+  allowedOrigins.push(
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5174'
+  );
 }
 app.use(
   cors({
