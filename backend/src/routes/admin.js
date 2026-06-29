@@ -3,8 +3,6 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { requireRole } from '../middleware/auth.js';
 
-const router = Router();
-
 const roleEnum = z.enum(['facility_manager', 'finance', 'leadership', 'staff', 'office_boy']);
 
 // Reads DEFAULT_PASSWORD from env at call time; never falls back to a hardcoded value.
@@ -29,179 +27,234 @@ export function getInviteRedirectUrl() {
   return `${base.replace(/\/$/, '')}/dashboard`;
 }
 
-// Every admin route is leadership-only.
-router.use(requireRole('leadership'));
+export function createAdminRouter(overrides = {}) {
+  const d = {
+    supabaseAdmin,
+    ...overrides,
+  };
 
-// GET /api/admin/users  - all users + their roles, joined with auth.users for email
-router.get('/users', async (_req, res, next) => {
-  try {
-    const { data: profiles, error: pErr } = await supabaseAdmin
-      .from('profiles')
-      .select('id, full_name, role, preferred_name, created_at')
-      .order('created_at', { ascending: true });
-    if (pErr) throw pErr;
+  const router = Router();
 
-    // Pull emails via auth.admin
-    const { data: usersList, error: uErr } = await supabaseAdmin.auth.admin.listUsers({
+  async function findUserById(userId) {
+    const { data, error } = await d.supabaseAdmin.auth.admin.listUsers({
       page: 1,
-      perPage: 200,
+      perPage: 500,
     });
-    if (uErr) throw uErr;
-
-    const emailMap = new Map(usersList.users.map((u) => [u.id, u.email]));
-
-    const rows = profiles.map((p) => ({
-      ...p,
-      email: emailMap.get(p.id) || null,
-    }));
-    res.json(rows);
-  } catch (e) {
-    next(e);
-  }
-});
-
-// PATCH /api/admin/users/:id/role  - change a user's role
-router.patch('/users/:id/role', async (req, res, next) => {
-  try {
-    const role = roleEnum.parse(req.body.role);
-    if (req.params.id === req.user.id && role !== 'leadership') {
-      return res.status(400).json({
-        error: 'You cannot demote yourself. Ask another leadership user to do it.',
-      });
-    }
-    const { data, error } = await supabaseAdmin
-      .from('profiles')
-      .update({ role })
-      .eq('id', req.params.id)
-      .select()
-      .single();
     if (error) throw error;
-    res.json(data);
-  } catch (e) {
-    next(e);
+    return data?.users?.find((user) => user.id === userId) || null;
   }
-});
 
-// PATCH /api/admin/users/:id/preferred-name  - change a user's preferred name
-router.patch('/users/:id/preferred-name', async (req, res, next) => {
-  try {
-    const schema = z.object({
-      preferred_name: z.string().trim().min(1).max(50).nullable(),
-    });
-    const { preferred_name } = schema.parse(req.body);
-    const { data, error } = await supabaseAdmin
-      .from('profiles')
-      .update({ preferred_name })
-      .eq('id', req.params.id)
-      .select()
-      .single();
+  async function findVerifiedTotpFactor(userId) {
+    const { data, error } = await d.supabaseAdmin.auth.admin.mfa.listFactors({ userId });
     if (error) throw error;
-    res.json(data);
-  } catch (e) {
-    next(e);
+    return (data?.factors ?? []).find(
+      (factor) => factor.factor_type === 'totp' && factor.status === 'verified'
+    ) || null;
   }
-});
 
-// POST /api/admin/users/create  - pre-create user for email-link login
-router.post('/users/create', async (req, res, next) => {
-  try {
-    const schema = z.object({
-      email: z.string().email(),
-      role: roleEnum.default('staff'),
-      full_name: z.string().min(1),
-    });
-    const { email, role, full_name } = schema.parse(req.body);
+  // Every admin route is leadership-only.
+  router.use(requireRole('leadership'));
 
-    // Fail closed before any Supabase call when the env var is absent.
-    const pw = getDefaultPassword();
-    if (!pw) {
-      return res.status(503).json({ error: 'User creation is temporarily unavailable.' });
-    }
+  // GET /api/admin/users  - all users + their roles, joined with auth.users for email
+  router.get('/users', async (_req, res, next) => {
+    try {
+      const { data: profiles, error: pErr } = await d.supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, role, preferred_name, created_at')
+        .order('created_at', { ascending: true });
+      if (pErr) throw pErr;
 
-    // 1. Create the auth user with the env-configured temporary password
-    const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: pw,
-      email_confirm: true,
-      user_metadata: { full_name },
-    });
-
-    let userId = created?.user?.id;
-
-    if (createErr) {
-      // User already exists — look up their ID
-      if (String(createErr.message).toLowerCase().includes('already')) {
-        const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
-        userId = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id;
-        if (!userId) throw createErr;
-      } else {
-        throw createErr;
-      }
-    }
-
-    // 2. Upsert profile with name + role
-    const { data: profile, error: pErr } = await supabaseAdmin
-      .from('profiles')
-      .upsert({ id: userId, full_name, role }, { onConflict: 'id' })
-      .select()
-      .single();
-    if (pErr) throw pErr;
-
-    res.status(201).json({ ok: true, user_id: userId, email, role, profile });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// POST /api/admin/users/invite  - pre-create an auth user + send Supabase invite email
-// The invite email contains a magic link; user can either use it OR sign in with Microsoft —
-// either way Supabase will match by email.
-router.post('/users/invite', async (req, res, next) => {
-  try {
-    const schema = z.object({
-      email: z.string().email(),
-      role: roleEnum.default('staff'),
-      full_name: z.string().optional(),
-    });
-    const { email, role, full_name } = schema.parse(req.body);
-
-    // 1. Send the invite (creates a pending auth.users row)
-    const { data: invited, error: invErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-      email,
-      {
-        data: { full_name: full_name || email },
-        redirectTo: getInviteRedirectUrl(),
-      }
-    );
-    if (invErr) {
-      // If the user already exists, fall through to role-set
-      if (!String(invErr.message).toLowerCase().includes('already')) {
-        throw invErr;
-      }
-    }
-
-    // 2. Find their user id (either from the invite response or by listing)
-    let userId = invited?.user?.id;
-    if (!userId) {
-      const { data: list } = await supabaseAdmin.auth.admin.listUsers({
+      const { data: usersList, error: uErr } = await d.supabaseAdmin.auth.admin.listUsers({
         page: 1,
         perPage: 200,
       });
-      userId = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id;
+      if (uErr) throw uErr;
+
+      const emailMap = new Map(usersList.users.map((u) => [u.id, u.email]));
+
+      const rows = profiles.map((p) => ({
+        ...p,
+        email: emailMap.get(p.id) || null,
+      }));
+      res.json(rows);
+    } catch (e) {
+      next(e);
     }
-    if (!userId) {
-      return res.status(500).json({ error: 'Invited but could not locate user id' });
+  });
+
+  router.patch('/users/:id/role', async (req, res, next) => {
+    try {
+      const role = roleEnum.parse(req.body.role);
+      if (req.params.id === req.user.id && role !== 'leadership') {
+        return res.status(400).json({
+          error: 'You cannot demote yourself. Ask another leadership user to do it.',
+        });
+      }
+      const { data, error } = await d.supabaseAdmin
+        .from('profiles')
+        .update({ role })
+        .eq('id', req.params.id)
+        .select()
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (e) {
+      next(e);
     }
+  });
 
-    // 3. Upsert profile with role (the trigger may have already inserted as staff)
-    await supabaseAdmin
-      .from('profiles')
-      .upsert({ id: userId, full_name: full_name || email, role }, { onConflict: 'id' });
+  router.patch('/users/:id/preferred-name', async (req, res, next) => {
+    try {
+      const schema = z.object({
+        preferred_name: z.string().trim().min(1).max(50).nullable(),
+      });
+      const { preferred_name } = schema.parse(req.body);
+      const { data, error } = await d.supabaseAdmin
+        .from('profiles')
+        .update({ preferred_name })
+        .eq('id', req.params.id)
+        .select()
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (e) {
+      next(e);
+    }
+  });
 
-    res.status(201).json({ ok: true, user_id: userId, email, role });
-  } catch (e) {
-    next(e);
-  }
-});
+  router.post('/users/create', async (req, res, next) => {
+    try {
+      const schema = z.object({
+        email: z.string().email(),
+        role: roleEnum.default('staff'),
+        full_name: z.string().min(1),
+      });
+      const { email, role, full_name } = schema.parse(req.body);
 
-export default router;
+      const pw = getDefaultPassword();
+      if (!pw) {
+        return res.status(503).json({ error: 'User creation is temporarily unavailable.' });
+      }
+
+      const { data: created, error: createErr } = await d.supabaseAdmin.auth.admin.createUser({
+        email,
+        password: pw,
+        email_confirm: true,
+        user_metadata: { full_name },
+      });
+
+      let userId = created?.user?.id;
+
+      if (createErr) {
+        if (String(createErr.message).toLowerCase().includes('already')) {
+          const { data: list } = await d.supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
+          userId = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id;
+          if (!userId) throw createErr;
+        } else {
+          throw createErr;
+        }
+      }
+
+      const { data: profile, error: pErr } = await d.supabaseAdmin
+        .from('profiles')
+        .upsert({ id: userId, full_name, role }, { onConflict: 'id' })
+        .select()
+        .single();
+      if (pErr) throw pErr;
+
+      res.status(201).json({ ok: true, user_id: userId, email, role, profile });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/users/invite', async (req, res, next) => {
+    try {
+      const schema = z.object({
+        email: z.string().email(),
+        role: roleEnum.default('staff'),
+        full_name: z.string().optional(),
+      });
+      const { email, role, full_name } = schema.parse(req.body);
+
+      const { data: invited, error: invErr } = await d.supabaseAdmin.auth.admin.inviteUserByEmail(
+        email,
+        {
+          data: { full_name: full_name || email },
+          redirectTo: getInviteRedirectUrl(),
+        }
+      );
+      if (invErr && !String(invErr.message).toLowerCase().includes('already')) {
+        throw invErr;
+      }
+
+      let userId = invited?.user?.id;
+      if (!userId) {
+        const { data: list } = await d.supabaseAdmin.auth.admin.listUsers({
+          page: 1,
+          perPage: 200,
+        });
+        userId = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id;
+      }
+      if (!userId) {
+        return res.status(500).json({ error: 'Invited but could not locate user id' });
+      }
+
+      await d.supabaseAdmin
+        .from('profiles')
+        .upsert({ id: userId, full_name: full_name || email, role }, { onConflict: 'id' });
+
+      res.status(201).json({ ok: true, user_id: userId, email, role });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/users/:userId/reset-authenticator', async (req, res, next) => {
+    try {
+      const targetUser = await findUserById(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ error: 'User not found.' });
+      }
+
+      const factor = await findVerifiedTotpFactor(req.params.userId);
+      if (!factor) {
+        return res.status(409).json({ error: 'User does not have a verified authenticator to reset.' });
+      }
+
+      const { error: deleteErr } = await d.supabaseAdmin.auth.admin.mfa.deleteFactor({
+        userId: req.params.userId,
+        id: factor.id,
+      });
+      if (deleteErr) throw deleteErr;
+
+      const { error: auditErr } = await d.supabaseAdmin.from('audit_logs').insert({
+        user_id: req.user.id,
+        action: 'AUTHENTICATOR_RESET',
+        entity_type: 'profile',
+        entity_id: req.params.userId,
+        old_value: {
+          factor_id: factor.id,
+          target_email: targetUser.email || null,
+        },
+        new_value: {
+          reset: true,
+          target_email: targetUser.email || null,
+        },
+      });
+      if (auditErr) throw auditErr;
+
+      res.json({
+        ok: true,
+        user_id: req.params.userId,
+        email: targetUser.email || null,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  return router;
+}
+
+export default createAdminRouter();

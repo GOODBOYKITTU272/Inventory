@@ -147,6 +147,7 @@ export default function Admin() {
   const [err, setErr] = useState('');
   const [okMsg, setOkMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resetTarget, setResetTarget] = useState(null);
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('staff');
@@ -226,6 +227,26 @@ export default function Admin() {
     }
   }
 
+  async function onResetAuthenticator() {
+    if (!resetTarget) return;
+
+    setBusy(true);
+    setErr('');
+    setOkMsg('');
+    try {
+      const result = await api.resetAuthenticator(resetTarget.id);
+      setOkMsg(
+        `Authenticator reset for ${result.email || resetTarget.email || resetTarget.full_name || 'user'}. They will verify email OTP and scan a new QR on next login.`
+      );
+      setResetTarget(null);
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (err && !users) return <div className="text-rose-600">{err}</div>;
   if (!users) return <div className="text-slate-500">Loading users...</div>;
 
@@ -293,6 +314,7 @@ export default function Admin() {
                 <th className="py-2 pr-3">Email</th>
                 <th className="py-2 pr-3">Role</th>
                 <th className="py-2 pr-3">Change to</th>
+                <th className="py-2 pr-3">Actions</th>
                 <th className="py-2 pr-3">Joined</th>
               </tr>
             </thead>
@@ -335,6 +357,20 @@ export default function Admin() {
                         ))}
                       </select>
                     </td>
+                    <td className="py-2 pr-3">
+                      <button
+                        type="button"
+                        className="btn-secondary text-xs px-3 py-1.5 disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => {
+                          setErr('');
+                          setOkMsg('');
+                          setResetTarget(u);
+                        }}
+                      >
+                        Reset Authenticator
+                      </button>
+                    </td>
                     <td className="py-2 pr-3 text-slate-500 text-xs">
                       {u.created_at ? new Date(u.created_at).toLocaleDateString() : '-'}
                     </td>
@@ -345,6 +381,47 @@ export default function Admin() {
           </table>
         </div>
       </div>
+
+      {resetTarget && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => !busy && setResetTarget(null)}
+        >
+          <div
+            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-slate-900">Reset authenticator?</h3>
+              <p className="text-sm text-slate-500">
+                {resetTarget.full_name || resetTarget.email || 'This user'} will need to verify
+                email OTP and scan a new Microsoft Authenticator QR code on next login.
+              </p>
+              <p className="text-xs text-slate-400">
+                Current user: {resetTarget.email || 'Unknown email'}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                className="btn-secondary flex-1"
+                disabled={busy}
+                onClick={() => setResetTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary flex-1 disabled:opacity-50"
+                disabled={busy}
+                onClick={onResetAuthenticator}
+              >
+                {busy ? 'Resetting…' : 'Confirm Reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ForecastPanel />
     </div>

@@ -100,6 +100,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ preferred_name: preferredName }),
     }),
+  resetAuthenticator: (userId) =>
+    request(`/api/admin/users/${userId}/reset-authenticator`, { method: 'POST' }),
   createUser: (body) =>
     request('/api/admin/users/create', { method: 'POST', body: JSON.stringify(body) }),
   inviteUser: (body) =>

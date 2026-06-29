@@ -6,8 +6,141 @@
  * process.env values are manipulated per-test and restored in afterEach.
  */
 import assert from 'node:assert/strict';
+import { PassThrough, Readable, Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-import { getDefaultPassword, getInviteRedirectUrl } from '../src/routes/admin.js';
+import express from 'express';
+import {
+  createAdminRouter,
+  getDefaultPassword,
+  getInviteRedirectUrl,
+} from '../src/routes/admin.js';
+
+function makeChain(result) {
+  const r = result ?? { data: null, error: null, count: null };
+  const chain = {};
+  for (const method of ['select', 'update', 'upsert', 'eq', 'order']) {
+    chain[method] = () => chain;
+  }
+  chain.insert = () => chain;
+  chain.single = async () => ({ data: r.data, error: r.error });
+  chain.maybeSingle = async () => ({ data: r.data, error: r.error });
+  chain.then = (resolve, reject) =>
+    Promise.resolve({ data: r.data, error: r.error, count: r.count }).then(resolve, reject);
+  return chain;
+}
+
+function makeSupabaseAdminForReset({
+  authUsers = [],
+  factors = [],
+  deleteFactorError = null,
+  auditInsertError = null,
+} = {}) {
+  const deleteFactorCalls = [];
+  const auditLogRows = [];
+
+  return {
+    auth: {
+      admin: {
+        listUsers: async () => ({ data: { users: authUsers }, error: null }),
+        mfa: {
+          listFactors: async () => ({ data: { factors }, error: null }),
+          deleteFactor: async (payload) => {
+            deleteFactorCalls.push(payload);
+            return deleteFactorError
+              ? { data: null, error: deleteFactorError }
+              : { data: {}, error: null };
+          },
+        },
+      },
+    },
+    from: (table) => {
+      if (table === 'audit_logs') {
+        return {
+          insert: (payload) => {
+            auditLogRows.push(payload);
+            return makeChain(auditInsertError ? { data: null, error: auditInsertError } : {});
+          },
+        };
+      }
+      return makeChain();
+    },
+    getDeleteFactorCalls: () => deleteFactorCalls,
+    getAuditLogRows: () => auditLogRows,
+  };
+}
+
+function buildApp({ user, supabaseAdmin }) {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.user = user;
+    next();
+  });
+  app.use('/api/admin', createAdminRouter({ supabaseAdmin }));
+  app.use((err, _req, res, _next) => {
+    res.status(err.status || 500).json({ error: err.message || 'Internal error' });
+  });
+  return app;
+}
+
+async function request(app, method, path) {
+  const req = new Readable({
+    read() {
+      this.push(null);
+    },
+  });
+  req.url = path;
+  req.method = method;
+  req.headers = {};
+  req.header = (name) => req.headers[name.toLowerCase()];
+  const socket = new PassThrough();
+  req.connection = socket;
+  req.socket = socket;
+
+  const chunks = [];
+  const res = new Writable({
+    write(chunk, _enc, cb) {
+      chunks.push(Buffer.from(chunk));
+      cb();
+    },
+  });
+  res.statusCode = 200;
+  res.headers = {};
+  res.setHeader = (key, value) => {
+    res.headers[key.toLowerCase()] = value;
+  };
+  res.getHeader = (key) => res.headers[key.toLowerCase()];
+  res.getHeaders = () => res.headers;
+  res.removeHeader = (key) => {
+    delete res.headers[key.toLowerCase()];
+  };
+  res.writeHead = (status, maybeHeaders) => {
+    res.statusCode = status;
+    if (maybeHeaders) {
+      for (const [key, value] of Object.entries(maybeHeaders)) {
+        res.setHeader(key, value);
+      }
+    }
+    return res;
+  };
+
+  const result = await new Promise((resolve, reject) => {
+    res.end = (chunk) => {
+      if (chunk) chunks.push(Buffer.from(chunk));
+      resolve({
+        status: res.statusCode,
+        bodyText: Buffer.concat(chunks).toString('utf8'),
+      });
+    };
+    res.on('error', reject);
+    app.handle(req, res, reject);
+  });
+
+  return {
+    status: result.status,
+    body: result.bodyText ? JSON.parse(result.bodyText) : null,
+  };
+}
 
 describe('getDefaultPassword() — DEFAULT_PASSWORD env var', () => {
   let savedPassword;
@@ -102,5 +235,63 @@ describe('getInviteRedirectUrl() — APP_PUBLIC_URL env var', () => {
       getInviteRedirectUrl(),
       'http://localhost:5173/dashboard'
     );
+  });
+});
+
+describe('POST /api/admin/users/:userId/reset-authenticator', () => {
+  const leadershipUser = {
+    id: 'leader-1',
+    email: 'leader@applywizz.ai',
+    role: 'leadership',
+  };
+
+  it('resets the verified TOTP factor and writes an audit log', async () => {
+    const supabaseAdmin = makeSupabaseAdminForReset({
+      authUsers: [{ id: 'user-1', email: 'bhanuteja@applywizz.ai' }],
+      factors: [{ id: 'factor-1', factor_type: 'totp', status: 'verified' }],
+    });
+    const app = buildApp({ user: leadershipUser, supabaseAdmin });
+
+    const response = await request(app, 'POST', '/api/admin/users/user-1/reset-authenticator');
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body?.ok, true);
+    assert.deepEqual(supabaseAdmin.getDeleteFactorCalls(), [{ userId: 'user-1', id: 'factor-1' }]);
+    assert.equal(supabaseAdmin.getAuditLogRows().length, 1);
+    assert.equal(supabaseAdmin.getAuditLogRows()[0].action, 'AUTHENTICATOR_RESET');
+    assert.equal(supabaseAdmin.getAuditLogRows()[0].user_id, leadershipUser.id);
+    assert.equal(supabaseAdmin.getAuditLogRows()[0].entity_id, 'user-1');
+  });
+
+  it('returns 409 when the user has no verified TOTP factor', async () => {
+    const supabaseAdmin = makeSupabaseAdminForReset({
+      authUsers: [{ id: 'user-1', email: 'bhanuteja@applywizz.ai' }],
+      factors: [],
+    });
+    const app = buildApp({ user: leadershipUser, supabaseAdmin });
+
+    const response = await request(app, 'POST', '/api/admin/users/user-1/reset-authenticator');
+
+    assert.equal(response.status, 409);
+    assert.match(response.body?.error || '', /verified authenticator/i);
+    assert.deepEqual(supabaseAdmin.getDeleteFactorCalls(), []);
+    assert.equal(supabaseAdmin.getAuditLogRows().length, 0);
+  });
+
+  it('returns 403 for non-leadership callers', async () => {
+    const supabaseAdmin = makeSupabaseAdminForReset({
+      authUsers: [{ id: 'user-1', email: 'bhanuteja@applywizz.ai' }],
+      factors: [{ id: 'factor-1', factor_type: 'totp', status: 'verified' }],
+    });
+    const app = buildApp({
+      user: { id: 'staff-1', email: 'staff@applywizz.ai', role: 'staff' },
+      supabaseAdmin,
+    });
+
+    const response = await request(app, 'POST', '/api/admin/users/user-1/reset-authenticator');
+
+    assert.equal(response.status, 403);
+    assert.deepEqual(supabaseAdmin.getDeleteFactorCalls(), []);
+    assert.equal(supabaseAdmin.getAuditLogRows().length, 0);
   });
 });
