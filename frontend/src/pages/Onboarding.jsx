@@ -873,6 +873,21 @@ export default function Onboarding({ onComplete }) {
         : [...p[field], value],
     }));
   }
+
+  // Snack selection enforces mutual exclusivity with the 'none' sentinel.
+  // 'No Snacks' clears all real snacks; any real snack clears 'none'.
+  function toggleSnack(value) {
+    setPrefs((p) => {
+      if (value === 'none') {
+        return { ...p, snacks: p.snacks.includes('none') ? [] : ['none'] };
+      }
+      const base = p.snacks.filter((s) => s !== 'none');
+      return {
+        ...p,
+        snacks: base.includes(value) ? base.filter((s) => s !== value) : [...base, value],
+      };
+    });
+  }
   function set(field, value) {
     setPrefs((p) => ({ ...p, [field]: value }));
   }
@@ -921,7 +936,7 @@ export default function Onboarding({ onComplete }) {
         user_id: session.user.id,
         preferred_name: prefs.displayName?.trim() || null,
         drink_prefs: prefs.drinks.filter((d) => d !== 'None'),
-        snack_prefs: prefs.snacks.filter((s) => s !== 'none'),
+        snack_prefs: prefs.snacks.includes('none') ? [] : prefs.snacks,
         taste_prefs: prefs.tastes,
         shift: prefs.shift || 'morning',
         preferred_location: prefs.location || null,
@@ -979,7 +994,7 @@ export default function Onboarding({ onComplete }) {
     <StepSnacks
       key={4}
       prefs={prefs}
-      toggle={(v) => toggleArr('snacks', v)}
+      toggle={toggleSnack}
       onNext={next}
       onBack={back}
     />,
